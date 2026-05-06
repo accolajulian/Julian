@@ -1,11 +1,17 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServerClient } from "@/lib/supabase";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2026-04-22.dahlia",
-});
+function getStripe() {
+  return new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: "2026-04-22.dahlia",
+  });
+}
+
+const clerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+const clerkConfigured =
+  (clerkKey.startsWith("pk_test_") || clerkKey.startsWith("pk_live_")) &&
+  !clerkKey.includes("REPLACE_ME");
 
 // Maps our plan names to Stripe price IDs from env
 function getPriceId(plan: string): string {
@@ -27,7 +33,12 @@ function getPriceId(plan: string): string {
  * The two items are in a single checkout so both charge at once.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  let userId: string | null = null;
+  if (clerkConfigured) {
+    const { auth } = await import("@clerk/nextjs/server");
+    const session = await auth();
+    userId = session.userId ?? null;
+  }
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -55,7 +66,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!customerId) {
-    const customer = await stripe.customers.create({
+    const customer = await getStripe().customers.create({
       email: user?.email ?? undefined,
       name: user?.name ?? undefined,
       metadata: { clerk_id: userId, organization_id: user?.organization_id ?? "" },
@@ -73,7 +84,7 @@ export async function POST(req: NextRequest) {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await getStripe().checkout.sessions.create({
     customer: customerId,
     mode: "subscription",
     line_items: [
