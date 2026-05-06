@@ -3,17 +3,21 @@ import type { PlanType } from "./types";
 
 // ─── Stripe client (server-side only) ────────────────────────────────────────
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  // Warn at module-load time so misconfiguration is caught early during boot,
-  // not silently at the first API call.
-  console.warn(
-    "[stripe] STRIPE_SECRET_KEY is not set. Stripe operations will fail."
-  );
+let _stripe: Stripe | null = null;
+
+export function getStripe(): Stripe {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error("STRIPE_SECRET_KEY is not set.");
+    _stripe = new Stripe(key, { apiVersion: "2026-04-22.dahlia", typescript: true });
+  }
+  return _stripe;
 }
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "", {
-  apiVersion: "2026-04-22.dahlia",
-  typescript: true,
+export const stripe = new Proxy({} as Stripe, {
+  get(_target, prop) {
+    return (getStripe() as unknown as Record<string | symbol, unknown>)[prop];
+  },
 });
 
 // ─── Price ID helpers ─────────────────────────────────────────────────────────
