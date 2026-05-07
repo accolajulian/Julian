@@ -65,7 +65,7 @@ const DEMO_POOL: Omit<Activity, "id" | "timestamp">[] = [
   { type: "booking", message: "Sunrise Plumbing confirmed: Friday 10am via Google Meet" },
   { type: "call", message: "24 outbound calls completed in the last 30 minutes" },
   { type: "lead", message: "Lead limit at 68% — 32 leads remaining this month" },
-  { type: "system", message: "AutoPilot resumed calling after quiet hours ended" },
+  { type: "system", message: "LeadMey resumed calling after quiet hours ended" },
 ];
 
 let demoPoolIndex = 0;
@@ -123,7 +123,7 @@ export default function ActivityFeed({
     >
       {items.length === 0 ? (
         <div className="py-8 text-center text-sm text-[#6b7280]">
-          No activity yet. AutoPilot is warming up...
+          No activity yet. LeadMey is warming up...
         </div>
       ) : (
         items.map((item) => (

@@ -101,16 +101,16 @@ export async function POST() {
         const orgName = org?.name ?? "your business";
 
         await resend.emails.send({
-          from: `JACBuilds AutoPilot <${fromEmail}>`,
+          from: `LeadMey <${fromEmail}>`,
           to: [userRecord.email],
-          subject: "🚀 AutoPilot is live — your first leads are being pulled now",
+          subject: "🚀 LeadMey is live — your first leads are being pulled now",
           html: `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Welcome to AutoPilot</title>
+  <title>Welcome to LeadMey</title>
 </head>
 <body style="margin:0;padding:0;background-color:#0f1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px;">
@@ -121,7 +121,7 @@ export async function POST() {
           <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#00ff88 0%,#00cc70 100%);padding:32px 40px;text-align:center;">
-              <p style="margin:0;font-size:13px;font-weight:700;color:#0f1117;letter-spacing:2px;text-transform:uppercase;">JACBuilds AutoPilot</p>
+              <p style="margin:0;font-size:13px;font-weight:700;color:#0f1117;letter-spacing:2px;text-transform:uppercase;">LeadMey</p>
               <h1 style="margin:8px 0 0;font-size:28px;font-weight:900;color:#0f1117;">You&rsquo;re live. 🚀</h1>
             </td>
           </tr>
@@ -133,7 +133,7 @@ export async function POST() {
                 Hey ${ownerName},
               </p>
               <p style="margin:0 0 16px;font-size:15px;color:#9ca3af;line-height:1.6;">
-                Congratulations — <strong style="color:#ffffff;">${orgName}</strong> is now running on AutoPilot.
+                Congratulations — <strong style="color:#ffffff;">${orgName}</strong> is now running on LeadMey.
                 Your first batch of leads is being pulled right now and calls will start within the next few hours.
               </p>
 
@@ -182,7 +182,7 @@ export async function POST() {
           <tr>
             <td style="border-top:1px solid #2a2d3e;padding:20px 40px;text-align:center;">
               <p style="margin:0;font-size:11px;color:#4b5563;">
-                JACBuilds AutoPilot &bull; Questions? Reply to this email.
+                LeadMey &bull; Questions? Reply to this email.
               </p>
             </td>
           </tr>
@@ -203,7 +203,7 @@ export async function POST() {
     return NextResponse.json({
       success: true,
       jobId,
-      message: "AutoPilot is live. Your first leads are being pulled.",
+      message: "LeadMey is live. Your first leads are being pulled.",
     });
   } catch (err) {
     console.error("[POST /api/onboarding/complete]", err);

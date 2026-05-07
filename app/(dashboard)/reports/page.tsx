@@ -286,7 +286,7 @@ export default function ReportsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 print:mb-6">
         <div>
           <h1 className="text-2xl font-black text-white">Reports &amp; Analytics</h1>
-          <p className="text-sm text-[#6b7280] mt-1">Performance data for your AutoPilot campaigns.</p>
+          <p className="text-sm text-[#6b7280] mt-1">Performance data for your LeadMey campaigns.</p>
         </div>
         <div className="flex items-center gap-3">
           <DateRangeSelector selected={range} onSelect={setRange} />
@@ -496,7 +496,7 @@ export default function ReportsPage() {
       {/* Print-only summary */}
       <div className="hidden print:block mt-8 text-xs text-gray-500">
         <p>
-          JACBuilds AutoPilot — Analytics Report — Generated{" "}
+          LeadMey — Analytics Report — Generated{" "}
           {new Date().toLocaleDateString("en-US", {
             year: "numeric",
             month: "long",

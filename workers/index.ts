@@ -66,7 +66,7 @@ async function checkQueueHealth(): Promise<void> {
 // Log a startup banner and run health check.
 
 console.log("╔═══════════════════════════════════════╗");
-console.log("║   JACBuilds AutoPilot — Worker Node   ║");
+console.log("║   LeadMey — Worker Node   ║");
 console.log("╚═══════════════════════════════════════╝");
 console.log(`[workers] Starting at ${new Date().toISOString()}`);
 console.log(`[workers] Redis: ${process.env.REDIS_URL ?? "redis://127.0.0.1:6379"}`);

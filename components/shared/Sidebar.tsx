@@ -116,7 +116,7 @@ export default function Sidebar({
         </div>
         {!collapsed && (
           <span className="font-bold text-white text-sm tracking-tight">
-            AutoPilot
+            LeadMey
           </span>
         )}
       </div>

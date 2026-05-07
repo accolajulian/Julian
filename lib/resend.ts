@@ -39,7 +39,7 @@ function getResendClient(): Resend {
   return new Resend(key);
 }
 
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "AutoPilot <noreply@jacbuilds.com>";
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "LeadMey <noreply@jacbuilds.com>";
 
 function formatDate(date: Date, timezone?: string): string {
   try {
@@ -73,7 +73,7 @@ export async function sendWelcomeEmail(
   await resend.emails.send({
     from: FROM_EMAIL,
     to,
-    subject: `Welcome to JACBuilds AutoPilot, ${firstName}!`,
+    subject: `Welcome to LeadMey, ${firstName}!`,
     html: `
 <!DOCTYPE html>
 <html>
@@ -81,13 +81,13 @@ export async function sendWelcomeEmail(
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9fafb; margin: 0; padding: 0;">
   <div style="max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
     <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); padding: 40px 40px 32px; text-align: center;">
-      <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">JACBuilds AutoPilot</h1>
+      <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">LeadMey</h1>
       <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0; font-size: 15px;">Your AI-powered growth engine is ready</p>
     </div>
     <div style="padding: 40px;">
       <h2 style="margin: 0 0 16px; color: #111827; font-size: 22px;">Welcome aboard, ${firstName}! 🚀</h2>
       <p style="color: #374151; line-height: 1.6; margin: 0 0 20px;">
-        You've successfully activated <strong>${orgName}</strong> on JACBuilds AutoPilot. Your AI calling system is now set up and ready to start generating qualified leads for your business.
+        You've successfully activated <strong>${orgName}</strong> on LeadMey. Your AI calling system is now set up and ready to start generating qualified leads for your business.
       </p>
       <div style="background: #f0f9ff; border-left: 4px solid #2563eb; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 0 0 24px;">
         <p style="margin: 0; color: #1e40af; font-weight: 600; font-size: 15px;">Here's what happens next:</p>
@@ -109,7 +109,7 @@ export async function sendWelcomeEmail(
       </p>
     </div>
     <div style="background: #f9fafb; border-top: 1px solid #e5e7eb; padding: 20px 40px; text-align: center;">
-      <p style="color: #9ca3af; font-size: 13px; margin: 0;">© ${new Date().getFullYear()} JACBuilds. All rights reserved.</p>
+      <p style="color: #9ca3af; font-size: 13px; margin: 0;">© ${new Date().getFullYear()} LeadMey. All rights reserved.</p>
     </div>
   </div>
 </body>
@@ -379,7 +379,7 @@ export async function sendPaymentFailedEmail(
     <div style="padding: 36px 40px;">
       <p style="color: #111827; font-size: 17px; font-weight: 600; margin: 0 0 12px;">Hi ${firstName},</p>
       <p style="color: #374151; line-height: 1.6; margin: 0 0 20px;">
-        We were unable to process your latest payment for JACBuilds AutoPilot. Your account has been flagged as <strong>past due</strong> and calling services may be paused if payment is not resolved within 7 days.
+        We were unable to process your latest payment for LeadMey. Your account has been flagged as <strong>past due</strong> and calling services may be paused if payment is not resolved within 7 days.
       </p>
       <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 0 0 28px;">
         <p style="margin: 0; color: #991b1b; font-size: 14px; line-height: 1.5;">
@@ -415,7 +415,7 @@ export async function sendCancellationEmail(
   await resend.emails.send({
     from: FROM_EMAIL,
     to,
-    subject: "Your JACBuilds AutoPilot subscription has been cancelled",
+    subject: "Your LeadMey subscription has been cancelled",
     html: `
 <!DOCTYPE html>
 <html>
@@ -428,7 +428,7 @@ export async function sendCancellationEmail(
     <div style="padding: 36px 40px;">
       <p style="color: #111827; font-size: 17px; font-weight: 600; margin: 0 0 12px;">Hi ${firstName},</p>
       <p style="color: #374151; line-height: 1.6; margin: 0 0 20px;">
-        Your JACBuilds AutoPilot subscription has been cancelled and all automated calling has been stopped. You'll retain access to your dashboard data, but no new calls or leads will be processed.
+        Your LeadMey subscription has been cancelled and all automated calling has been stopped. You'll retain access to your dashboard data, but no new calls or leads will be processed.
       </p>
       <p style="color: #374151; line-height: 1.6; margin: 0 0 28px;">
         We're sorry to see you go. If you cancelled by mistake or would like to reactivate, you can do so anytime from the billing page.
@@ -440,7 +440,7 @@ export async function sendCancellationEmail(
         </a>
       </div>
       <p style="color: #9ca3af; font-size: 13px; margin: 28px 0 0; text-align: center;">
-        Thank you for using JACBuilds AutoPilot. We hope to serve you again.
+        Thank you for using LeadMey. We hope to serve you again.
       </p>
     </div>
   </div>

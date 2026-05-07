@@ -155,7 +155,7 @@ function ProfileTab() {
           <input
             {...register("name")}
             className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-[#6b7280] focus:outline-none focus:border-[#00ff88]/50"
-            placeholder="JACBuilds LLC"
+            placeholder="LeadMey LLC"
           />
         </div>
         <div className="space-y-1.5">
@@ -445,7 +445,7 @@ function IntegrationsTab() {
     <div className="space-y-6 max-w-2xl">
       <div>
         <h2 className="text-lg font-semibold text-white mb-1">Integrations</h2>
-        <p className="text-sm text-[#6b7280]">Connect your tools to power the AutoPilot workflow.</p>
+        <p className="text-sm text-[#6b7280]">Connect your tools to power the LeadMey workflow.</p>
       </div>
 
       <IntegrationCard
@@ -578,7 +578,7 @@ function NotificationsTab() {
     <div className="space-y-6 max-w-xl">
       <div>
         <h2 className="text-lg font-semibold text-white mb-1">Notifications</h2>
-        <p className="text-sm text-[#6b7280]">Control how and when you hear from AutoPilot.</p>
+        <p className="text-sm text-[#6b7280]">Control how and when you hear from LeadMey.</p>
       </div>
 
       <div className="space-y-3">
@@ -653,7 +653,7 @@ function TeamTab({ plan }: { plan: PlanType }) {
           </div>
           <h3 className="text-lg font-semibold text-white">Team Management</h3>
           <p className="text-sm text-[#6b7280]">
-            Upgrade to Growth or Pro to invite team members and collaborate on AutoPilot.
+            Upgrade to Growth or Pro to invite team members and collaborate on LeadMey.
           </p>
           <a
             href="/settings?tab=billing"
@@ -1004,7 +1004,7 @@ export default function SettingsPage({
     <div className="p-6 max-w-4xl mx-auto animate-fade-in">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="text-sm text-[#6b7280] mt-1">Manage your AutoPilot configuration.</p>
+        <p className="text-sm text-[#6b7280] mt-1">Manage your LeadMey configuration.</p>
       </div>
 
       <Tabs.Root defaultValue={defaultTab}>

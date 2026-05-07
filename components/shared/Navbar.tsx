@@ -44,7 +44,7 @@ export default function Navbar() {
           <Link href="/" className="flex items-center gap-2 group">
             <Zap className="w-5 h-5 text-[#00ff88] group-hover:animate-pulse" fill="#00ff88" />
             <span className="font-bold text-white text-sm sm:text-base tracking-tight">
-              JACBuilds <span className="text-[#00ff88]">AutoPilot</span>
+              LeadMey <span className="text-[#00ff88]">LeadMey</span>
             </span>
           </Link>
 

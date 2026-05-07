@@ -132,7 +132,7 @@ calendarBookingQueue.process(async (job) => {
     (leadRecord.company ? `Company: ${leadRecord.company}\n` : "") +
     (leadRecord.email ? `Email: ${leadRecord.email}\n` : "") +
     `Phone: ${leadRecord.phone}\n\n` +
-    `Booked via JACBuilds AutoPilot`;
+    `Booked via LeadMey`;
 
   let eventId: string;
   let meetLink: string;

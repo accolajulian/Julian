@@ -47,7 +47,7 @@ export default function Footer() {
             <Link href="/" className="flex items-center gap-2 mb-3">
               <Zap className="w-5 h-5 text-[#00ff88]" fill="#00ff88" />
               <span className="font-bold text-white tracking-tight">
-                JACBuilds <span className="text-[#00ff88]">AutoPilot</span>
+                LeadMey <span className="text-[#00ff88]">LeadMey</span>
               </span>
             </Link>
             <p className="text-sm text-[#6b7280] leading-relaxed max-w-[200px]">
@@ -78,7 +78,7 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="border-t border-[#2a2d3e] pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-sm text-[#6b7280]">
-            © 2025 JACBuilds. All rights reserved.
+            © 2025 LeadMey. All rights reserved.
           </p>
           <div className="flex items-center gap-4">
             <Link

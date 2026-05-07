@@ -387,7 +387,7 @@ export default function TargetsPage() {
     }).catch(() => {});
     setTargets((prev) => [...prev, newTarget]);
     setShowForm(false);
-    showSuccess("Target added! AutoPilot will start pulling leads shortly.");
+    showSuccess("Target added! LeadMey will start pulling leads shortly.");
   }
 
   function showSuccess(msg: string) {

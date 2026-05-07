@@ -155,7 +155,7 @@ export default function SignupPage() {
           <div className="w-14 h-14 rounded-2xl bg-[#00ff88]/10 border border-[#00ff88]/20 flex items-center justify-center mb-4">
             <Zap className="w-7 h-7 text-[#00ff88]" />
           </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">JACBuilds AutoPilot</h1>
+          <h1 className="text-2xl font-black text-white tracking-tight">LeadMey</h1>
           <p className="text-sm text-[#6b7280] mt-1.5 text-center">
             Start filling your calendar automatically.
           </p>
