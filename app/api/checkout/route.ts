@@ -28,7 +28,7 @@ function getPriceId(plan: string): string {
 /**
  * POST /api/checkout
  * Creates a Stripe Checkout Session with:
- *   1. $400 one-time setup fee line item
+ *   1. 14-day free trial line item
  *   2. Monthly subscription for the chosen plan
  * The two items are in a single checkout so both charge at once.
  */
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     customer: customerId,
     mode: "subscription",
     line_items: [
-      // One-time $400 setup fee, added as a subscription add-on invoice item
+      // One-time 14-day free trial, added as a subscription add-on invoice item
       {
         price_data: {
           currency: "usd",
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
             name: "One-Time Setup Fee",
             description: "Account setup, integrations config, and first-month onboarding.",
           },
-          unit_amount: 40000, // $400.00 in cents
+          unit_amount: 40000, // free trial.00 in cents
           recurring: undefined,
         },
         quantity: 1,

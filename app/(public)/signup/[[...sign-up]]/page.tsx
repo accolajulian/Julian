@@ -10,7 +10,7 @@ const PLANS = [
   {
     id: "starter",
     name: "Starter",
-    price: "$297",
+    price: "$197",
     period: "/mo",
     description: "For solo operators getting started.",
     features: ["50 leads/month", "AI voice calls", "Google Calendar booking", "1 user seat"],
@@ -18,7 +18,7 @@ const PLANS = [
   {
     id: "growth",
     name: "Growth",
-    price: "$497",
+    price: "$397",
     period: "/mo",
     description: "For growing teams ready to scale.",
     popular: true,
@@ -33,7 +33,7 @@ const PLANS = [
   {
     id: "pro",
     name: "Pro",
-    price: "$797",
+    price: "$597",
     period: "/mo",
     description: "Unlimited power for established businesses.",
     features: [
@@ -124,7 +124,7 @@ function PlanSelector({
       {/* Disclaimer */}
       <div className="mt-3 bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-4 py-2.5">
         <p className="text-xs text-[#6b7280] text-center">
-          <span className="text-[#f59e0b] font-semibold">Note:</span> $400 one-time setup fee
+          <span className="text-[#f59e0b] font-semibold">Note:</span> 14-day free trial
           required to activate your account.
         </p>
       </div>

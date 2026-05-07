@@ -95,21 +95,21 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     targets: 1,
     seats: 1,
     label: "Starter",
-    priceUsdCents: 49700,   // $497/month — update to match your Stripe prices
+    priceUsdCents: 19700,   // $397/month — update to match your Stripe prices
   },
   growth: {
     leads: 150,
     targets: 3,
     seats: 3,
     label: "Growth",
-    priceUsdCents: 99700,   // $997/month
+    priceUsdCents: 39700,   // $997/month
   },
   pro: {
     leads: Infinity,
     targets: Infinity,
     seats: Infinity,
     label: "Pro",
-    priceUsdCents: 199700,  // $1,997/month
+    priceUsdCents: 59700,  // $1,997/month
   },
 };
 

@@ -49,7 +49,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "How long until I see bookings?",
-    a: "Most customers see their first booked appointment within 48–72 hours of going live. The system starts pulling leads and making calls immediately after your $400 setup and onboarding is complete.",
+    a: "Most customers see their first booked appointment within 48–72 hours of going live. The system starts pulling leads and making calls immediately after your free trial and onboarding is complete.",
   },
   {
     q: "What integrations do you need?",
@@ -57,7 +57,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "Is there a contract?",
-    a: "No long-term contracts. All plans are month-to-month. Annual plans save you 17% and are billed yearly, but you can cancel before your renewal date. The $400 setup fee is one-time and non-refundable.",
+    a: "No long-term contracts. All plans are month-to-month. Annual plans save you 17% and are billed yearly, but you can cancel before your renewal date. The 14-day free trial is one-time and non-refundable.",
   },
 ];
 
@@ -427,7 +427,7 @@ export default function LandingPage() {
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-black mb-4">Simple, transparent pricing</h2>
             <p className="text-[#6b7280] text-lg">
-              $400 one-time setup fee + monthly subscription. No contracts.
+              14-day free trial + monthly subscription. No contracts.
             </p>
           </div>
 
@@ -435,7 +435,7 @@ export default function LandingPage() {
             {[
               {
                 name: "Starter",
-                price: "$297",
+                price: "$197",
                 period: "/mo",
                 desc: "Perfect for solo operators just getting started.",
                 features: ["50 leads/month", "AI voice calls via Atlas", "Google Calendar booking", "Basic dashboard", "1 user seat"],
@@ -444,7 +444,7 @@ export default function LandingPage() {
               },
               {
                 name: "Growth",
-                price: "$497",
+                price: "$397",
                 period: "/mo",
                 desc: "For growing teams that want more leads and customization.",
                 features: ["150 leads/month", "Everything in Starter", "SMS notifications", "Custom call scripts", "3 user seats", "3 targets"],
@@ -453,7 +453,7 @@ export default function LandingPage() {
               },
               {
                 name: "Pro",
-                price: "$797",
+                price: "$597",
                 period: "/mo",
                 desc: "Unlimited power for established service businesses.",
                 features: ["Unlimited leads", "Everything in Growth", "Dedicated support", "API access", "Unlimited seats", "Monthly strategy call"],
@@ -576,7 +576,7 @@ export default function LandingPage() {
             Start Your Free Trial <ArrowRight className="w-5 h-5" />
           </Link>
           <p className="text-xs text-[#6b7280] mt-4">
-            $400 one-time setup fee. Cancel anytime.
+            14-day free trial. Cancel anytime.
           </p>
         </div>
       </section>

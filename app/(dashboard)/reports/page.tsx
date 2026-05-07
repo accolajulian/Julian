@@ -77,7 +77,7 @@ const KEY_METRICS = {
   callsMade: 487,
   contactRate: 36.2,
   bookingRate: 15.4,
-  costPerBooking: 497 / 10, // $497 / bookings this month
+  costPerBooking: 497 / 10, // $397 / bookings this month
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -101,9 +101,9 @@ const CHART_TOOLTIP_STYLE = {
 // ─── Upgrade Wall ─────────────────────────────────────────────────────────────
 
 const PLAN_FEATURES = [
-  { plan: "Starter", price: "$297/mo", features: ["50 leads/month", "Basic dashboard", "1 target", "1 user seat"], available: false },
-  { plan: "Growth", price: "$497/mo", features: ["150 leads/month", "Full analytics", "3 targets", "3 user seats", "Custom scripts"], available: true },
-  { plan: "Pro", price: "$797/mo", features: ["Unlimited leads", "Full analytics", "Unlimited targets", "Unlimited seats", "API access"], available: true },
+  { plan: "Starter", price: "$197/mo", features: ["50 leads/month", "Basic dashboard", "1 target", "1 user seat"], available: false },
+  { plan: "Growth", price: "$397/mo", features: ["150 leads/month", "Full analytics", "3 targets", "3 user seats", "Custom scripts"], available: true },
+  { plan: "Pro", price: "$597/mo", features: ["Unlimited leads", "Full analytics", "Unlimited targets", "Unlimited seats", "API access"], available: true },
 ];
 
 function UpgradeWall() {

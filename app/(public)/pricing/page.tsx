@@ -21,7 +21,7 @@ interface Plan {
 const PLANS: Plan[] = [
   {
     name: "Starter",
-    monthlyPrice: 297,
+    monthlyPrice: 197,
     annualPrice: 247,
     desc: "For solo operators getting started with AI-powered lead generation.",
     features: [
@@ -37,7 +37,7 @@ const PLANS: Plan[] = [
   },
   {
     name: "Growth",
-    monthlyPrice: 497,
+    monthlyPrice: 397,
     annualPrice: 414,
     desc: "For growing teams who want more volume, customization, and reporting.",
     features: [
@@ -54,7 +54,7 @@ const PLANS: Plan[] = [
   },
   {
     name: "Pro",
-    monthlyPrice: 797,
+    monthlyPrice: 597,
     annualPrice: 664,
     desc: "For established businesses who need unlimited power and dedicated support.",
     features: [
@@ -93,8 +93,8 @@ const COMPARISON_FEATURES = [
 // ─── FAQ data ─────────────────────────────────────────────────────────────────
 const FAQ_ITEMS = [
   {
-    q: "Is the $400 setup fee really one-time?",
-    a: "Yes — the $400 setup fee is a one-time charge that covers account setup, integrations configuration, and your first-month onboarding. It is applied at checkout and is non-refundable.",
+    q: "Is the 14-day free trial really one-time?",
+    a: "Yes — the 14-day free trial is a one-time charge that covers account setup, integrations configuration, and your first-month onboarding. It is applied at checkout and is non-refundable.",
   },
   {
     q: "Can I upgrade or downgrade my plan?",
@@ -168,7 +168,7 @@ export default function PricingPage() {
               Simple, transparent pricing
             </h1>
             <p className="text-[#6b7280] text-lg mb-8">
-              $400 one-time setup fee + monthly subscription. No contracts. Cancel anytime.
+              14-day free trial + monthly subscription. No contracts. Cancel anytime.
             </p>
 
             {/* Billing toggle */}
@@ -266,7 +266,7 @@ export default function PricingPage() {
             <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
             <div>
               <p className="font-bold text-yellow-300 text-sm mb-1">
-                One-time $400 Setup Fee
+                One-time free trial Setup Fee
               </p>
               <p className="text-sm text-yellow-200/70 leading-relaxed">
                 Applied at checkout. Covers account setup, integrations configuration, and first month
