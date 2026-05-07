@@ -143,13 +143,13 @@ export default function LandingPage() {
 
               <div className="flex flex-col sm:flex-row gap-4 mb-8">
                 <Link
-                  href="#"
+                  href="/signup"
                   className="inline-flex items-center justify-center gap-2 bg-[#00ff88] text-[#0f1117] font-bold px-7 py-3.5 rounded-xl hover:bg-[#00ff88]/90 transition-colors text-base"
                 >
                   Start Free Trial <ArrowRight className="w-5 h-5" />
                 </Link>
                 <Link
-                  href="#"
+                  href="/dashboard?demo=true"
                   className="inline-flex items-center justify-center gap-2 border border-[#2a2d3e] text-white font-semibold px-7 py-3.5 rounded-xl hover:border-[#4fc3f7]/40 hover:text-[#4fc3f7] transition-colors text-base"
                 >
                   <Play className="w-4 h-4" /> Watch Demo
@@ -570,7 +570,7 @@ export default function LandingPage() {
             Join 500+ service businesses running on LeadEmm.
           </p>
           <Link
-            href="#"
+            href="/signup"
             className="inline-flex items-center gap-2 bg-[#00ff88] text-[#0f1117] font-black text-lg px-10 py-4 rounded-xl hover:bg-[#00ff88]/90 transition-colors"
           >
             Start Your Free Trial <ArrowRight className="w-5 h-5" />

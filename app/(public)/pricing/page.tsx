@@ -247,7 +247,7 @@ export default function PricingPage() {
                 </ul>
 
                 <Link
-                  href="#"
+                  href="/signup"
                   className={cn(
                     "text-sm font-bold py-3 rounded-xl text-center transition-colors block",
                     plan.popular
@@ -343,7 +343,7 @@ export default function PricingPage() {
             <div className="text-center">
               <p className="text-[#6b7280] mb-4">Ready to put your sales on autopilot?</p>
               <Link
-                href="#"
+                href="/signup"
                 className="inline-flex items-center gap-2 bg-[#00ff88] text-[#0f1117] font-bold px-8 py-3.5 rounded-xl hover:bg-[#00ff88]/90 transition-colors"
               >
                 Start Your Free Trial <ArrowRight className="w-4 h-4" />
