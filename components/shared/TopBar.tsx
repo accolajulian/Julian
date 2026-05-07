@@ -85,7 +85,7 @@ const DEMO_NOTIFICATIONS: Notification[] = [
     user_id: null,
     type: "call_completed",
     title: "Call batch completed",
-    message: "LeadMey completed 24 calls in the last hour.",
+    message: "LeadEmm completed 24 calls in the last hour.",
     action_url: "/reports",
     is_read: true,
     read_at: null,

@@ -37,11 +37,11 @@ const ACTIVITY_FEED = [
 const FAQ_ITEMS = [
   {
     q: "How does the AI calling work?",
-    a: "LeadMey uses Atlas AI to place outbound calls with a natural, human-sounding voice. The AI introduces your business, qualifies the prospect, and books an appointment — all without you lifting a finger. Calls are recorded and logged to your dashboard.",
+    a: "LeadEmm uses Atlas AI to place outbound calls with a natural, human-sounding voice. The AI introduces your business, qualifies the prospect, and books an appointment — all without you lifting a finger. Calls are recorded and logged to your dashboard.",
   },
   {
     q: "What if someone doesn't answer?",
-    a: "LeadMey automatically retries unanswered calls up to 3 times across different times of day. If a prospect still doesn't answer, they're tagged for SMS follow-up (on Growth and Pro plans) and added to a re-call queue.",
+    a: "LeadEmm automatically retries unanswered calls up to 3 times across different times of day. If a prospect still doesn't answer, they're tagged for SMS follow-up (on Growth and Pro plans) and added to a re-call queue.",
   },
   {
     q: "Can I customize the call script?",
@@ -53,7 +53,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "What integrations do you need?",
-    a: "LeadMey connects to Apollo.io for lead sourcing, Atlas AI for calls, and Google Calendar for booking. Setup takes about 30 minutes with our guided onboarding flow — no code required.",
+    a: "LeadEmm connects to Apollo.io for lead sourcing, Atlas AI for calls, and Google Calendar for booking. Setup takes about 30 minutes with our guided onboarding flow — no code required.",
   },
   {
     q: "Is there a contract?",
@@ -66,7 +66,7 @@ const TESTIMONIALS = [
   {
     name: "Marcus T.",
     role: "Owner, Desert Comfort HVAC",
-    body: "I was spending 3 hours a day chasing leads. Now LeadMey does it while I sleep. Booked $18k in new jobs in the first two weeks.",
+    body: "I was spending 3 hours a day chasing leads. Now LeadEmm does it while I sleep. Booked $18k in new jobs in the first two weeks.",
     stars: 5,
   },
   {
@@ -78,7 +78,7 @@ const TESTIMONIALS = [
   {
     name: "Steve M.",
     role: "Owner, Rapid Response Plumbing",
-    body: "The ROI was obvious after week one. We paid for the entire year of LeadMey with a single job it booked on day three.",
+    body: "The ROI was obvious after week one. We paid for the entire year of LeadEmm with a single job it booked on day three.",
     stars: 5,
   },
 ];
@@ -137,7 +137,7 @@ export default function LandingPage() {
               </h1>
 
               <p className="text-lg text-[#6b7280] leading-relaxed mb-8 max-w-lg">
-                LeadMey pulls leads, calls them with AI, and books appointments into your
+                LeadEmm pulls leads, calls them with AI, and books appointments into your
                 calendar — while you focus on the work.
               </p>
 
@@ -261,14 +261,14 @@ export default function LandingPage() {
                   step: "02",
                   icon: <MapPin className="w-7 h-7 text-[#00ff88]" />,
                   title: "Set Your Targets",
-                  desc: "Choose the industries and locations you want to target. LeadMey learns your ideal customer profile and starts hunting.",
+                  desc: "Choose the industries and locations you want to target. LeadEmm learns your ideal customer profile and starts hunting.",
                   tags: ["Industry", "Location", "ICP"],
                 },
                 {
                   step: "03",
                   icon: <Calendar className="w-7 h-7 text-[#00ff88]" />,
                   title: "Watch Bookings Roll In",
-                  desc: "Sit back while LeadMey fills your calendar. Every appointment lands in Google Calendar with full prospect details.",
+                  desc: "Sit back while LeadEmm fills your calendar. Every appointment lands in Google Calendar with full prospect details.",
                   tags: ["Auto-booking", "24/7", "Google Cal"],
                 },
               ].map((item, i) => (
@@ -305,7 +305,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-black mb-4">
-              Everything on <span className="text-[#00ff88]">LeadMey</span>
+              Everything on <span className="text-[#00ff88]">LeadEmm</span>
             </h2>
             <p className="text-[#6b7280] text-lg max-w-xl mx-auto">
               From lead discovery to signed appointment — fully automated.
@@ -527,7 +527,7 @@ export default function LandingPage() {
                 No sign-up required
               </p>
               <h2 className="text-2xl sm:text-3xl font-black mb-3">
-                See LeadMey in action
+                See LeadEmm in action
               </h2>
               <p className="text-[#6b7280] text-sm mb-6 max-w-md mx-auto">
                 Explore a live demo dashboard with real simulated data. No credit card needed.
@@ -549,7 +549,7 @@ export default function LandingPage() {
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-black mb-4">Frequently Asked Questions</h2>
-            <p className="text-[#6b7280]">Everything you need to know about LeadMey.</p>
+            <p className="text-[#6b7280]">Everything you need to know about LeadEmm.</p>
           </div>
           <div className="space-y-3">
             {FAQ_ITEMS.map((item) => (
@@ -567,7 +567,7 @@ export default function LandingPage() {
             <span className="text-[#00ff88]">Start booking jobs.</span>
           </h2>
           <p className="text-[#6b7280] text-lg mb-8">
-            Join 500+ service businesses running on LeadMey.
+            Join 500+ service businesses running on LeadEmm.
           </p>
           <Link
             href="#"

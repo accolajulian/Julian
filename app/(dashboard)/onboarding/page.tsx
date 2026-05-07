@@ -253,7 +253,7 @@ function StepGoogleCalendar() {
   return (
     <div className="space-y-5">
       <p className="text-sm text-[#6b7280] leading-relaxed">
-        LeadMey needs access to your Google Calendar to automatically create appointments when a
+        LeadEmm needs access to your Google Calendar to automatically create appointments when a
         lead books. Click the button below to authorize.
       </p>
 
@@ -263,7 +263,7 @@ function StepGoogleCalendar() {
           <div>
             <p className="text-sm font-semibold text-[#00ff88]">Google Calendar Connected</p>
             <p className="text-xs text-[#6b7280] mt-0.5">
-              LeadMey can now create calendar events automatically.
+              LeadEmm can now create calendar events automatically.
             </p>
           </div>
         </div>
@@ -295,7 +295,7 @@ function StepGoogleCalendar() {
       )}
 
       <p className="text-xs text-[#6b7280]">
-        LeadMey only requests permission to read and create calendar events. We never delete or
+        LeadEmm only requests permission to read and create calendar events. We never delete or
         modify existing events.
       </p>
     </div>
@@ -513,7 +513,7 @@ const STEPS = [
   { number: 3, title: "Google Calendar", subtitle: "Auto-book appointments to your calendar", icon: Calendar },
   { number: 4, title: "Connect Twilio", subtitle: "Phone infrastructure for calling (optional)", icon: Phone },
   { number: 5, title: "Set First Target", subtitle: "Define the industry and location to target", icon: Target },
-  { number: 6, title: "Call Script", subtitle: "Choose how LeadMey opens every call", icon: FileText },
+  { number: 6, title: "Call Script", subtitle: "Choose how LeadEmm opens every call", icon: FileText },
   { number: 7, title: "Review & Launch", subtitle: "Confirm your settings and go live", icon: Rocket },
 ];
 
@@ -637,7 +637,7 @@ export default function OnboardingPage() {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#00ff88]/10 border border-[#00ff88]/20 mb-4">
             <Zap className="w-6 h-6 text-[#00ff88]" />
           </div>
-          <h1 className="text-2xl font-black text-white">LeadMey Setup</h1>
+          <h1 className="text-2xl font-black text-white">LeadEmm Setup</h1>
           <p className="text-sm text-[#6b7280] mt-1">Let&apos;s get you live in 5 minutes.</p>
         </div>
 
@@ -713,7 +713,7 @@ export default function OnboardingPage() {
                   ) : (
                     <Rocket className="w-4 h-4" />
                   )}
-                  {launching ? "Launching…" : "🚀 Launch LeadMey"}
+                  {launching ? "Launching…" : "🚀 Launch LeadEmm"}
                 </button>
               )}
             </div>

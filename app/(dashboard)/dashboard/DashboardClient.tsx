@@ -172,7 +172,7 @@ export default function DashboardClient({
               </span>
             </div>
             <p className="text-sm text-[#6b7280]">
-              Here&apos;s what LeadMey did while you were away.
+              Here&apos;s what LeadEmm did while you were away.
             </p>
           </div>
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(0,255,136,0.2)] bg-[rgba(0,255,136,0.05)]">
@@ -244,7 +244,7 @@ export default function DashboardClient({
                 No bookings today yet.
               </p>
               <p className="text-xs text-[#6b7280] mt-1">
-                LeadMey is working on it! 🤖
+                LeadEmm is working on it! 🤖
               </p>
             </div>
           ) : (

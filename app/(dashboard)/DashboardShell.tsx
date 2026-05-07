@@ -16,7 +16,7 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith("/scripts")) return "Scripts";
   if (pathname.startsWith("/reports")) return "Reports";
   if (pathname.startsWith("/settings")) return "Settings";
-  return "LeadMey";
+  return "LeadEmm";
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────

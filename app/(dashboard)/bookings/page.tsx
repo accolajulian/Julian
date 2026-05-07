@@ -514,7 +514,7 @@ function ListView({
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-4">
         <Bot className="w-14 h-14 text-[#00ff88] opacity-60" />
-        <p className="text-lg font-semibold text-white">No bookings yet. LeadMey is working on it! 🤖</p>
+        <p className="text-lg font-semibold text-white">No bookings yet. LeadEmm is working on it! 🤖</p>
         <p className="text-sm text-[#6b7280]">We'll notify you the moment a booking lands.</p>
       </div>
     );

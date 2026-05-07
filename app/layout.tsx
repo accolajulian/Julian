@@ -17,11 +17,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "LeadMey | Your AI Sales Team",
-    template: "%s | LeadMey",
+    default: "LeadEmm | Your AI Sales Team",
+    template: "%s | LeadEmm",
   },
   description:
-    "LeadMey is your AI-powered outbound sales engine. " +
+    "LeadEmm is your AI-powered outbound sales engine. " +
     "Automatically call leads, qualify prospects, and book meetings — " +
     "24/7, without lifting a finger.",
   keywords: [
@@ -32,22 +32,22 @@ export const metadata: Metadata = {
     "outbound calls",
     "AI SDR",
   ],
-  authors: [{ name: "LeadMey" }],
-  creator: "LeadMey",
+  authors: [{ name: "LeadEmm" }],
+  creator: "LeadEmm",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
   ),
   openGraph: {
     type: "website",
     locale: "en_US",
-    title: "LeadMey | Your AI Sales Team",
+    title: "LeadEmm | Your AI Sales Team",
     description:
       "Automate your outbound sales with AI-powered calling, qualification, and booking.",
-    siteName: "LeadMey",
+    siteName: "LeadEmm",
   },
   twitter: {
     card: "summary_large_image",
-    title: "LeadMey | Your AI Sales Team",
+    title: "LeadEmm | Your AI Sales Team",
     description:
       "Automate your outbound sales with AI-powered calling, qualification, and booking.",
   },

@@ -106,7 +106,7 @@ const DEMO_ACTIVITIES: Activity[] = [
   {
     id: "a7",
     type: "system",
-    message: "LeadMey resumed calling after quiet hours ended at 8am",
+    message: "LeadEmm resumed calling after quiet hours ended at 8am",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
   },
 ];

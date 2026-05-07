@@ -132,7 +132,7 @@ calendarBookingQueue.process(async (job) => {
     (leadRecord.company ? `Company: ${leadRecord.company}\n` : "") +
     (leadRecord.email ? `Email: ${leadRecord.email}\n` : "") +
     `Phone: ${leadRecord.phone}\n\n` +
-    `Booked via LeadMey`;
+    `Booked via LeadEmm`;
 
   let eventId: string;
   let meetLink: string;
