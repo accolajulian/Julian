@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     const { data: userRecord } = await supabase
       .from("users")
       .select("organization_id, role")
-      .eq("clerk_user_id", userId)
+      .eq("clerk_id", userId)
       .single() as { data: { organization_id: string; role: string } | null };
 
     if (!userRecord?.organization_id) {

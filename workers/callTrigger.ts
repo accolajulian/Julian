@@ -1,7 +1,6 @@
 // Background job that picks up leads and sends them to Atlas for AI calling
 import Bull from "bull";
 import { createServerClient } from "@/lib/supabase";
-import { decrypt } from "@/lib/encryption";
 import { initiateCall, getIndustryScript } from "@/lib/atlas";
 import type { Lead, PlanType } from "@/lib/types";
 
@@ -84,17 +83,10 @@ callTriggeringQueue.process(async (job) => {
     return;
   }
 
-  // 4. Get Atlas API key (decrypt)
-  const atlasKeyEncrypted = (orgRecord.settings as Record<string, string>)?.atlas_api_key_encrypted;
-  if (!atlasKeyEncrypted) {
-    throw new Error(`Org ${organizationId} has no Atlas API key configured.`);
-  }
-
-  let atlasApiKey: string;
-  try {
-    atlasApiKey = decrypt(atlasKeyEncrypted);
-  } catch (decryptError) {
-    throw new Error(`Failed to decrypt Atlas API key for org ${organizationId}: ${decryptError}`);
+  // 4. Get Atlas API key from env (operator-level key shared across all orgs)
+  const atlasApiKey = process.env.ATLAS_API_KEY;
+  if (!atlasApiKey) {
+    throw new Error("ATLAS_API_KEY env var is not set — cannot initiate calls.");
   }
 
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/webhooks/atlas`;
@@ -152,22 +144,41 @@ callTriggeringQueue.process(async (job) => {
 
   for (const lead of leadsToCall) {
     try {
-      // Get the industry from target if available
+      // Get the industry and scripts from target if available
       let industry = "general";
+      let scriptVariant: "a" | "b" = "a";
+      let resolvedScript: string | null = null;
+
       if (lead.target_id) {
         const { data: target } = await supabase
           .from("targets")
-          .select("industry, niche")
+          .select("industry, niche, call_script, settings")
           .eq("id", lead.target_id)
           .single();
+
         if (target) {
-          industry = (target as { industry: string | null; niche: string | null }).niche
-            ?? (target as { industry: string | null; niche: string | null }).industry
-            ?? "general";
+          const t = target as {
+            industry: string | null;
+            niche: string | null;
+            call_script: string | null;
+            settings: Record<string, unknown> | null;
+          };
+          industry = t.niche ?? t.industry ?? "general";
+
+          const scriptB = t.settings?.script_b as string | undefined;
+          const abEnabled = orgRecord.plan === "pro" && !!scriptB;
+
+          if (abEnabled && Math.random() < 0.5) {
+            scriptVariant = "b";
+            resolvedScript = scriptB!;
+          } else {
+            resolvedScript = t.call_script;
+          }
         }
       }
 
-      const script = getIndustryScript(industry)
+      const baseScript = resolvedScript ?? getIndustryScript(industry);
+      const script = baseScript
         .replace(/\[BUSINESS_NAME\]/g, orgName)
         .replace(/\[OWNER_NAME\]/g, lead.full_name)
         .replace(/\[AI_NAME\]/g, "Alex");
@@ -198,6 +209,7 @@ callTriggeringQueue.process(async (job) => {
         direction: "outbound",
         status: "initiated",
         outcome: null,
+        script_variant: scriptVariant,
         started_at: new Date().toISOString(),
       } as never);
 

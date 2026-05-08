@@ -2,25 +2,22 @@ import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerClient } from "@/lib/supabase";
-import { encrypt } from "@/lib/encryption";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 const integrationsSchema = z.object({
-  apollo_api_key: z.string().min(1).optional(),
-  atlas_api_key: z.string().min(1).optional(),
-  twilio_account_sid: z.string().min(1).optional(),
-  twilio_auth_token: z.string().min(1).optional(),
-  twilio_phone_number: z.string().min(1).optional(),
+  business_name: z.string().min(1).optional(),
+  website_url: z.string().url().optional(),
+  avg_job_value: z.number().int().min(0).optional(),
   target_industry: z.string().optional(),
   target_county: z.string().optional(),
   target_state: z.string().optional(),
-  script_choice: z.enum(["default", "custom"]).optional(),
+  script_choice: z.enum(["ai", "custom"]).optional(),
   custom_script: z.string().optional(),
 });
 
 // ─── PATCH /api/settings/integrations ────────────────────────────────────────
-// Saves (encrypted) integration keys and onboarding config for the org.
+// Saves onboarding business config for the org. API keys live in env vars only.
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -45,7 +42,7 @@ export async function PATCH(req: NextRequest) {
     const { data: userRecord } = await supabase
       .from("users")
       .select("organization_id")
-      .eq("clerk_user_id", userId)
+      .eq("clerk_id", userId)
       .single() as { data: { organization_id: string } | null };
 
     if (!userRecord?.organization_id) {
@@ -54,63 +51,27 @@ export async function PATCH(req: NextRequest) {
 
     const orgId = userRecord.organization_id;
 
-    // Upsert each provided key into api_keys (encrypted)
-    // Cast inserts to `never` to work around the Supabase generated-types mismatch
-    // in this codebase (the DB schema is not yet introspected).
+    // Load current org record
+    const { data: currentOrg } = await supabase
+      .from("organizations")
+      .select("name, avg_job_value, settings")
+      .eq("id", orgId)
+      .single() as {
+        data: {
+          name: string;
+          avg_job_value: number;
+          settings: Record<string, unknown>;
+        } | null;
+      };
 
-    if (data.apollo_api_key) {
-      await supabase.from("api_keys").upsert(
-        {
-          organization_id: orgId,
-          name: "apollo_api_key",
-          key_prefix: data.apollo_api_key.slice(0, 8),
-          key_hash: encrypt(data.apollo_api_key),
-          scopes: ["leads"],
-          is_active: true,
-          created_by: userId,
-        } as never,
-        { onConflict: "organization_id,name" }
-      );
-    }
+    // Build top-level column updates
+    const orgUpdates: Record<string, unknown> = {};
+    if (data.business_name) orgUpdates.name = data.business_name;
+    if (data.avg_job_value !== undefined) orgUpdates.avg_job_value = data.avg_job_value;
 
-    if (data.atlas_api_key) {
-      await supabase.from("api_keys").upsert(
-        {
-          organization_id: orgId,
-          name: "atlas_api_key",
-          key_prefix: data.atlas_api_key.slice(0, 8),
-          key_hash: encrypt(data.atlas_api_key),
-          scopes: ["calls"],
-          is_active: true,
-          created_by: userId,
-        } as never,
-        { onConflict: "organization_id,name" }
-      );
-    }
-
-    if (data.twilio_account_sid && data.twilio_auth_token) {
-      await supabase.from("api_keys").upsert(
-        {
-          organization_id: orgId,
-          name: "twilio_credentials",
-          key_prefix: data.twilio_account_sid.slice(0, 8),
-          key_hash: encrypt(
-            JSON.stringify({
-              account_sid: data.twilio_account_sid,
-              auth_token: data.twilio_auth_token,
-              phone_number: data.twilio_phone_number ?? "",
-            })
-          ),
-          scopes: ["calling"],
-          is_active: true,
-          created_by: userId,
-        } as never,
-        { onConflict: "organization_id,name" }
-      );
-    }
-
-    // Persist onboarding target/script data in org settings
+    // Build settings JSONB updates
     const settingsUpdates: Record<string, unknown> = {};
+    if (data.website_url) settingsUpdates.website_url = data.website_url;
     if (data.target_industry) settingsUpdates.onboarding_industry = data.target_industry;
     if (data.target_county) settingsUpdates.onboarding_county = data.target_county;
     if (data.target_state) settingsUpdates.onboarding_state = data.target_state;
@@ -118,20 +79,16 @@ export async function PATCH(req: NextRequest) {
     if (data.custom_script) settingsUpdates.onboarding_custom_script = data.custom_script;
 
     if (Object.keys(settingsUpdates).length > 0) {
-      const { data: currentOrg } = await supabase
-        .from("organizations")
-        .select("settings")
-        .eq("id", orgId)
-        .single() as { data: { settings: Record<string, unknown> } | null };
+      orgUpdates.settings = {
+        ...(currentOrg?.settings ?? {}),
+        ...settingsUpdates,
+      };
+    }
 
+    if (Object.keys(orgUpdates).length > 0) {
       await supabase
         .from("organizations")
-        .update({
-          settings: {
-            ...(currentOrg?.settings ?? {}),
-            ...settingsUpdates,
-          },
-        } as never)
+        .update(orgUpdates as never)
         .eq("id", orgId);
     }
 

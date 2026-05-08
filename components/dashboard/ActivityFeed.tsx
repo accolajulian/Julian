@@ -20,6 +20,7 @@ export interface Activity {
 interface ActivityFeedProps {
   activities: Activity[];
   isDemo?: boolean;
+  liveEvent?: Activity | null;
 }
 
 // ─── Icon map ─────────────────────────────────────────────────────────────────
@@ -87,11 +88,18 @@ function nextDemoEvent(): Activity {
 export default function ActivityFeed({
   activities: initialActivities,
   isDemo = false,
+  liveEvent = null,
 }: ActivityFeedProps) {
   const [items, setItems] = useState<Activity[]>(() =>
     initialActivities.slice(0, 20)
   );
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Prepend real-time events from socket
+  useEffect(() => {
+    if (!liveEvent) return;
+    setItems((prev) => [liveEvent, ...prev].slice(0, 20));
+  }, [liveEvent]);
 
   // In demo mode, add a fake event every 5 seconds
   useEffect(() => {

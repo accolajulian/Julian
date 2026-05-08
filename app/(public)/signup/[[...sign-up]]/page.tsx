@@ -33,7 +33,7 @@ const PLANS = [
   {
     id: "pro",
     name: "Pro",
-    price: "$597",
+    price: "$697",
     period: "/mo",
     description: "Unlimited power for established businesses.",
     features: [

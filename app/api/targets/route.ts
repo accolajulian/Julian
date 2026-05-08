@@ -12,7 +12,7 @@ async function getOrgRecord(clerkUserId: string) {
   const { data: userRecord } = await supabase
     .from("users")
     .select("organization_id")
-    .eq("clerk_user_id", clerkUserId)
+    .eq("clerk_id", clerkUserId)
     .single() as { data: { organization_id: string } | null };
 
   if (!userRecord?.organization_id) return null;

@@ -10,7 +10,7 @@ async function getOrgId(clerkUserId: string): Promise<string | null> {
   const { data } = await supabase
     .from("users")
     .select("organization_id")
-    .eq("clerk_user_id", clerkUserId)
+    .eq("clerk_id", clerkUserId)
     .single() as { data: { organization_id: string } | null };
   return data?.organization_id ?? null;
 }

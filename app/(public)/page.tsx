@@ -453,7 +453,7 @@ export default function LandingPage() {
               },
               {
                 name: "Pro",
-                price: "$597",
+                price: "$697",
                 period: "/mo",
                 desc: "Unlimited power for established service businesses.",
                 features: ["Unlimited leads", "Everything in Growth", "Dedicated support", "API access", "Unlimited seats", "Monthly strategy call"],

@@ -103,7 +103,7 @@ const CHART_TOOLTIP_STYLE = {
 const PLAN_FEATURES = [
   { plan: "Starter", price: "$197/mo", features: ["50 leads/month", "Basic dashboard", "1 target", "1 user seat"], available: false },
   { plan: "Growth", price: "$397/mo", features: ["150 leads/month", "Full analytics", "3 targets", "3 user seats", "Custom scripts"], available: true },
-  { plan: "Pro", price: "$597/mo", features: ["Unlimited leads", "Full analytics", "Unlimited targets", "Unlimited seats", "API access"], available: true },
+  { plan: "Pro", price: "$697/mo", features: ["Unlimited leads", "Full analytics", "Unlimited targets", "Unlimited seats", "API access"], available: true },
 ];
 
 function UpgradeWall() {

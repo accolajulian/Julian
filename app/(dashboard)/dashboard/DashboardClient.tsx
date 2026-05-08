@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import {
@@ -23,6 +23,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import type { Booking, Lead } from "@/lib/types";
 import type { Activity, ActivityType } from "@/components/dashboard/ActivityFeed";
 import type { KanbanLeads } from "@/components/dashboard/KanbanBoard";
+import { useRealtimeDashboard } from "@/hooks/useRealtimeDashboard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ interface BookingWithMeta extends Booking {
 interface DashboardClientProps {
   firstName: string;
   isDemo: boolean;
+  orgId: string | null;
   stats: DashboardStats;
   todaysBookings: BookingWithMeta[];
   activities: Activity[];
@@ -102,6 +104,7 @@ function getGreeting(): string {
 export default function DashboardClient({
   firstName,
   isDemo,
+  orgId,
   stats,
   todaysBookings,
   activities,
@@ -109,6 +112,36 @@ export default function DashboardClient({
 }: DashboardClientProps) {
   const [pullingLeads, setPullingLeads] = useState(false);
   const [triggeringCalls, setTriggeringCalls] = useState(false);
+
+  // Live counters updated via socket events
+  const [liveCallsDelta, setLiveCallsDelta] = useState(0);
+  const [liveLeadsDelta, setLiveLeadsDelta] = useState(0);
+  const [liveBookingsDelta, setLiveBookingsDelta] = useState(0);
+  const [liveEvent, setLiveEvent] = useState<Activity | null>(null);
+
+  const handleActivity = useCallback((event: Activity) => {
+    setLiveEvent(event);
+  }, []);
+
+  const handleCallCompleted = useCallback(() => {
+    setLiveCallsDelta((n) => n + 1);
+  }, []);
+
+  const handleLeadPulled = useCallback(({ count }: { count: number; targetId: string }) => {
+    setLiveLeadsDelta((n) => n + count);
+  }, []);
+
+  const handleBookingCreated = useCallback(() => {
+    setLiveBookingsDelta((n) => n + 1);
+  }, []);
+
+  useRealtimeDashboard({
+    orgId: isDemo ? null : orgId,
+    onActivity: handleActivity,
+    onCallCompleted: handleCallCompleted,
+    onLeadPulled: handleLeadPulled,
+    onBookingCreated: handleBookingCreated,
+  });
 
   async function handlePullLeads() {
     if (isDemo) {
@@ -186,7 +219,7 @@ export default function DashboardClient({
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <StatsCard
           title="Leads Today"
-          value={stats.leadsToday}
+          value={stats.leadsToday + liveLeadsDelta}
           change={stats.leadsChange}
           icon={Users}
           color="blue"
@@ -194,7 +227,7 @@ export default function DashboardClient({
         />
         <StatsCard
           title="Calls Made Today"
-          value={stats.callsToday}
+          value={stats.callsToday + liveCallsDelta}
           change={stats.callsChange}
           icon={Phone}
           color="green"
@@ -202,7 +235,7 @@ export default function DashboardClient({
         />
         <StatsCard
           title="Bookings This Week"
-          value={stats.bookingsThisWeek}
+          value={stats.bookingsThisWeek + liveBookingsDelta}
           change={stats.bookingsChange}
           icon={Calendar}
           color="purple"
@@ -374,7 +407,7 @@ export default function DashboardClient({
             <span className="text-[10px] font-semibold text-[#00ff88]">Live</span>
           </div>
         </div>
-        <ActivityFeed activities={activities} isDemo={isDemo} />
+        <ActivityFeed activities={activities} isDemo={isDemo} liveEvent={liveEvent} />
       </div>
 
       {/* Lead Pipeline Kanban */}

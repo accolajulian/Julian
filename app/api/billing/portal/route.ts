@@ -18,7 +18,7 @@ export async function GET() {
     const { data: userRecord } = await supabase
       .from("users")
       .select("organization_id")
-      .eq("clerk_user_id", userId)
+      .eq("clerk_id", userId)
       .single() as { data: { organization_id: string } | null };
 
     if (!userRecord?.organization_id) {

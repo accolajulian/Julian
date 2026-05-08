@@ -4,6 +4,7 @@ import Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
 import { createServerClient } from "@/lib/supabase";
 import { sendWelcomeEmail, sendPaymentFailedEmail, sendCancellationEmail } from "@/lib/resend";
+import { generateCallScript } from "@/lib/claude";
 import type { PlanType } from "@/lib/types";
 
 // Raw body required for webhook signature verification
@@ -80,11 +81,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           if (error) {
             console.error("[stripe-webhook] Failed to update org subscription:", error);
           } else if (org) {
+            const orgRecord = org as { id: string; name: string; settings: Record<string, unknown> };
+            const orgId = orgRecord.id;
+            const settings = orgRecord.settings ?? {};
+
             // Find the owner user to send welcome email
             const { data: user } = await supabase
               .from("users")
               .select("email, full_name")
-              .eq("organization_id", (org as { id: string }).id)
+              .eq("organization_id", orgId)
               .eq("role", "owner")
               .single();
 
@@ -92,8 +97,79 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               await sendWelcomeEmail(
                 (user as { email: string; full_name: string }).email,
                 (user as { email: string; full_name: string }).full_name,
-                (org as { name: string }).name
+                orgRecord.name
               );
+            }
+
+            // Auto-provision: create first target + queue lead pull
+            // Only runs if onboarding settings are present and no target exists yet
+            const industry = settings.onboarding_industry as string | undefined;
+            const state = settings.onboarding_state as string | undefined;
+
+            if (industry && state) {
+              const { data: existingTargets } = await supabase
+                .from("targets")
+                .select("id")
+                .eq("organization_id", orgId)
+                .limit(1);
+
+              let targetId = (existingTargets as Array<{ id: string }> | null)?.[0]?.id ?? null;
+
+              if (!targetId) {
+                const county = settings.onboarding_county as string | undefined;
+                const scriptChoice = settings.onboarding_script_choice as string | undefined;
+                const customScript = settings.onboarding_custom_script as string | undefined;
+
+                let callScript: string | null = null;
+                if (scriptChoice === "custom" && customScript) {
+                  callScript = customScript;
+                } else {
+                  try {
+                    callScript = await generateCallScript({
+                      businessName: orgRecord.name,
+                      industry,
+                      locationCounty: county,
+                      locationState: state,
+                      websiteUrl: settings.website_url as string | undefined,
+                    });
+                  } catch (scriptErr) {
+                    console.warn("[stripe-webhook] Script generation failed:", scriptErr);
+                  }
+                }
+
+                const { data: newTarget } = await supabase
+                  .from("targets")
+                  .insert({
+                    organization_id: orgId,
+                    industry,
+                    location_county: county ?? "",
+                    location_state: state,
+                    active: true,
+                    call_script: callScript,
+                  } as never)
+                  .select("id")
+                  .single() as { data: { id: string } | null };
+
+                targetId = newTarget?.id ?? null;
+              }
+
+              if (!targetId) {
+                console.warn("[stripe-webhook] No target available, skipping lead pull");
+              } else try {
+                const { leadPullingQueue } = await import("@/workers/index");
+                await leadPullingQueue.add(
+                  { organizationId: orgId, targetId },
+                  {
+                    attempts: 3,
+                    backoff: { type: "exponential", delay: 5000 },
+                    removeOnComplete: true,
+                    delay: 10000,
+                  }
+                );
+                console.log(`[stripe-webhook] Queued first lead pull for org ${orgId}`);
+              } catch (queueErr) {
+                console.warn("[stripe-webhook] Could not queue lead-pull job:", queueErr);
+              }
             }
           }
         }

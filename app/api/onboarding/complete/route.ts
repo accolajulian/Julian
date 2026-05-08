@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import Bull from "bull";
 import { Resend } from "resend";
+import { generateCallScript } from "@/lib/claude";
 
 // ─── Queue factory ────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ export async function POST() {
     const { data: userRecord } = await supabase
       .from("users")
       .select("organization_id, email, full_name")
-      .eq("clerk_user_id", userId)
+      .eq("clerk_id", userId)
       .single() as { data: { organization_id: string; email: string; full_name: string } | null };
 
     if (!userRecord?.organization_id) {
@@ -41,31 +42,74 @@ export async function POST() {
     // 2. Load org details
     const { data: org } = await supabase
       .from("organizations")
-      .select("name, plan, settings, leads_used_this_month")
+      .select("name, plan, settings, leads_used_this_month, avg_job_value")
       .eq("id", orgId)
-      .single() as { data: { name: string; plan: string; settings: Record<string, unknown>; leads_used_this_month: number } | null };
+      .single() as { data: { name: string; plan: string; settings: Record<string, unknown>; leads_used_this_month: number; avg_job_value: number | null } | null };
 
-    // 3. Mark onboarding complete on org (using settings JSONB merge)
+    // 3. Create target from onboarding settings if none exists yet
+    const settings = (org?.settings ?? {}) as Record<string, unknown>;
+    const industry = settings.onboarding_industry as string | undefined;
+    const county = settings.onboarding_county as string | undefined;
+    const state = settings.onboarding_state as string | undefined;
+    const scriptChoice = settings.onboarding_script_choice as string | undefined;
+    const customScript = settings.onboarding_custom_script as string | undefined;
+
+    const { data: existingTargets } = await supabase
+      .from("targets")
+      .select("id")
+      .eq("organization_id", orgId)
+      .limit(1);
+
+    let firstTargetId: string | null =
+      (existingTargets as Array<{ id: string }> | null)?.[0]?.id ?? null;
+
+    if (!firstTargetId && industry && state) {
+      // Generate AI call script if requested
+      let resolvedScript: string | null = null;
+      if (scriptChoice === "custom" && customScript) {
+        resolvedScript = customScript;
+      } else if (scriptChoice === "ai" || !scriptChoice) {
+        try {
+          resolvedScript = await generateCallScript({
+            businessName: org?.name ?? "our company",
+            industry,
+            locationCounty: county,
+            locationState: state,
+            websiteUrl: (settings.website_url as string | undefined) ?? undefined,
+            avgJobValue: org?.avg_job_value ?? undefined,
+          });
+        } catch (scriptErr) {
+          console.warn("[onboarding/complete] Script generation failed:", scriptErr);
+        }
+      }
+
+      const { data: newTarget } = await supabase
+        .from("targets")
+        .insert({
+          organization_id: orgId,
+          industry,
+          location_county: county ?? "",
+          location_state: state,
+          active: true,
+          call_script: resolvedScript,
+        } as never)
+        .select("id")
+        .single() as { data: { id: string } | null };
+
+      firstTargetId = newTarget?.id ?? null;
+    }
+
+    // 4. Mark onboarding complete on org
     await supabase
       .from("organizations")
       .update({
         settings: {
-          ...(org?.settings ?? {}),
+          ...settings,
           onboarding_completed: true,
           onboarding_completed_at: new Date().toISOString(),
         },
       } as never)
       .eq("id", orgId);
-
-    // 4. Get first active target for the org
-    const { data: targets } = await supabase
-      .from("targets")
-      .select("id")
-      .eq("organization_id", orgId)
-      .eq("is_active", true)
-      .limit(1);
-
-    const firstTargetId = (targets as Array<{ id: string }> | null)?.[0]?.id ?? null;
 
     // 5. Queue first lead-pull job
     let jobId: string | number | null = null;

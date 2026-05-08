@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { createServerClient } from "@/lib/supabase";
 import type { CallOutcome } from "@/lib/types";
 import { callTriggeringQueue, calendarBookingQueue } from "@/workers/index";
+import { scoreLeadFromCall } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const outcome = mapAtlasOutcome(rawOutcome);
+  const leadScore = scoreLeadFromCall({
+    outcome,
+    durationSeconds: duration_seconds ?? 0,
+    hasCallbackTime: !!preferred_callback_time,
+  });
   const supabase = createServerClient();
 
   // Look up the call record
@@ -135,6 +141,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const leadUpdate: Record<string, unknown> = {
         status: "interested",
         last_called_at: now.toISOString(),
+        score: leadScore,
       };
       if (preferred_callback_time) {
         leadUpdate.next_call_at = preferred_callback_time;
@@ -160,7 +167,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     case "not_interested": {
       await supabase
         .from("leads")
-        .update({ status: "dead", last_called_at: now.toISOString() } as never)
+        .update({ status: "dead", last_called_at: now.toISOString(), score: leadScore } as never)
         .eq("id", leadId);
       break;
     }
@@ -174,6 +181,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           status: "queued",
           last_called_at: now.toISOString(),
           next_call_at: followUpDate.toISOString(),
+          score: leadScore,
         } as never)
         .eq("id", leadId);
 
@@ -194,6 +202,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           status: "queued",
           last_called_at: now.toISOString(),
           next_call_at: followUpDate.toISOString(),
+          score: leadScore,
         } as never)
         .eq("id", leadId);
 
@@ -216,6 +225,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           status: "called",
           last_called_at: now.toISOString(),
           next_call_at: callbackTime.toISOString(),
+          score: leadScore,
         } as never)
         .eq("id", leadId);
 
@@ -231,7 +241,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // booked, wrong_number, do_not_call — just update last_called_at
       await supabase
         .from("leads")
-        .update({ last_called_at: now.toISOString() } as never)
+        .update({ last_called_at: now.toISOString(), score: leadScore } as never)
         .eq("id", leadId);
   }
 
@@ -244,7 +254,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     message: `Call outcome: ${outcome}. ${notes ? notes.slice(0, 120) : ""}`,
     action_url: `/leads/${leadId}`,
     is_read: false,
-    metadata: { call_id: callRecordId, lead_id: leadId, outcome, duration_seconds },
+    metadata: { call_id: callRecordId, lead_id: leadId, outcome, duration_seconds, score: leadScore },
   } as never);
 
   // Emit Socket.io event for real-time dashboard update
@@ -258,6 +268,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         outcome,
         durationSeconds: duration_seconds,
         notes,
+        score: leadScore,
       });
     }
   } catch (socketError) {

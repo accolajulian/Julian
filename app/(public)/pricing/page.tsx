@@ -54,7 +54,7 @@ const PLANS: Plan[] = [
   },
   {
     name: "Pro",
-    monthlyPrice: 597,
+    monthlyPrice: 697,
     annualPrice: 664,
     desc: "For established businesses who need unlimited power and dedicated support.",
     features: [

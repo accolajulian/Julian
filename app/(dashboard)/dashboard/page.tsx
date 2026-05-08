@@ -181,6 +181,7 @@ export default async function DashboardPage({
 }) {
   let userId: string | null = null;
   let firstName = "there";
+  let orgId: string | null = null;
 
   if (clerkConfigured) {
     const { auth, currentUser } = await import("@clerk/nextjs/server");
@@ -213,11 +214,11 @@ export default async function DashboardPage({
       const { data: userRecord } = await supabase
         .from("users")
         .select("organization_id")
-        .eq("clerk_user_id", userId)
+        .eq("clerk_id", userId)
         .single() as { data: { organization_id: string } | null };
 
       if (userRecord?.organization_id) {
-        const orgId: string = userRecord.organization_id;
+        orgId = userRecord.organization_id;
 
         // Parallel fetch
         const [
@@ -325,6 +326,7 @@ export default async function DashboardPage({
     <DashboardClient
       firstName={firstName}
       isDemo={isDemo}
+      orgId={orgId}
       stats={stats}
       todaysBookings={todaysBookings}
       activities={activities}
