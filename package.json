@@ -24,7 +24,6 @@
     "@radix-ui/react-toast": "^1.2.15",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@stripe/stripe-js": "^9.4.0",
-    "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.105.3",
     "@types/bull": "^3.15.9",
     "@types/crypto-js": "^4.2.2",
