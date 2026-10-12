@@ -12,12 +12,6 @@
     },
     "aip_coder_bottom": {
       "textures": "textures/blocks/coder_bottom"
-    },
-    "aip_guide_side": {
-      "textures": "textures/blocks/ai_guide_side"
-    },
-    "aip_guide_top": {
-      "textures": "textures/blocks/ai_guide_top"
     }
   }
 }

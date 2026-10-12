@@ -1,6 +1,6 @@
 // AI Players: guide, shop, eggs, menus and respawning.
 // The fighting brain and memory live in brain.js; saved data in data.js.
-// - AI Guide block: explains everything.
+// - AI Computer: every player spawns with one. Use it to see how to craft the Coder and the prices.
 // - Coder block: the shop. Buying an AI gives you an egg; throw it to spawn your AI.
 // - Hit (left click) your AI to open its menu (with its Inventory). Interact (right click) to feed it,
 //   put a tool or arrows in its slots, or (Fighter AI) select it and then hit a player to send it after them.
@@ -72,8 +72,7 @@ import { FOCUSES } from "./gather_data.js";
 /** @typedef {import("./data.js").RoleId} RoleId */
 /** @typedef {import("./data.js").AiRecord} AiRecord */
 
-const GUIDE_BLOCK = "aip:ai_guide";
-const GOT_GUIDE_TAG = "aip_got_guide";
+const COMPUTER_ITEM = "aip:ai_computer";
 const MAX_NAME_LENGTH = 20;
 const RESPAWN_SECONDS = 5;
 const COMMAND_SECONDS = 20; // how long a selected Fighter AI waits for you to pick a target
@@ -85,8 +84,8 @@ const ROLES = {
     egg: "aip:resource_egg",
     robot: "aip:resource_robot",
     color: "§9",
-    price: { item: "minecraft:iron_ingot", amount: 30, label: "Iron Ingots" },
-    icon: "textures/items/iron_ingot",
+    price: { item: "minecraft:gold_ingot", amount: 30, label: "Gold Ingots" },
+    icon: "textures/items/gold_ingot",
     about:
       "A helper that gathers resources for you.\n\n" +
       "§a+§r Follows you around and gathers what you choose: wood, stone, ores or everything\n" +
@@ -181,9 +180,9 @@ const GUIDE_TEXT =
   "  Iron  -  Iron  -  Iron\n" +
   "§7(Iron = Iron Ingot)§r\n\n" +
   "§lStep 2: Buy an AI at the Coder§r\n" +
-  `- Resource AI: §f${ROLES.resource.price.amount} ${ROLES.resource.price.label}§r\n` +
+  `- Resource AI: §6${ROLES.resource.price.amount} ${ROLES.resource.price.label}§r\n` +
   `- Fighter AI: §b${ROLES.fighter.price.amount} ${ROLES.fighter.price.label}§r\n` +
-  "You can own one of each. You choose its look and type its name.\n\n" +
+  "Each player can only have one of each. You choose its look and type its name.\n\n" +
   "§lStep 3: Throw the egg§r\n" +
   "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
   "§crecall robot§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
@@ -225,11 +224,6 @@ system.beforeEvents.startup.subscribe(({ blockComponentRegistry }) => {
       if (player) system.run(() => openMenu(player, showCoder));
     },
   });
-  blockComponentRegistry.registerCustomComponent("aip:guide", {
-    onPlayerInteract: ({ player }) => {
-      if (player) system.run(() => openMenu(player, showGuide));
-    },
-  });
 });
 
 // Only one of our menus open per player at a time.
@@ -254,16 +248,47 @@ async function openMenu(player, menu) {
 
 /** @param {import("@minecraft/server").Player} player */
 async function showGuide(player) {
-  await new ActionFormData().title("AI Guide").body(GUIDE_TEXT).button("Got it").show(player);
+  await new ActionFormData().title("AI Computer: help").body(GUIDE_TEXT).button("Got it").show(player);
 }
 
-// First time a player joins: give them an AI Guide block.
+/**
+ * The AI Computer's main screen: how to craft the Coder and what each AI costs
+ * (red until you have enough, green when you do).
+ * @param {import("@minecraft/server").Player} player
+ */
+async function showComputer(player) {
+  const prices = ROLE_IDS.map((role) => {
+    const { title, price } = ROLES[role];
+    const owned = getRecord(player.id, role);
+    if (owned) return `- ${title}: §2you have one (${owned.name})§r`;
+    const have = countItem(player, price.item);
+    const color = have >= price.amount ? "§a" : "§c";
+    return `- ${title}: ${color}${price.amount} ${price.label}§r §7(you have ${have})§r`;
+  });
+  const response = await new ActionFormData()
+    .title("AI Computer")
+    .body(
+      "§lCraft the AI crafter: the Coder§r\n" +
+        "On a crafting table:\n" +
+        "  Glass  -  Glass  -  Glass\n" +
+        "  Iron Ingot  -  Redstone  -  Iron Ingot\n" +
+        "  Iron Ingot  -  Iron Ingot  -  Iron Ingot\n\n" +
+        "§lPlace the Coder and tap it to buy an AI§r\n" +
+        prices.join("\n") +
+        "\n\n§7Each player can only have one of each AI."
+    )
+    .button("More help")
+    .button("Close")
+    .show(player);
+  if (response.selection === 0) await showGuide(player);
+}
+
+// Every time a player spawns: make sure they have an AI Computer (it's lost on death like any item).
 // Every time a player spawns: bring back any AI that died while they were away.
 world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
-  if (initialSpawn && !player.hasTag(GOT_GUIDE_TAG)) {
-    player.addTag(GOT_GUIDE_TAG);
-    giveItem(player, new ItemStack(GUIDE_BLOCK, 1));
-    player.sendMessage("§aYou got an §eAI Guide§a! Place it and tap it to learn how to get AI players.");
+  if (countItem(player, COMPUTER_ITEM) === 0) {
+    giveItem(player, new ItemStack(COMPUTER_ITEM, 1));
+    if (initialSpawn) player.sendMessage("§aYou have an §eAI Computer§a in your hotbar. Use it to see how to get AI players.");
   }
   system.runTimeout(() => {
     for (const role of ROLE_IDS) {
@@ -280,7 +305,8 @@ async function showCoder(player) {
   for (const role of ROLE_IDS) {
     const info = ROLES[role];
     const owned = getRecord(player.id, role);
-    const line2 = owned ? `§2Yours: ${owned.name}` : `§8${info.price.amount} ${info.price.label}`;
+    const enough = countItem(player, info.price.item) >= info.price.amount;
+    const line2 = owned ? `§2Yours: ${owned.name}` : `${enough ? "§2" : "§c"}${info.price.amount} ${info.price.label}`;
     form.button(`${info.title}\n${line2}`, info.icon);
   }
   form.button("How it works", "textures/items/book_writable");
@@ -297,6 +323,15 @@ async function showCoder(player) {
   }
 }
 
+/**
+ * "You need 7 more Diamonds." Only how many more, nothing else.
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ */
+function needMore(player, role) {
+  const { price } = ROLES[role];
+  return `§cYou need ${price.amount - countItem(player, price.item)} more ${price.label}.`;
+}
+
 /** @param {import("@minecraft/server").Player} player @param {RoleId} role */
 async function showRoleInfo(player, role) {
   const info = ROLES[role];
@@ -306,16 +341,16 @@ async function showRoleInfo(player, role) {
   const response = await new MessageFormData()
     .title(info.title)
     .body(
-      `${info.about}\n\n§rCost: §e${info.price.amount} ${info.price.label}§r\n` +
+      `${info.about}\n\n§rCost: ${enough ? "§a" : "§c"}${info.price.amount} ${info.price.label}§r\n` +
         `You have: ${enough ? "§a" : "§c"}${have}`
     )
-    .button1(enough ? "Buy" : "Not enough")
+    .button1("Buy")
     .button2("Back")
     .show(player);
   if (response.canceled) return;
   if (response.selection === 1) return showCoder(player);
   if (!enough) {
-    player.sendMessage(`§cYou need ${info.price.amount} ${info.price.label} to buy a ${info.title}.`);
+    player.sendMessage(needMore(player, role));
     return;
   }
   await buy(player, role);
@@ -331,11 +366,11 @@ async function buy(player, role) {
 
   // Check again: the inventory may have changed while the menus were open.
   if (countItem(player, info.price.item) < info.price.amount) {
-    player.sendMessage(`§cYou need ${info.price.amount} ${info.price.label} to buy a ${info.title}.`);
+    player.sendMessage(needMore(player, role));
     return;
   }
   if (getRecord(player.id, role)) {
-    player.sendMessage(`§cYou already have a ${info.title}.`);
+    player.sendMessage(`§cYou can only have one ${info.title}.`);
     return;
   }
 
@@ -452,6 +487,12 @@ async function dismiss(player, role) {
 
 /** @type {Map<string, { ownerId: string, role: RoleId, thrownAt: number }>} */
 const flyingEggs = new Map();
+
+// Using the AI Computer shows how to craft the Coder and the prices.
+world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
+  if (itemStack?.typeId !== COMPUTER_ITEM) return;
+  system.run(() => openMenu(player, showComputer));
+});
 
 // Using a recall robot opens its options.
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {

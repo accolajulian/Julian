@@ -6,16 +6,18 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.8.0)
-- **AI Guide** block: every player gets one the first time they join. Tap it to read how everything works.
-  Craft another with a book + crafting table.
+## What it does (v1.9.0)
+- **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
+  It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
+  have enough, green when you do), with *More help* for the full guide.
 - **Coder** block: the shop. Tap it, pick an AI to read what it does and its price, then buy it.
   ```
   Glass  Glass     Glass
   Iron   Redstone  Iron
   Iron   Iron      Iron
   ```
-- **Resource AI** costs 30 iron ingots, **Fighter AI** costs 15 diamonds. One of each per player.
+- **Resource AI** costs 30 gold ingots, **Fighter AI** costs 15 diamonds. Each player can only have one of each.
+- Prices show in red until you have enough. Trying to buy without enough only tells you how many more you need.
 - Buying: choose a look (10 options) and type a name (required). You get an **AI Egg**; use it to throw it,
   and your AI appears where it lands.
 - Lost the egg? Open the Coder and pick your AI to get a new one (the old egg stops working).

@@ -358,34 +358,25 @@ def egg_icon(base, accent, seed):
     return img
 
 
-def guide_textures():
-    """16x16 side (a notice board) and top (planks) of the AI Guide block."""
-    rng = random.Random(42)
-    wood, wood_dark, paper, ink = (150, 108, 60), (100, 70, 38), (235, 225, 195), (60, 60, 70)
-    side = Image.new("RGBA", (16, 16))
-    p = side.load()
-    for x in range(16):
-        for y in range(16):
-            edge = x in (0, 15) or y in (0, 15)
-            d = rng.randint(-8, 8)
-            p[x, y] = tuple(max(0, min(255, c + d)) for c in (wood_dark if edge else wood)) + (255,)
-    for x in range(2, 14):                            # paper
-        for y in range(2, 14):
-            d = rng.randint(-5, 5)
-            p[x, y] = tuple(c + d for c in paper) + (255,)
-    for y in (4, 6, 8):                               # writing
-        for x in range(4, 12 if y != 8 else 9):
-            p[x, y] = ink + (255,)
-    for x, y in ((6, 10), (7, 10), (8, 10), (9, 10), (6, 11), (9, 11), (6, 12), (7, 12), (8, 12), (9, 12)):
-        p[x, y] = (79, 160, 230, 255)                 # little screen doodle
-    top = Image.new("RGBA", (16, 16))
-    p = top.load()
-    for x in range(16):
-        for y in range(16):
-            d = rng.randint(-10, 10)
-            c = wood_dark if y % 4 == 3 else wood
-            p[x, y] = tuple(max(0, min(255, v + d)) for v in c) + (255,)
-    return side, top
+def computer_icon():
+    """16x16 computer: monitor with a little robot face on the screen, stand and keyboard."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    case, dark, screen, face = (200, 205, 215), (60, 64, 76), (79, 224, 255), (24, 30, 44)
+    for x in range(1, 15):
+        for y in range(1, 11):
+            p[x, y] = case + (255,)                   # monitor case
+    for x in range(2, 14):
+        for y in range(2, 10):
+            p[x, y] = screen + (255,)                 # screen
+    for x, y in ((5, 4), (10, 4), (5, 5), (10, 5), (6, 7), (7, 8), (8, 8), (9, 7)):
+        p[x, y] = face + (255,)                       # smiling face
+    for y in (11, 12):
+        p[7, y] = p[8, y] = dark + (255,)             # stand
+    for x in range(2, 14):
+        p[x, 13] = dark + (255,)                      # keyboard
+        p[x, 14] = (case if x % 2 else dark) + (255,)
+    return img
 
 
 def robot_icon(base, seed):
@@ -441,8 +432,7 @@ def main():
 
     for name, img in zip(("side", "top", "bottom"), coder_textures()):
         img.save(RP / f"textures/blocks/coder_{name}.png")
-    for name, img in zip(("side", "top"), guide_textures()):
-        img.save(RP / f"textures/blocks/ai_guide_{name}.png")
+    computer_icon().save(RP / "textures/items/ai_computer.png")
     egg_icon((200, 50, 50), (255, 210, 70), 1).save(RP / "textures/items/fighter_egg.png")
     egg_icon((70, 160, 70), (79, 224, 255), 2).save(RP / "textures/items/resource_egg.png")
     egg_icon((120, 200, 230), (255, 255, 255), 3).save(RP / "textures/items/ai_capsule.png")

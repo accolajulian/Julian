@@ -13,6 +13,9 @@
     },
     "aip_resource_robot": {
       "textures": "textures/items/resource_robot"
+    },
+    "aip_ai_computer": {
+      "textures": "textures/items/ai_computer"
     }
   }
 }
