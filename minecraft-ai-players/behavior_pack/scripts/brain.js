@@ -1,5 +1,6 @@
 // The AI players' brain: picks targets, protects the owner, backs off to heal,
-// uses its tool slots in order and remembers enemies and allies (even after dying).
+// uses its tool slots in order, wears armor, blocks with a shield, eats its chicken,
+// stays away from lava, gathers (Resource AI) and remembers enemies and allies (even after dying).
 //
 // The Script API can't set a mob's target directly, so the brain "points" each AI at its
 // target with tags (see tools/make_entity_targets.py):
@@ -31,7 +32,15 @@ import {
   useArrow,
   toolFromStack,
   itemName,
+  ARMOR_SLOTS,
+  ARMOR_COMMAND_SLOT,
+  ARMOR_NAMES,
+  wearItem,
+  addBlocks,
+  isPlaceableBlock,
+  FOOD_HEALS,
 } from "./inventory.js";
+import { createGatherState, avoidLava, gather, setGatherBehavior } from "./gather.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
 const THINK_TICKS = 10; // the brain thinks twice a second
@@ -42,6 +51,9 @@ const RECOVERED_AT = 0.7; // ...until back to 70%
 const GUARD_LEASH = 14;
 const COMMAND_MS = 30000;
 const RANGED_FROM = 6; // use a bow/crossbow when the target is further than this
+const EAT_EVERY_MS = 2500; // how often it can eat a cooked chicken
+const SHIELD_COOLDOWN_MS = 1000; // time between shield blocks
+const AXE_DISABLES_SHIELD_MS = 5000; // an axe hit knocks its shield down for this long
 /** How dangerous each mob is. Higher = attacked first. Mobs not listed count as 20. */
 /** @type {Record<string, number>} */
 const DANGER = {
@@ -93,6 +105,11 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {string | undefined} equipped  Item id in its hand.
  * @property {number} activeSlot  Tool slot in use (0-2), or -1 for fists.
  * @property {"melee" | "ranged"} style
+ * @property {Record<string, string | undefined>} gear  Armor/shield it's wearing (command slot -> item id).
+ * @property {boolean} hasShield
+ * @property {number} shieldReadyAt
+ * @property {number} eatReadyAt
+ * @property {import("./gather.js").GatherState} gather
  * @property {string | undefined} commandId
  * @property {number} commandUntil
  */
@@ -134,7 +151,10 @@ export function commandAttack(owner, ai, target) {
  */
 export function toolsChanged(aiId) {
   const brain = aiId ? brains.get(aiId) : undefined;
-  if (brain) brain.equipped = "unknown";
+  if (!brain) return;
+  brain.equipped = "unknown";
+  brain.gear = {};
+  brain.gather.pausedUntil = 0; // e.g. new blocks or a pickaxe: try gathering again now
 }
 
 // ================================================================ memory
@@ -167,6 +187,84 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damageSource }) => {
     const victim = hurtEntity.id === ownerId ? "you" : hurtEntity.nameTag;
     findPlayer(ownerId)?.sendMessage(`§cYour AI players will remember that ${attacker.nameTag} attacked ${victim}.`);
   }
+});
+
+// An AI with a shield blocks hits and arrows coming from in front of it (not every hit: it needs
+// a moment between blocks, and an axe knocks the shield down for a few seconds).
+world.beforeEvents.entityHurt.subscribe((event) => {
+  const ai = event.hurtEntity;
+  if (ai.typeId !== AI_ENTITY) return;
+  const brain = brains.get(ai.id);
+  const attacker = event.damageSource.damagingEntity;
+  const cause = event.damageSource.cause;
+  if (!brain?.hasShield || !attacker || Date.now() < brain.shieldReadyAt) return;
+  if (attacker.id === ai.getDynamicProperty("aip:owner")) return; // the owner tapping it to open its menu
+  if (cause !== EntityDamageCause.entityAttack && cause !== EntityDamageCause.projectile) return;
+  const view = ai.getViewDirection();
+  const to = { x: attacker.location.x - ai.location.x, z: attacker.location.z - ai.location.z };
+  const len = Math.hypot(to.x, to.z) || 1;
+  if ((view.x * to.x + view.z * to.z) / len < 0.3) return; // from the side or behind
+  event.cancel = true;
+  const held = attacker.typeId === "minecraft:player"
+    ? attacker.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Mainhand)?.typeId
+    : undefined;
+  const axe = cause === EntityDamageCause.entityAttack && !!held?.endsWith("_axe");
+  brain.shieldReadyAt = Date.now() + (axe ? AXE_DISABLES_SHIELD_MS : SHIELD_COOLDOWN_MS);
+  const damage = event.damage;
+  system.run(() => shieldBlocked(ai, brain, damage, axe));
+});
+
+/**
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {Brain} brain
+ * @param {number} damage
+ * @param {boolean} byAxe
+ */
+function shieldBlocked(ai, brain, damage, byAxe) {
+  if (!ai.isValid) return;
+  ai.dimension.playSound(byAxe ? "random.break" : "item.shield.block", ai.location);
+  const info = ownerInfo(ai);
+  const record = info ? getRecord(info.ownerId, info.role) : undefined;
+  const shield = record ? inventoryOf(record).shield : undefined;
+  if (!info || !record || !shield) return;
+  if (wearItem(shield, Math.max(1, Math.floor(damage))) === "broke") {
+    inventoryOf(record).shield = null;
+    brain.gear = {};
+    findPlayer(info.ownerId)?.sendMessage(`§c${record.name}'s shield broke!`);
+  }
+  saveRecord(info.ownerId, info.role, record);
+  if (byAxe) findPlayer(info.ownerId)?.sendMessage(`§e${record.name}'s shield was knocked down by an axe!`);
+}
+
+// Armor wears down when the AI gets hurt, like a player's.
+world.afterEvents.entityHurt.subscribe(({ hurtEntity, damage, damageSource }) => {
+  if (hurtEntity.typeId !== AI_ENTITY || !hurtEntity.isValid) return;
+  const wearing = [
+    EntityDamageCause.entityAttack,
+    EntityDamageCause.projectile,
+    EntityDamageCause.entityExplosion,
+    EntityDamageCause.blockExplosion,
+  ];
+  if (!wearing.includes(damageSource.cause)) return;
+  const info = ownerInfo(hurtEntity);
+  const record = info ? getRecord(info.ownerId, info.role) : undefined;
+  if (!info || !record) return;
+  const armor = inventoryOf(record).armor;
+  const amount = Math.max(1, Math.floor(damage / 4));
+  let changed = false;
+  for (const slot of ARMOR_SLOTS) {
+    const piece = armor[slot];
+    if (!piece) continue;
+    changed = true;
+    if (wearItem(piece, amount) === "broke") {
+      armor[slot] = null;
+      hurtEntity.dimension.playSound("random.break", hurtEntity.location);
+      findPlayer(info.ownerId)?.sendMessage(`§c${record.name}'s ${ARMOR_NAMES[slot].toLowerCase()} broke!`);
+      const brain = brains.get(hurtEntity.id);
+      if (brain) brain.gear = {};
+    }
+  }
+  if (changed) saveRecord(info.ownerId, info.role, record);
 });
 
 // AIs never hurt their friends, and melee tools add damage.
@@ -232,7 +330,7 @@ function useTool(ai, brain) {
   }
 }
 
-// A held tool may drop when the AI dies. It keeps its tools, so remove the copy.
+// Its tool, armor and shield may drop when the AI dies. It keeps them, so remove the copies.
 world.afterEvents.entityDie.subscribe(
   ({ deadEntity }) => {
     let brain, location, dimension;
@@ -243,14 +341,14 @@ world.afterEvents.entityDie.subscribe(
     } catch {
       return;
     }
-    const equipped = brain?.equipped;
-    if (!equipped || !location || !dimension) return;
+    if (!brain || !location || !dimension) return;
+    const worn = [brain.equipped, ...Object.values(brain.gear)].filter((id) => id && id !== "unknown" && id !== "air");
+    if (worn.length === 0) return;
     system.run(() => {
-      for (const item of dimension.getEntities({ location, maxDistance: 3, type: "minecraft:item" })) {
-        if (item.getComponent("minecraft:item")?.itemStack.typeId === equipped) {
-          item.remove();
-          return;
-        }
+      const items = dimension.getEntities({ location, maxDistance: 3, type: "minecraft:item" });
+      for (const id of worn) {
+        const copy = items.find((item) => item.isValid && item.getComponent("minecraft:item")?.itemStack.typeId === id);
+        copy?.remove();
       }
     });
   },
@@ -309,6 +407,22 @@ function think(ai, ownerId, role, record, brain) {
   const hpRatio = health.currentValue / health.effectiveMax;
   const now = Date.now();
 
+  // ---- Lava: cover it with blocks or back away (both AIs).
+  const lavaClose = avoidLava(ai, ownerId, role, record, brain.gather);
+
+  // ---- Wear armor and a shield.
+  wearGear(ai, brain, record);
+
+  // ---- Eat one of its own cooked chicken when hurt (they refill over time).
+  const inv = inventoryOf(record);
+  if (inv.food > 0 && health.currentValue <= health.effectiveMax - FOOD_HEALS && now >= brain.eatReadyAt) {
+    inv.food -= 1;
+    saveRecord(ownerId, role, record);
+    heal(health, FOOD_HEALS);
+    ai.dimension.playSound("random.eat", ai.location);
+    brain.eatReadyAt = now + EAT_EVERY_MS;
+  }
+
   // ---- Back off and heal when low on health.
   if (!brain.retreating && hpRatio < RETREAT_BELOW) {
     brain.retreating = true;
@@ -317,8 +431,8 @@ function think(ai, ownerId, role, record, brain) {
     owner?.sendMessage(`§e${record.name} is badly hurt and backing off to heal.`);
   }
   if (brain.retreating) {
-    const nearOwner = owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) < 6;
-    heal(health, nearOwner ? 2 : 1);
+    heal(health, 0.5); // resting: 1 health a second, plus any chicken it eats
+    if (role === "resource") setGatherBehavior(ai, brain.gather, record.focus, false);
     if (health.currentValue / health.effectiveMax >= RECOVERED_AT) {
       brain.retreating = false;
       ai.triggerEvent("aip:recovered");
@@ -332,7 +446,11 @@ function think(ai, ownerId, role, record, brain) {
 
   pickUpItems(ai, ownerId, role, record);
   if (role !== "fighter") {
-    equip(ai, brain, record, firstTool(record, false));
+    // ---- Gather, unless it was just attacked or there's lava close by.
+    const safe = !lavaClose && now - lastHit > RECENT_MS;
+    setGatherBehavior(ai, brain.gather, record.focus, safe);
+    const slot = safe ? gather(ai, ownerId, record, brain.gather) : undefined;
+    equip(ai, brain, record, slot ?? firstTool(record, false));
     return;
   }
 
@@ -507,7 +625,31 @@ function equip(ai, brain, record, slot) {
 }
 
 /**
- * Picks up allowed tools (into the first empty slot) and, for Fighters, arrows lying next to it.
+ * Puts on the armor and shield from its slots (only when something changed).
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {Brain} brain
+ * @param {import("./data.js").AiRecord} record
+ */
+function wearGear(ai, brain, record) {
+  const inv = inventoryOf(record);
+  /** @type {Record<string, string>} */
+  const wanted = { "slot.weapon.offhand": inv.shield?.id ?? "air" };
+  for (const slot of ARMOR_SLOTS) wanted[ARMOR_COMMAND_SLOT[slot]] = inv.armor[slot]?.id ?? "air";
+  brain.hasShield = !!inv.shield;
+  for (const [commandSlot, id] of Object.entries(wanted)) {
+    if (brain.gear[commandSlot] === id) continue;
+    try {
+      ai.runCommand(`replaceitem entity @s ${commandSlot} 0 ${id}`);
+    } catch (error) {
+      console.warn(`[AI Players] couldn't put ${id} in ${commandSlot}: ${error}`);
+    }
+    brain.gear[commandSlot] = id;
+  }
+}
+
+/**
+ * Picks up allowed tools (into the first empty slot), building blocks (never sand, gravel or other
+ * falling blocks) and, for Fighters, arrows lying next to it.
  * @param {import("@minecraft/server").Entity} ai
  * @param {string} ownerId
  * @param {import("./data.js").RoleId} role
@@ -523,6 +665,16 @@ function pickUpItems(ai, ownerId, role, record) {
       if (slot === -1) continue;
       item.remove();
       message = `picked up a ${itemName(stack.typeId)} (slot ${slot + 1})`;
+    } else if (isPlaceableBlock(stack.typeId)) {
+      const added = addBlocks(record, stack.typeId, stack.amount);
+      if (added === 0) continue;
+      const location = item.location;
+      item.remove();
+      if (added < stack.amount) {
+        stack.amount -= added;
+        ai.dimension.spawnItem(stack, location);
+      }
+      message = `picked up ${added} ${itemName(stack.typeId)}`;
     } else if (role === "fighter" && stack.typeId === ARROW_ITEM) {
       const added = addArrows(record, stack.amount);
       if (added === 0) continue;
@@ -570,6 +722,11 @@ function ensureBrain(ai) {
     equipped: "unknown", // forces the first equip
     activeSlot: -1,
     style: /** @type {"melee" | "ranged"} */ ("melee"),
+    gear: {},
+    hasShield: false,
+    shieldReadyAt: 0,
+    eatReadyAt: 0,
+    gather: createGatherState(),
     commandId: undefined,
     commandUntil: 0,
   });

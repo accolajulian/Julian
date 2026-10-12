@@ -46,7 +46,19 @@ import {
   totalArrows,
   toolKind,
   itemName,
+  ARMOR_SLOTS,
+  ARMOR_NAMES,
+  armorSlotFor,
+  SHIELD_ITEM,
+  BLOCK_SLOTS,
+  BLOCK_SLOT_MAX,
+  BAG_CAPACITY,
+  addBlocks,
+  totalBlocks,
+  isPlaceableBlock,
+  bagCount,
 } from "./inventory.js";
+import { FOCUSES } from "./gather_data.js";
 
 /** @typedef {import("./data.js").RoleId} RoleId */
 /** @typedef {import("./data.js").AiRecord} AiRecord */
@@ -66,14 +78,16 @@ const ROLES = {
     icon: "textures/items/iron_ingot",
     about:
       "A helper that gathers resources for you.\n\n" +
-      "§a+§r Follows you around\n" +
-      "§a+§r Hit it to choose what it should focus on getting\n" +
+      "§a+§r Follows you around and gathers what you choose: wood, stone, ores or everything\n" +
+      "§a+§r Chops real trees (not log houses) and mines with the right pickaxe, like a player\n" +
+      "§a+§r Never mines next to lava: covers it with blocks or backs away\n" +
+      "§a+§r Keeps what it gathers in a backpack for you to collect\n" +
       "§a+§r 3 tool slots for harvesting/mining tools, used in order 1, 2, 3\n" +
-      "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take\n" +
+      "§a+§r Armor slots, a shield slot and 2 block slots\n" +
+      "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Fights back if something attacks it, backs off to heal when hurt\n" +
       "§a+§r Respawns next to you if it dies, and remembers who attacked it\n\n" +
-      "§7Health: 30   Damage: 3\n" +
-      "§7Gathering is being added in a later update.",
+      "§7Health: 20 (same as a player)   Damage: 3 + tool",
   },
   fighter: {
     title: "Fighter AI",
@@ -88,15 +102,17 @@ const ROLES = {
       "§a+§r Backs off to heal when badly hurt\n" +
       "§a+§r 3 tool slots for fighting tools, used in order 1, 2, 3 (next one when a tool breaks)\n" +
       "§a+§r 2 arrow slots, so it can fight with a bow or crossbow\n" +
-      "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take\n" +
+      "§a+§r Armor slots and a shield slot (it blocks hits from the front)\n" +
+      "§a+§r 2 block slots: covers lava near it so it never walks into it\n" +
+      "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
       "§a+§r Interact with it, then hit a player, to send it after them\n" +
       "§a+§r Respawns next to you if it dies, and keeps its memory\n\n" +
-      "§7Health: 60   Damage: 6 + tool",
+      "§7Health: 20 (same as a player)   Damage: 6 + tool",
   },
 };
-const RESOURCE_FOCUS = ["Wood", "Stone", "Ores", "Everything"];
+const RESOURCE_FOCUS = FOCUSES; // Wood, Stone, Ores, Everything, Nothing
 
 /** Food you can give your AI (interact while holding it) and how much it heals. */
 /** @type {Record<string, number>} */
@@ -138,12 +154,15 @@ const GUIDE_TEXT =
   "§lControls§r\n" +
   "- §eHit§r your AI: open its menu\n" +
   "- §eInteract§r with your AI while holding food: heal it\n" +
-  "- §eInteract§r with your AI while holding a tool (or arrows): put it in its slots\n" +
+  "- §eInteract§r with your AI while holding a tool, armor, a shield, blocks or arrows: put it in its slots\n" +
   "- §eInteract§r with your Fighter AI (empty hand), then §ehit§r a player: it attacks them\n" +
-  "- Your AI's menu has §eInventory§r (food, tools 1-2-3, arrows) and §eAllies & enemies§r\n\n" +
+  "- Your AI's menu has §eInventory§r and §eAllies & enemies§r\n\n" +
+  "§lInventory§r\n" +
+  "Food, tools 1-2-3 (used in order; next one when a tool breaks), armor, shield, 2 block slots " +
+  "(no sand, gravel or other falling blocks), arrows (Fighter) and a backpack (Resource AI).\n\n" +
   "§lFood§r\n" +
   `Each AI makes ${FOOD_RESERVED} cooked chicken every 10 minutes, up to ${FOOD_CAP}. ` +
-  `The first ${FOOD_RESERVED} are its own; you and your allies can take the rest.\n\n` +
+  `The first ${FOOD_RESERVED} are its own (it eats them to heal); you and your allies can take the rest.\n\n` +
   "§lIf your AI dies§r\n" +
   `It respawns next to you after ${RESPAWN_SECONDS} seconds, and still remembers its enemies and allies.\n\n` +
   "§7Lost your egg? Open the Coder and pick your AI to get a new one.";
@@ -600,6 +619,10 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target, itemStac
       feed(player, target, heal);
     } else if (itemStack && ALLOWED_TOOLS[info.role].has(itemStack.typeId)) {
       quickAddTool(player, info.role, target);
+    } else if (itemStack && (armorSlotFor(itemStack.typeId) || itemStack.typeId === SHIELD_ITEM)) {
+      quickAddGear(player, info.role, target);
+    } else if (itemStack && isPlaceableBlock(itemStack.typeId)) {
+      quickAddBlocks(player, info.role, target);
     } else if (itemStack && info.role === "fighter" && itemStack.typeId === ARROW_ITEM) {
       quickAddArrows(player, target);
     } else if (itemStack && (ALLOWED_TOOLS.fighter.has(itemStack.typeId) || ALLOWED_TOOLS.resource.has(itemStack.typeId))) {
@@ -684,19 +707,21 @@ async function showAiMenu(player, ai, role) {
   } else {
     body =
       `Health: ${hp}\nFocus: §e${record.focus}§r\n${memoryLine}\n\n` +
-      "§7Choose what it should focus on getting. (Gathering is coming in a later update.)";
+      `Backpack: ${bagCount(record)} / ${BAG_CAPACITY}\n\n` +
+      "§7Choose what it should gather. It needs a pickaxe for stone and ores (iron or better for gold, " +
+      "redstone, diamonds and emeralds). Choose Nothing to just follow you.";
     for (const focus of RESOURCE_FOCUS) {
       actions.push({
         label: focus === record.focus ? `§2${focus} (current)` : focus,
         run: () => {
           record.focus = focus;
           saveRecord(player.id, role, record);
-          player.sendMessage(`§e${record.name} will focus on: ${focus}`);
+          player.sendMessage(focus === "Nothing" ? `§e${record.name} will just follow you.` : `§e${record.name} will gather: ${focus}`);
         },
       });
     }
   }
-  actions.unshift({ label: `Inventory\n§8Food, tools 1-2-3${role === "fighter" ? ", arrows" : ""}`, run: () => showInventory(player, role) });
+  actions.unshift({ label: `Inventory\n§8Food, tools, armor, shield, blocks${role === "fighter" ? ", arrows" : ", backpack"}`, run: () => showInventory(player, role) });
   actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
 
   const form = new ActionFormData().title(`${record.name} (${role === "fighter" ? "Fighter" : "Resource"} AI)`).body(body);
@@ -743,7 +768,12 @@ async function showInventory(player, role) {
     (next === undefined ? "Full." : `Next ${FOOD_RESERVED} in about ${next} min.`) +
     `§r\n\n§lTools§r §7(used in order 1, 2, 3; when one breaks it moves to the next)§r\n` +
     inv.tools.map((t, i) => `${i + 1}: ${describeTool(t)}`).join("\n");
-  if (role === "fighter") body += `\n\n§lArrows§r: ${inv.arrows.map((n, i) => `slot ${i + 1}: ${n}`).join(", ")}`;
+  body +=
+    `\n\n§lArmor§r: ${ARMOR_SLOTS.map((slot) => describeTool(inv.armor[slot])).join(", ")}` +
+    `\n§lShield§r: ${describeTool(inv.shield)}` +
+    `\n§lBlocks§r: ${inv.blocks.map((b, i) => `slot ${i + 1}: ${b ? `${b.count} ${itemName(b.id)}` : "empty"}`).join(", ")}`;
+  if (role === "fighter") body += `\n§lArrows§r: ${inv.arrows.map((n, i) => `slot ${i + 1}: ${n}`).join(", ")}`;
+  if (role === "resource") body += `\n§lBackpack§r: ${bagCount(record)} / ${BAG_CAPACITY} items`;
 
   /** @type {{ label: string, run: () => unknown }[]} */
   const actions = [];
@@ -751,8 +781,15 @@ async function showInventory(player, role) {
   for (let i = 0; i < TOOL_SLOTS; i++) {
     actions.push({ label: `Tool slot ${i + 1}\n§8${describeTool(inv.tools[i])}`, run: () => showToolSlot(player, role, i) });
   }
+  const worn = ARMOR_SLOTS.filter((slot) => inv.armor[slot]).length;
+  actions.push({ label: `Armor\n§8${worn} / 4 pieces`, run: () => showGear(player, role) });
+  actions.push({ label: `Shield\n§8${describeTool(inv.shield)}`, run: () => showGear(player, role) });
+  actions.push({ label: `Blocks\n§8${totalBlocks(record)} / ${BLOCK_SLOT_MAX * BLOCK_SLOTS}`, run: () => showBlocks(player, role) });
   if (role === "fighter") {
     actions.push({ label: `Arrows\n§8${totalArrows(record)} / ${ARROW_SLOT_MAX * ARROW_SLOTS}`, run: () => showArrows(player) });
+  }
+  if (role === "resource") {
+    actions.push({ label: `Backpack\n§8${bagCount(record)} / ${BAG_CAPACITY}`, run: () => collectBag(player) });
   }
 
   const form = new ActionFormData().title(`${record.name}'s inventory`).body(body);
@@ -898,6 +935,179 @@ async function showArrows(player) {
   }
 }
 
+/**
+ * Armor and shield: put on what you're holding, or take pieces back.
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ */
+async function showGear(player, role) {
+  const record = getRecord(player.id, role);
+  if (!record) return;
+  const inv = inventoryOf(record);
+  const held = player.getComponent("minecraft:inventory")?.container?.getItem(player.selectedSlotIndex);
+  const heldSlot = held ? armorSlotFor(held.typeId) : undefined;
+  const heldShield = held?.typeId === SHIELD_ITEM;
+
+  /** @type {{ label: string, run: () => unknown }[]} */
+  const actions = [];
+  if (held && (heldSlot || heldShield)) {
+    actions.push({ label: `Put on your ${itemName(held.typeId)}`, run: () => quickAddGear(player, role, undefined) });
+  }
+  for (const slot of ARMOR_SLOTS) {
+    const piece = inv.armor[slot];
+    if (piece) actions.push({ label: `Take back ${ARMOR_NAMES[slot].toLowerCase()}\n§8${describeTool(piece)}`, run: () => takeGear(player, role, slot) });
+  }
+  if (inv.shield) actions.push({ label: `Take back shield\n§8${describeTool(inv.shield)}`, run: () => takeGear(player, role, "shield") });
+
+  const body =
+    ARMOR_SLOTS.map((slot) => `${ARMOR_NAMES[slot]}: ${describeTool(inv.armor[slot])}`).join("\n") +
+    `\nShield: ${describeTool(inv.shield)}\n\n§7To add armor or a shield, hold it and open this again ` +
+    `(or interact with ${record.name} while holding it). Armor wears down when it gets hurt. ` +
+    "The shield blocks hits from the front; an axe knocks it down for a few seconds.";
+  const form = new ActionFormData().title("Armor & shield").body(body);
+  actions.forEach((a) => form.button(a.label));
+  form.button("Back");
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  if (response.selection >= actions.length) return showInventory(player, role);
+  await actions[response.selection].run();
+}
+
+/**
+ * Puts the armor piece or shield the player is holding on their AI (swapping out the old one).
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ * @param {import("@minecraft/server").Entity | undefined} ai
+ */
+function quickAddGear(player, role, ai) {
+  const record = getRecord(player.id, role);
+  const container = player.getComponent("minecraft:inventory")?.container;
+  const held = container?.getItem(player.selectedSlotIndex);
+  if (!record || !container || !held) return;
+  const inv = inventoryOf(record);
+  const slot = armorSlotFor(held.typeId);
+  let old;
+  if (slot) {
+    old = inv.armor[slot];
+    inv.armor[slot] = toolFromStack(held);
+  } else if (held.typeId === SHIELD_ITEM) {
+    old = inv.shield;
+    inv.shield = toolFromStack(held);
+  } else {
+    return;
+  }
+  container.setItem(player.selectedSlotIndex, old ? stackFromTool(old) : undefined);
+  saveRecord(player.id, role, record);
+  toolsChanged(ai?.id ?? record.id);
+  player.sendMessage(`§a${record.name} put on the ${itemName(held.typeId)}.`);
+}
+
+/** @param {import("@minecraft/server").Player} player @param {RoleId} role @param {import("./inventory.js").ArmorSlot | "shield"} slot */
+function takeGear(player, role, slot) {
+  const record = getRecord(player.id, role);
+  if (!record) return;
+  const inv = inventoryOf(record);
+  const piece = slot === "shield" ? inv.shield : inv.armor[slot];
+  if (!piece) return;
+  if (slot === "shield") inv.shield = null;
+  else inv.armor[slot] = null;
+  saveRecord(player.id, role, record);
+  toolsChanged(record.id);
+  giveItem(player, stackFromTool(piece));
+}
+
+/** @param {import("@minecraft/server").Player} player @param {RoleId} role */
+async function showBlocks(player, role) {
+  const record = getRecord(player.id, role);
+  if (!record) return;
+  const inv = inventoryOf(record);
+  const held = player.getComponent("minecraft:inventory")?.container?.getItem(player.selectedSlotIndex);
+  const heldOk = held && isPlaceableBlock(held.typeId);
+  const response = await new ActionFormData()
+    .title("Block slots")
+    .body(
+      inv.blocks.map((b, i) => `Slot ${i + 1}: ${b ? `${b.count} / ${BLOCK_SLOT_MAX} ${itemName(b.id)}` : "empty"}`).join("\n") +
+        `\n\n§7${record.name} uses these to cover lava. Only solid building blocks: ` +
+        "no sand, gravel, concrete powder or anything else that falls, and nothing explosive."
+    )
+    .button(heldOk ? `Add your ${itemName(held.typeId)}` : "Add blocks\n§8Hold the blocks first")
+    .button("Take all blocks back")
+    .button("Back")
+    .show(player);
+  if (response.canceled) return;
+  if (response.selection === 0) {
+    if (heldOk) quickAddBlocks(player, role, undefined);
+    else player.sendMessage("§eHold a stack of solid blocks (not sand or gravel) and try again.");
+  } else if (response.selection === 1) {
+    for (const b of inv.blocks) if (b) giveStacks(player, b.id, b.count);
+    inv.blocks = [null, null];
+    saveRecord(player.id, role, record);
+  } else {
+    return showInventory(player, role);
+  }
+}
+
+/**
+ * Moves the blocks the player is holding (that stack) into their AI's block slots.
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ * @param {import("@minecraft/server").Entity | undefined} ai
+ */
+function quickAddBlocks(player, role, ai) {
+  const record = getRecord(player.id, role);
+  const container = player.getComponent("minecraft:inventory")?.container;
+  const held = container?.getItem(player.selectedSlotIndex);
+  if (!record || !container || !held) return;
+  if (!isPlaceableBlock(held.typeId)) {
+    player.sendMessage("§c" + record.name + " only takes solid building blocks (no sand, gravel or falling blocks).");
+    return;
+  }
+  const added = addBlocks(record, held.typeId, held.amount);
+  if (added === 0) {
+    player.sendMessage(`§e${record.name}'s block slots are full.`);
+    return;
+  }
+  if (added >= held.amount) {
+    container.setItem(player.selectedSlotIndex, undefined);
+  } else {
+    held.amount -= added;
+    container.setItem(player.selectedSlotIndex, held);
+  }
+  saveRecord(player.id, role, record);
+  toolsChanged(ai?.id ?? record.id);
+  player.sendMessage(`§a${record.name} took ${added} ${itemName(held.typeId)} (${totalBlocks(record)} blocks).`);
+}
+
+/** The Resource AI's backpack: everything it gathered. */
+/** @param {import("@minecraft/server").Player} player */
+async function collectBag(player) {
+  const record = getRecord(player.id, "resource");
+  if (!record) return;
+  const bag = inventoryOf(record).bag;
+  const entries = Object.entries(bag).filter(([, n]) => n > 0);
+  const response = await new MessageFormData()
+    .title(`${record.name}'s backpack`)
+    .body(entries.length ? entries.map(([id, n]) => `${n} ${itemName(id)}`).join("\n") : "Empty.")
+    .button1(entries.length ? "Take everything" : "OK")
+    .button2("Back")
+    .show(player);
+  if (response.canceled) return;
+  if (response.selection === 1) return showInventory(player, "resource");
+  if (!entries.length) return;
+  for (const [id, n] of entries) giveStacks(player, id, n);
+  inventoryOf(record).bag = {};
+  saveRecord(player.id, "resource", record);
+  toolsChanged(record.id); // room again: start gathering right away
+  player.sendMessage(`§aYou collected everything from ${record.name}'s backpack.`);
+}
+
+/** @param {import("@minecraft/server").Player} player @param {string} id @param {number} total */
+function giveStacks(player, id, total) {
+  const max = new ItemStack(id, 1).maxAmount;
+  while (total > 0) {
+    const n = Math.min(max, total);
+    giveItem(player, new ItemStack(id, n));
+    total -= n;
+  }
+}
+
 /** @param {import("@minecraft/server").Player} player @param {RoleId} role @param {import("@minecraft/server").Entity} ai */
 function quickAddTool(player, role, ai) {
   const record = getRecord(player.id, role);
@@ -939,11 +1149,14 @@ function giveArrows(player, total) {
   }
 }
 
-/** When an AI is dismissed: its tools, arrows and spare chicken go back to the owner. */
+/** When an AI is dismissed: everything it carries (except its own 10 chicken) goes back to the owner. */
 /** @param {import("@minecraft/server").Player} player @param {AiRecord} record */
 function returnEverything(player, record) {
   const inv = inventoryOf(record);
   for (const tool of inv.tools) if (tool) giveItem(player, stackFromTool(tool));
+  for (const piece of [...ARMOR_SLOTS.map((slot) => inv.armor[slot]), inv.shield]) if (piece) giveItem(player, stackFromTool(piece));
+  for (const b of inv.blocks) if (b) giveStacks(player, b.id, b.count);
+  for (const [id, n] of Object.entries(inv.bag)) if (n > 0) giveStacks(player, id, n);
   giveArrows(player, totalArrows(record));
   const food = takeableFood(record);
   if (food > 0) giveItem(player, new ItemStack(FOOD_ITEM, food));

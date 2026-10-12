@@ -1,6 +1,7 @@
-// AI inventories: a food slot, 3 tool slots used in order (1 -> 2 -> 3), and 2 arrow slots.
+// AI inventories: food, 3 tool slots used in order (1 -> 2 -> 3), 4 armor slots, a shield slot,
+// 2 block slots, 2 arrow slots (Fighter) and a backpack for gathered items (Resource AI).
 // Everything is saved in the AI's record, so it is kept when the AI dies and respawns.
-import { world, ItemStack, EnchantmentType } from "@minecraft/server";
+import { world, ItemStack, EnchantmentType, BlockTypes } from "@minecraft/server";
 
 export const FOOD_ITEM = "minecraft:cooked_chicken";
 export const FOOD_BATCH = 10; // made every FOOD_EVERY_TICKS
@@ -11,6 +12,33 @@ export const TOOL_SLOTS = 3;
 export const ARROW_ITEM = "minecraft:arrow";
 export const ARROW_SLOTS = 2;
 export const ARROW_SLOT_MAX = 64;
+export const BLOCK_SLOTS = 2;
+export const BLOCK_SLOT_MAX = 64;
+export const BAG_CAPACITY = 576; // 9 stacks
+export const SHIELD_ITEM = "minecraft:shield";
+export const FOOD_HEALS = 4; // health a cooked chicken gives the AI when it eats one
+
+/** @typedef {"head" | "chest" | "legs" | "feet"} ArmorSlot */
+/** @type {ArmorSlot[]} */
+export const ARMOR_SLOTS = ["head", "chest", "legs", "feet"];
+const ARMOR_MATERIALS = ["leather", "chainmail", "iron", "golden", "diamond", "netherite"];
+/** @type {Record<ArmorSlot, Set<string>>} */
+export const ARMOR_ALLOWED = {
+  head: new Set([...ARMOR_MATERIALS.map((m) => `minecraft:${m}_helmet`), "minecraft:turtle_helmet"]),
+  chest: new Set(ARMOR_MATERIALS.map((m) => `minecraft:${m}_chestplate`)),
+  legs: new Set(ARMOR_MATERIALS.map((m) => `minecraft:${m}_leggings`)),
+  feet: new Set(ARMOR_MATERIALS.map((m) => `minecraft:${m}_boots`)),
+};
+/** @type {Record<ArmorSlot, string>} */
+export const ARMOR_NAMES = { head: "Helmet", chest: "Chestplate", legs: "Leggings", feet: "Boots" };
+/** Command slot names used to put armor on the AI. */
+/** @type {Record<ArmorSlot, string>} */
+export const ARMOR_COMMAND_SLOT = { head: "slot.armor.head", chest: "slot.armor.chest", legs: "slot.armor.legs", feet: "slot.armor.feet" };
+
+/** @param {string} id @returns {ArmorSlot | undefined} */
+export function armorSlotFor(id) {
+  return ARMOR_SLOTS.find((slot) => ARMOR_ALLOWED[slot].has(id));
+}
 
 /** @typedef {import("./data.js").RoleId} RoleId */
 /**
@@ -78,6 +106,18 @@ export function toolKind(role) {
 // ---------------------------------------------------------------- record setup
 
 /**
+ * @typedef {Object} Inventory
+ * @property {(ToolData | null)[]} tools
+ * @property {number[]} arrows
+ * @property {number} food
+ * @property {number} foodAt
+ * @property {Record<ArmorSlot, ToolData | null>} armor
+ * @property {ToolData | null} shield
+ * @property {({ id: string, count: number } | null)[]} blocks
+ * @property {Record<string, number>} bag
+ */
+
+/**
  * Makes sure a record has all inventory fields (older records may not).
  * @param {import("./data.js").AiRecord} record
  */
@@ -88,7 +128,11 @@ export function inventoryOf(record) {
   if (!Array.isArray(record.arrows) || record.arrows.length !== ARROW_SLOTS) record.arrows = [0, 0];
   if (typeof record.food !== "number") record.food = 0;
   if (typeof record.foodAt !== "number") record.foodAt = world.getAbsoluteTime();
-  return /** @type {{ tools: (ToolData | null)[], arrows: number[], food: number, foodAt: number }} */ (record);
+  if (!record.armor) record.armor = { head: null, chest: null, legs: null, feet: null };
+  if (record.shield === undefined) record.shield = null;
+  if (!Array.isArray(record.blocks) || record.blocks.length !== BLOCK_SLOTS) record.blocks = [null, null];
+  if (!record.bag) record.bag = {};
+  return /** @type {Inventory} */ (record);
 }
 
 // ---------------------------------------------------------------- food
@@ -186,16 +230,33 @@ export function describeTool(tool) {
  * @returns {"ok" | "broke" | "none"}
  */
 export function wearTool(record, slot) {
-  const tool = inventoryOf(record).tools[slot];
+  const tools = inventoryOf(record).tools;
+  const tool = tools[slot];
   if (!tool) return "none";
-  const max = maxDurability(tool.id);
+  const result = wearItem(tool, 1);
+  if (result === "broke") tools[slot] = null;
+  return result;
+}
+
+/**
+ * Wears any item with durability (tool, armor, shield). The caller removes it if it broke.
+ * @param {ToolData} item
+ * @param {number} amount
+ * @returns {"ok" | "broke"}
+ */
+export function wearItem(item, amount) {
+  const max = maxDurability(item.id);
   if (!max) return "ok";
-  const unbreaking = tool.ench?.find(([id]) => id.replace("minecraft:", "") === "unbreaking")?.[1] ?? 0;
-  if (Math.random() >= 1 / (unbreaking + 1)) return "ok";
-  tool.damage += 1;
-  if (tool.damage < max) return "ok";
-  inventoryOf(record).tools[slot] = null;
-  return "broke";
+  const unbreaking = enchantLevel(item, "unbreaking");
+  for (let i = 0; i < amount; i++) {
+    if (Math.random() < 1 / (unbreaking + 1)) item.damage += 1;
+  }
+  return item.damage >= max ? "broke" : "ok";
+}
+
+/** @param {ToolData} item @param {string} name */
+export function enchantLevel(item, name) {
+  return item.ench?.find(([id]) => id.replace("minecraft:", "") === name)?.[1] ?? 0;
 }
 
 /**
@@ -245,4 +306,101 @@ export function useArrow(record) {
   if (slot === -1) return false;
   arrows[slot] -= 1;
   return true;
+}
+
+// ---------------------------------------------------------------- blocks
+
+/** Blocks that fall when there's nothing under them. Never allowed in block slots. */
+const FALLING_BLOCKS = new Set([
+  "minecraft:sand",
+  "minecraft:red_sand",
+  "minecraft:gravel",
+  "minecraft:suspicious_sand",
+  "minecraft:suspicious_gravel",
+  "minecraft:anvil",
+  "minecraft:chipped_anvil",
+  "minecraft:damaged_anvil",
+  "minecraft:dragon_egg",
+  "minecraft:scaffolding",
+  "minecraft:pointed_dripstone",
+  ...["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple",
+    "blue", "brown", "green", "red", "black"].map((c) => `minecraft:${c}_concrete_powder`),
+]);
+/** Not solid building blocks, explosive, or not placeable on their own. */
+const NOT_BUILDING_BLOCKS =
+  /tnt|respawn_anchor|_bed$|_door$|sign|banner|shulker_box|command_block|structure|jigsaw|barrier|bedrock|spawner|portal|fire|lava|water|air$|light_block|sapling|flower|tulip|orchid|allium|bluet|daisy|poppy|dandelion|cornflower|lily|_bush|fern|short_grass|tall_grass|seagrass|kelp|torch|lantern|button|pressure_plate|rail|carpet|slab|pane|bars|ladder|vine|chain|candle|cake|flower_pot|head$|skull|lever|tripwire|redstone_wire|repeater|comparator|trapdoor|coral_fan|amethyst_bud|amethyst_cluster|sea_pickle|frog_spawn|_egg$|mushroom$|azalea$|snow_layer/;
+
+/** Solid building blocks only: no sand, gravel or anything else that falls, and no explosives. */
+/** @param {string} id */
+export function isPlaceableBlock(id) {
+  if (FALLING_BLOCKS.has(id) || NOT_BUILDING_BLOCKS.test(id)) return false;
+  try {
+    return BlockTypes.get(id) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/** @param {import("./data.js").AiRecord} record */
+export function totalBlocks(record) {
+  return inventoryOf(record).blocks.reduce((sum, b) => sum + (b?.count ?? 0), 0);
+}
+
+/**
+ * Adds blocks: first to a slot already holding that block, then to an empty slot. Returns how many fit.
+ * @param {import("./data.js").AiRecord} record
+ * @param {string} id
+ * @param {number} amount
+ */
+export function addBlocks(record, id, amount) {
+  if (!isPlaceableBlock(id)) return 0;
+  const blocks = inventoryOf(record).blocks;
+  let added = 0;
+  for (const pass of ["same", "empty"]) {
+    for (let i = 0; i < BLOCK_SLOTS && amount > 0; i++) {
+      const slot = blocks[i];
+      if (pass === "same" && slot?.id !== id) continue;
+      if (pass === "empty" && slot) continue;
+      const current = slot?.count ?? 0;
+      const fit = Math.min(amount, BLOCK_SLOT_MAX - current);
+      if (fit <= 0) continue;
+      blocks[i] = { id, count: current + fit };
+      amount -= fit;
+      added += fit;
+    }
+  }
+  return added;
+}
+
+/**
+ * Takes one block to place (slot 1 first). Returns its id, or undefined if there are none.
+ * @param {import("./data.js").AiRecord} record
+ */
+export function takeBlock(record) {
+  const blocks = inventoryOf(record).blocks;
+  const i = blocks.findIndex((b) => b && b.count > 0);
+  const slot = blocks[i];
+  if (!slot) return undefined;
+  slot.count -= 1;
+  if (slot.count <= 0) blocks[i] = null;
+  return slot.id;
+}
+
+// ---------------------------------------------------------------- backpack (gathered items)
+
+/** @param {import("./data.js").AiRecord} record */
+export function bagCount(record) {
+  return Object.values(inventoryOf(record).bag).reduce((a, b) => a + b, 0);
+}
+
+/**
+ * @param {import("./data.js").AiRecord} record
+ * @param {string} id
+ * @param {number} amount
+ * @returns {number} how many fit
+ */
+export function addToBag(record, id, amount) {
+  const fit = Math.max(0, Math.min(amount, BAG_CAPACITY - bagCount(record)));
+  if (fit > 0) inventoryOf(record).bag[id] = (inventoryOf(record).bag[id] ?? 0) + fit;
+  return fit;
 }

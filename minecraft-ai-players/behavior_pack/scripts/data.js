@@ -20,6 +20,10 @@ const MAX_ENEMIES = 40;
  * @property {number[]} [arrows]  2 arrow slots.
  * @property {number} [food]  Cooked chicken it has (the first 10 are its own).
  * @property {number} [foodAt]  Game time of the last food batch.
+ * @property {Record<"head" | "chest" | "legs" | "feet", import("./inventory.js").ToolData | null>} [armor]
+ * @property {import("./inventory.js").ToolData | null} [shield]
+ * @property {({ id: string, count: number } | null)[]} [blocks]  2 block slots.
+ * @property {Record<string, number>} [bag]  Gathered items waiting to be collected.
  */
 /**
  * @typedef {Object} Memory  Saved per owner, shared by both of their AIs. Survives death.

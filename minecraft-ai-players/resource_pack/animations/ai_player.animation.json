@@ -5,7 +5,11 @@
       "loop": true,
       "bones": {
         "head": {
-          "rotation": ["query.target_x_rotation", "query.target_y_rotation", 0.0]
+          "rotation": [
+            "query.target_x_rotation",
+            "query.target_y_rotation",
+            0.0
+          ]
         }
       }
     },
@@ -13,16 +17,32 @@
       "loop": true,
       "bones": {
         "rightArm": {
-          "rotation": ["-math.sin(query.modified_distance_moved * 40.0) * 45.0 * query.modified_move_speed", 0.0, 0.0]
+          "rotation": [
+            "-math.sin(query.modified_distance_moved * 40.0) * 45.0 * query.modified_move_speed",
+            0.0,
+            0.0
+          ]
         },
         "leftArm": {
-          "rotation": ["math.sin(query.modified_distance_moved * 40.0) * 45.0 * query.modified_move_speed", 0.0, 0.0]
+          "rotation": [
+            "math.sin(query.modified_distance_moved * 40.0) * 45.0 * query.modified_move_speed",
+            0.0,
+            0.0
+          ]
         },
         "rightLeg": {
-          "rotation": ["math.sin(query.modified_distance_moved * 40.0) * 50.0 * query.modified_move_speed", 0.0, 0.0]
+          "rotation": [
+            "math.sin(query.modified_distance_moved * 40.0) * 50.0 * query.modified_move_speed",
+            0.0,
+            0.0
+          ]
         },
         "leftLeg": {
-          "rotation": ["-math.sin(query.modified_distance_moved * 40.0) * 50.0 * query.modified_move_speed", 0.0, 0.0]
+          "rotation": [
+            "-math.sin(query.modified_distance_moved * 40.0) * 50.0 * query.modified_move_speed",
+            0.0,
+            0.0
+          ]
         }
       }
     },
@@ -30,7 +50,35 @@
       "loop": true,
       "bones": {
         "rightArm": {
-          "rotation": ["-math.sin(variable.attack_time * 180.0) * 100.0", "math.sin(variable.attack_time * 180.0) * 20.0", 0.0]
+          "rotation": [
+            "-math.sin(variable.attack_time * 180.0) * 100.0",
+            "math.sin(variable.attack_time * 180.0) * 20.0",
+            0.0
+          ]
+        }
+      }
+    },
+    "animation.aip.ai_player.mine": {
+      "animation_length": 0.4,
+      "bones": {
+        "rightArm": {
+          "rotation": {
+            "0.0": [
+              0,
+              0,
+              0
+            ],
+            "0.15": [
+              -110,
+              10,
+              0
+            ],
+            "0.4": [
+              0,
+              0,
+              0
+            ]
+          }
         }
       }
     }

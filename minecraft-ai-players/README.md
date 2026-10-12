@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.5.0)
+## What it does (v1.6.0)
 - **AI Guide** block: every player gets one the first time they join. Tap it to read how everything works.
   Craft another with a book + crafting table.
 - **Coder** block: the shop. Tap it, pick an AI to read what it does and its price, then buy it.
@@ -27,19 +27,37 @@ An original add-on with AI companions that look like players. It's kept separate
 | Hit (left click) your AI | Opens its menu. Your hits never hurt it. |
 | Interact (right click) holding food | Heals it (bread, cooked meat, golden apple) |
 | Interact with your AI holding an allowed tool | Puts it in the first empty tool slot |
+| Interact with your AI holding armor or a shield | Puts it on (swaps out the old piece) |
+| Interact with your AI holding solid blocks | Puts them in its block slots |
 | Interact with your Fighter AI holding arrows | Puts them in its arrow slots |
 | An ally interacts with your AI | They can take spare cooked chicken |
 | Interact with your Fighter AI (empty hand), then hit a player | The Fighter goes after that player |
 
 **Fighter AI menu:** *Inventory*, *Follow and protect me*, *Guard this spot*, *Allies & enemies*.
-**Resource AI menu:** *Inventory*, choose a focus (Wood, Stone, Ores, Everything), *Allies & enemies*. Gathering comes later.
+**Resource AI menu:** *Inventory*, choose a focus (Wood, Stone, Ores, Everything, Nothing), *Allies & enemies*.
+
+Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
+
+### Gathering (gather.js, Resource AI)
+- Walks to the nearest block of its focus (Minecraft's own pathfinding) and mines it when in reach.
+- Uses the first tool slot that can mine the block; pickaxe tiers apply like for players (stone for iron,
+  lapis and copper; iron for gold, redstone, diamonds and emeralds; diamond for ancient debris). Logs can be
+  chopped by hand, slower. Mining takes as long as it would for a player (Efficiency counts).
+- Only chops real trees (logs with leaves above), so it won't take apart log houses.
+- Drops go into its block slots first (building blocks only), then its backpack (576 items).
+- **Lava:** it never mines a block touching lava. Lava within 2 blocks of either AI gets covered with blocks
+  from its block slots; with no blocks it backs away, stops gathering for a moment and tells you.
 
 ### Inventory (inventory.js)
 | Slot | Rules |
 |---|---|
-| **Food** | Makes 10 cooked chicken every 10 minutes of game time, up to 30. The first 10 are the AI's own and can never be taken; players (owner and allies) can take anything above 10. The timer starts when the AI first joins the world. |
+| **Food** | Makes 10 cooked chicken every 10 minutes of game time, up to 30. The first 10 are the AI's own and can never be taken (it eats them to heal); players (owner and allies) can take anything above 10. The timer starts when the AI first joins the world. |
 | **Tools 1, 2, 3** | Used in order. When a tool breaks, it moves on to the next slot. Tools wear like a player's (Unbreaking counts) and keep their enchantments and names. Fighter: swords, axes, trident, mace, bow, crossbow. Resource AI: pickaxes, axes, shovels, hoes, shears. No TNT or explosives. |
 | **Arrows 1, 2** | Fighter only. 64 each. Used for a bow/crossbow; one arrow per shot. |
+| **Armor** | Helmet, chestplate, leggings, boots (any armor material). Shown on the AI, protects it, wears down when it gets hurt. |
+| **Shield** | Blocks hits and arrows from the front, with a short pause between blocks. An axe hit knocks it down for 5 seconds. |
+| **Blocks 1, 2** | 64 each, solid building blocks only: no sand, gravel, concrete powder, anvils or anything else that falls, no explosives. Used to cover lava. |
+| **Backpack** | Resource AI only. What it gathers (576 items). Take everything from the Inventory menu. |
 
 Smart switches for the Fighter: bow/crossbow (if it has arrows) when the target is more than 6 blocks away,
 an axe against a shield, a melee tool up close. Otherwise, slot order. Tools, arrows and food stay with the
@@ -78,7 +96,9 @@ AI when it dies; dismissing it gives you back the tools, arrows and spare chicke
 | `behavior_pack/scripts/main.js` | Guide, shop, eggs, AI menus, commands, respawning (Script API 2.9.0) |
 | `behavior_pack/scripts/brain.js` | Smart fighting: target choice, retreat, weapons, enemy memory |
 | `behavior_pack/scripts/data.js` | Saved records and memory, shared helpers |
-| `behavior_pack/scripts/inventory.js` | Food, tool and arrow slots and their rules |
+| `behavior_pack/scripts/inventory.js` | All slots (food, tools, armor, shield, blocks, arrows, backpack) and their rules |
+| `behavior_pack/scripts/gather.js` | Mining, chopping and lava safety |
+| `behavior_pack/scripts/gather_data.js` | Generated list of gatherable blocks (don't edit by hand) |
 | `behavior_pack/blocks/coder.json` | The Coder block (shop) |
 | `behavior_pack/blocks/ai_guide.json` | The AI Guide block |
 | `behavior_pack/items/*_egg.json` | The eggs you get after buying |
@@ -93,7 +113,7 @@ AI when it dies; dismissing it gives you back the tools, arrows and spare chicke
 ## Rebuild
 ```
 python3 tools/make_skins.py           # art
-python3 tools/make_entity_targets.py  # AI targeting rules (brain slots)
+python3 tools/make_entity_targets.py  # AI rules (targeting, gathering) + gather_data.js
 python3 tools/build.py                # checks JSON and zips the .mcaddon
 ```
 Bump the version numbers in both `manifest.json` files for every release so Minecraft picks up the update.
