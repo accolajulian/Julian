@@ -1,7 +1,10 @@
 // Gathering (Resource AI) and lava safety (both AIs).
 //
 // The AI finds the nearest block of its focus (within 12 blocks of its owner), walks to a free spot
-// next to it (stepping up blocks, never into lava or off a cliff), then mines it: it picks a suitable tool from slots 1-2-3,
+// next to it (really walking, with gravity, jumping up single blocks, never into lava or off a cliff),
+// then mines it. Trees are chopped like a player would: stand next to the trunk and chop the bottom
+// two logs, step into that gap (breaking dirt or leaves in the way), chop the rest of the tree from
+// there, then go to the next tree. It picks a suitable tool from slots 1-2-3,
 // takes as long as a player would, puts the drops in its valuables / block slots (anything else goes to
 // its owner), and never mines
 // next to lava. Lava near any AI gets covered with blocks from its block slots, or the AI backs away.
@@ -35,8 +38,14 @@ const MATERIAL_SPEED = { wooden: 2, stone: 4, iron: 6, diamond: 8, netherite: 9,
 const IDLE_MS = 25000; // nothing to mine for this long: take a short break from looking
 const WALK_RADIUS = 14; // how far it looks for blocks to walk to
 const OWNER_RANGE = 12; // only gathers this close to its owner
-const WALK_STEP = 0.22; // blocks per step; a step every 2 ticks is about 2 blocks a second
+const WALK_SPEED = 0.2; // blocks per tick (about a player's walking speed)
+const JUMP = 0.42; // jump strength for stepping up one block
+const STUCK_TICKS = 40; // no progress for this long: give up the walk
 const WALK_MS = 15000; // gives up on a walk after this long
+const TREE_REACH = 6; // from inside the trunk it reaches logs this far away
+const TREE_MS = 120000; // gives up on a tree after this long
+/** Blocks it may break to step into the trunk gap. */
+const CLEARABLE = /leaves|dirt|grass_block|podzol|mycelium|mud|moss|snow|vine|roots|propagule|_log$|_stem$|_wood$/;
 /** Blocks it can walk through (plants, torches, snow...). */
 const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers/;
 const WARN_MS = 30000; // don't repeat the same chat warning more often than this
@@ -44,7 +53,8 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
 /**
  * @typedef {Object} GatherState  Per loaded AI (not saved).
- * @property {{ x: number, y: number, z: number, id: string, until: number, slot: number } | undefined} mining
+ * @property {{ x: number, y: number, z: number, id: string, until: number, slot: number, reach: number } | undefined} mining
+ * @property {TreeJob | undefined} tree  The tree it's chopping.
  * @property {number} pausedUntil
  * @property {number} idleSince
  * @property {Map<string, number>} avoid  Blocks it won't mine for a while (next to lava), key -> until.
@@ -52,9 +62,24 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
  * @property {boolean} walking  Walking to a block (see `walkers`).
  */
 
+/**
+ * @typedef {Object} TreeJob
+ * @property {Vector3} base  lowest log of the trunk
+ * @property {Vector3} stand  where it stands to chop the bottom two logs
+ * @property {Vector3[]} logs  every log of this tree
+ * @property {"approach" | "base" | "enter" | "chop"} phase
+ * @property {boolean} walked  already tried walking for this phase
+ * @property {number} until
+ */
+
 /** @returns {GatherState} */
 export function createGatherState() {
-  return { mining: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(), walking: false };
+  return { mining: undefined, tree: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(), walking: false };
+}
+
+/** Busy with a block or a tree (it should stand still, not wander off). @param {GatherState} state */
+export function isBusy(state) {
+  return state.walking || !!state.mining || !!state.tree;
 }
 
 // ================================================================ lava safety (both AIs)
@@ -155,6 +180,7 @@ function lavaNextTo(dim, p) {
 export function setGatherBehavior(ai, state, focus, canGather) {
   if (canGather && focus !== "Nothing" && Date.now() >= state.pausedUntil) return;
   state.mining = undefined;
+  state.tree = undefined;
   stopWalking(ai.id, state);
 }
 
@@ -176,7 +202,7 @@ export function gather(ai, ownerId, record, state, owner) {
   const m = state.mining;
   if (m) {
     const block = dim.getBlock(m);
-    if (!block || block.typeId !== m.id || dist(center(m), ai.location) > REACH + 1.5) {
+    if (!block || block.typeId !== m.id || dist(center(m), eyeOf(ai)) > m.reach + 1) {
       state.mining = undefined;
       return undefined;
     }
@@ -190,13 +216,23 @@ export function gather(ai, ownerId, record, state, owner) {
     return undefined;
   }
 
+  if (state.tree) return chopTree(ai, record, state);
   if (state.walking) return undefined; // on its way to a block
 
   // Find the closest gatherable block in reach.
   const target = findTarget(ai, record, state, ownerId, REACH, owner);
+  if (target && isLog(target.id)) {
+    startTree(ai, state, target.location);
+    return undefined;
+  }
   if (!target) {
-    // Nothing in reach: walk to the nearest one further away.
+    // Nothing in reach: walk to the nearest one further away (a tree gets the tree routine).
     const far = findTarget(ai, record, state, ownerId, WALK_RADIUS, owner);
+    if (far && isLog(far.id)) {
+      startTree(ai, state, far.location);
+      state.idleSince = now;
+      return undefined;
+    }
     if (far) {
       const stand = standSpot(dim, far.location, ai.location);
       if (stand) {
@@ -213,8 +249,183 @@ export function gather(ai, ownerId, record, state, owner) {
     }
     return undefined;
   }
-  state.mining = { ...target.location, id: target.id, slot: target.slot, until: system.currentTick + target.ticks };
+  state.mining = { ...target.location, id: target.id, slot: target.slot, until: system.currentTick + target.ticks, reach: REACH };
   return target.slot;
+}
+
+// ================================================================ trees
+
+/** @param {string | undefined} id */
+function isLog(id) {
+  return !!id && GATHER[id]?.focus === "Wood";
+}
+
+/**
+ * Plans chopping the tree that `log` belongs to.
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {GatherState} state
+ * @param {Vector3} log
+ */
+function startTree(ai, state, log) {
+  const dim = ai.dimension;
+  let base = { ...log };
+  while (isLog(dim.getBlock({ ...base, y: base.y - 1 })?.typeId)) base = { ...base, y: base.y - 1 };
+  const logs = treeLogs(dim, base);
+  const stand = standSpot(dim, base, ai.location, true);
+  if (!stand) {
+    avoidTree(state, logs);
+    return;
+  }
+  state.tree = { base, stand, logs, phase: "approach", walked: false, until: Date.now() + TREE_MS };
+}
+
+/**
+ * Every log of the tree: logs connected to the trunk, going up and out (not into the next tree over).
+ * @param {import("@minecraft/server").Dimension} dim
+ * @param {Vector3} base
+ */
+function treeLogs(dim, base) {
+  const seen = new Set([blockKey(base)]);
+  const queue = [base];
+  /** @type {Vector3[]} */
+  const logs = [];
+  while (queue.length > 0 && logs.length < 120) {
+    const p = /** @type {Vector3} */ (queue.shift());
+    logs.push(p);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const n = { x: p.x + dx, y: p.y + dy, z: p.z + dz };
+          if (n.y < base.y || Math.abs(n.x - base.x) > 5 || Math.abs(n.z - base.z) > 5 || n.y > base.y + 30) continue;
+          // At ground level only the trunk itself (2x2 trunks), so it doesn't wander into the next tree.
+          if (n.y <= base.y + 1 && (dy !== 0 || Math.abs(dx) + Math.abs(dz) !== 1)) continue;
+          const k = blockKey(n);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          if (isLog(dim.getBlock(n)?.typeId)) queue.push(n);
+        }
+      }
+    }
+  }
+  return logs;
+}
+
+/**
+ * One think of chopping a tree. Returns the tool slot while chopping.
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {import("./data.js").AiRecord} record
+ * @param {GatherState} state
+ * @returns {number | undefined}
+ */
+function chopTree(ai, record, state) {
+  const t = /** @type {TreeJob} */ (state.tree);
+  const dim = ai.dimension;
+  if (Date.now() > t.until) {
+    endTree(state, t, true);
+    return undefined;
+  }
+  if (state.walking) return undefined;
+  const above = { ...t.base, y: t.base.y + 1 };
+
+  if (t.phase === "approach") {
+    // 1. Walk up to the trunk.
+    if (flatDist(ai.location, t.stand) > 0.8) {
+      if (t.walked) {
+        endTree(state, t, true); // couldn't get there
+        return undefined;
+      }
+      t.walked = true;
+      startWalking(ai, state, t.stand, above);
+      return undefined;
+    }
+    ai.clearVelocity();
+    t.phase = "base";
+  }
+
+  if (t.phase === "base") {
+    // 2. Stand still and chop the bottom two logs.
+    const next = [t.base, above].find((p) => isLog(dim.getBlock(p)?.typeId));
+    if (next) return startChop(ai, record, next, REACH + 1, state);
+    t.phase = "enter";
+    t.walked = false;
+  }
+
+  if (t.phase === "enter") {
+    // 3. Step into the gap the two logs left, breaking dirt or leaves in the way.
+    if (clearGap(dim, record, t.base)) return undefined;
+    if (flatDist(ai.location, t.base) > 0.4 || Math.abs(ai.location.y - t.base.y) > 0.6) {
+      if (!t.walked) {
+        t.walked = true;
+        startWalking(ai, state, t.base, { ...t.base, y: t.base.y + 3 });
+        return undefined;
+      }
+      ai.teleport({ x: t.base.x + 0.5, y: t.base.y, z: t.base.z + 0.5 }); // it's one block away: hop in
+    }
+    ai.clearVelocity();
+    t.phase = "chop";
+  }
+
+  // 4. Chop the rest of the tree from inside the trunk, lowest logs first.
+  const eye = eyeOf(ai);
+  const next = t.logs
+    .filter((p) => dist(center(p), eye) <= TREE_REACH && isLog(dim.getBlock(p)?.typeId))
+    .sort((a, b) => a.y - b.y || dist(center(a), eye) - dist(center(b), eye))[0];
+  if (next) return startChop(ai, record, next, TREE_REACH, state);
+  endTree(state, t, false); // done: on to the next tree
+  return undefined;
+}
+
+/**
+ * Starts mining a log (the mining part of gather() finishes it).
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {import("./data.js").AiRecord} record
+ * @param {Vector3} p
+ * @param {number} reach
+ * @param {GatherState} state
+ */
+function startChop(ai, record, p, reach, state) {
+  const id = /** @type {string} */ (ai.dimension.getBlock(p)?.typeId);
+  const info = GATHER[id];
+  const tool = toolFor(record, info) ?? { slot: -1, speed: 1 };
+  const ticks = Math.min(400, Math.max(4, Math.ceil((info.hardness * 30) / tool.speed)));
+  state.mining = { ...p, id, slot: tool.slot, until: system.currentTick + ticks, reach };
+  face(ai, center(p));
+  return tool.slot;
+}
+
+/**
+ * Breaks dirt or leaves where the AI's feet and head go in the trunk gap. Returns true if it broke something.
+ * @param {import("@minecraft/server").Dimension} dim
+ * @param {import("./data.js").AiRecord} record
+ * @param {Vector3} base
+ */
+function clearGap(dim, record, base) {
+  let broke = false;
+  for (const p of [base, { ...base, y: base.y + 1 }]) {
+    const block = dim.getBlock(p);
+    if (!block || passable(block) || !CLEARABLE.test(block.typeId)) continue;
+    const id = block.typeId;
+    dim.setBlockType(p, "minecraft:air");
+    dim.playSound(/leaves/.test(id) ? "dig.grass" : "dig.gravel", p);
+    const drop = /grass_block|podzol|mycelium/.test(id) ? "minecraft:dirt" : id;
+    if (!/leaves|vine|snow/.test(id) && isPlaceableBlock(drop)) addBlocks(record, drop, 1);
+    broke = true;
+  }
+  return broke;
+}
+
+/** @param {GatherState} state @param {TreeJob} t @param {boolean} failed */
+function endTree(state, t, failed) {
+  if (failed) avoidTree(state, t.logs);
+  state.tree = undefined;
+  state.mining = undefined;
+  state.idleSince = Date.now();
+}
+
+/** Skip this tree for a minute. @param {GatherState} state @param {Vector3[]} logs */
+function avoidTree(state, logs) {
+  const until = Date.now() + 60000;
+  for (const p of logs) state.avoid.set(blockKey(p), until);
 }
 
 /**
@@ -366,7 +577,10 @@ function hasLeavesAbove(dim, p) {
 
 // ================================================================ walking
 
-/** AIs walking to a block. @type {Map<string, { ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number }>} */
+/**
+ * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3 }} Walker
+ */
+/** AIs walking to a block. @type {Map<string, Walker>} */
 const walkers = new Map();
 
 /**
@@ -376,7 +590,7 @@ const walkers = new Map();
  * @param {Vector3} block  the block it will mine
  */
 function startWalking(ai, state, stand, block) {
-  walkers.set(ai.id, { ai, state, stand, block, until: Date.now() + WALK_MS, stuck: 0 });
+  walkers.set(ai.id, { ai, state, stand, block, until: Date.now() + WALK_MS, stuck: 0, last: { ...ai.location } });
   state.walking = true;
 }
 
@@ -386,7 +600,8 @@ function stopWalking(aiId, state) {
   state.walking = false;
 }
 
-// Move walking AIs a small step every 2 ticks.
+// Walking AIs take a real step every tick: pushed along the ground (so gravity and the walking
+// animation work), jumping up single blocks.
 system.runInterval(() => {
   for (const [id, w] of walkers) {
     if (!w.ai.isValid || Date.now() > w.until) {
@@ -399,50 +614,75 @@ system.runInterval(() => {
       stopWalking(id, w.state);
     }
   }
-}, 2);
+}, 1);
 
 /**
  * @param {string} id
- * @param {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number }} w
+ * @param {Walker} w
  */
 function step(id, w) {
-  const dim = w.ai.dimension;
-  const p = w.ai.location;
-  const tx = w.stand.x + 0.5;
-  const tz = w.stand.z + 0.5;
-  const dx = tx - p.x;
-  const dz = tz - p.z;
+  const ai = w.ai;
+  const dim = ai.dimension;
+  const p = ai.location;
+  const dx = w.stand.x + 0.5 - p.x;
+  const dz = w.stand.z + 0.5 - p.z;
   const d = Math.hypot(dx, dz);
-  if (d < 0.35) {
-    stopWalking(id, w.state); // arrived: the next think starts mining
+  if (d < 0.3 && Math.abs(p.y - w.stand.y) < 1) {
+    ai.clearVelocity();
+    stopWalking(id, w.state); // arrived: the next think starts work
     return;
   }
-  const s = Math.min(WALK_STEP, d);
-  const nx = p.x + (dx / d) * s;
-  const nz = p.z + (dz / d) * s;
-  const fy = Math.floor(p.y + 0.01);
-  const cell = { x: Math.floor(nx), y: fy, z: Math.floor(nz) };
-  let ny = p.y;
 
-  if (!free(dim, cell)) {
-    // Step up one block if there's room.
-    const up = { ...cell, y: fy + 1 };
-    if (free(dim, up) && passable(dim.getBlock({ x: Math.floor(p.x), y: fy + 2, z: Math.floor(p.z) }))) {
-      ny = fy + 1;
-    } else {
-      if (++w.stuck > 12) giveUp(id, w);
-      return;
-    }
-  }
-  // Never walk into lava or off a drop of more than 2 blocks.
-  const landing = Math.floor(ny);
-  const below = [1, 2, 3].map((k) => dim.getBlock({ ...cell, y: landing - k }));
-  if (below.some((b) => b && LAVA.includes(b.typeId)) || below.every((b) => passable(b))) {
+  // Not getting anywhere: give up.
+  if (Math.hypot(p.x - w.last.x, p.z - w.last.z) > 0.05 || Math.abs(p.y - w.last.y) > 0.3) {
+    w.last = { ...p };
+    w.stuck = 0;
+  } else if (++w.stuck > STUCK_TICKS) {
     giveUp(id, w);
     return;
   }
-  w.ai.teleport({ x: nx, y: ny, z: nz }, { facingLocation: { x: w.block.x + 0.5, y: w.block.y + 0.5, z: w.block.z + 0.5 } });
-  w.stuck = 0;
+
+  const ux = dx / d;
+  const uz = dz / d;
+  ai.setRotation({ x: 0, y: (Math.atan2(-ux, uz) * 180) / Math.PI });
+  const fy = Math.floor(p.y + 0.01);
+  const ahead = { x: Math.floor(p.x + ux * 0.7), y: fy, z: Math.floor(p.z + uz * 0.7) };
+  let jump = false;
+  if (ahead.x !== Math.floor(p.x) || ahead.z !== Math.floor(p.z)) {
+    if (!free(dim, ahead)) {
+      if (breakLeaves(dim, ahead)) return; // leaves in the way: break through
+      const up = { ...ahead, y: fy + 1 };
+      const room = passable(dim.getBlock({ x: Math.floor(p.x), y: fy + 2, z: Math.floor(p.z) }));
+      if (!free(dim, up) || !room) return; // a wall: wait (gives up if it stays stuck)
+      jump = ai.isOnGround;
+    } else {
+      // Never walk into lava or off a drop of more than 3 blocks.
+      const below = [1, 2, 3].map((k) => dim.getBlock({ ...ahead, y: fy - k }));
+      if (below.some((b) => b && LAVA.includes(b.typeId)) || below.every((b) => passable(b))) {
+        giveUp(id, w);
+        return;
+      }
+    }
+  }
+  const v = ai.getVelocity();
+  const speed = Math.min(WALK_SPEED, d);
+  ai.applyImpulse({ x: ux * speed - v.x, y: jump ? JUMP - Math.max(0, v.y) : 0, z: uz * speed - v.z });
+}
+
+/**
+ * Breaks leaves at the feet and head height of a spot. Returns true if it broke any.
+ * @param {import("@minecraft/server").Dimension} dim
+ * @param {Vector3} cell
+ */
+function breakLeaves(dim, cell) {
+  let broke = false;
+  for (const p of [cell, { ...cell, y: cell.y + 1 }]) {
+    if (!LEAVES.includes(dim.getBlock(p)?.typeId ?? "")) continue;
+    dim.setBlockType(p, "minecraft:air");
+    dim.playSound("dig.grass", p);
+    broke = true;
+  }
+  return broke;
 }
 
 /** Can't get there: skip that block for a minute. */
@@ -457,8 +697,9 @@ function giveUp(id, w) {
  * @param {import("@minecraft/server").Dimension} dim
  * @param {Vector3} block
  * @param {Vector3} from
+ * @param {boolean} [level]  a tree trunk: prefer standing level with it
  */
-function standSpot(dim, block, from) {
+function standSpot(dim, block, from, level = false) {
   /** @type {Vector3 | undefined} */
   let best;
   let bestD = Infinity;
@@ -471,7 +712,7 @@ function standSpot(dim, block, from) {
       if (!floorBlock || passable(floorBlock) || LAVA.includes(floorBlock.typeId)) continue;
       const eye = { x: feet.x + 0.5, y: feet.y + 1.6, z: feet.z + 0.5 };
       if (dist(eye, center(block)) > REACH) continue;
-      const d = dist(feet, from);
+      const d = dist(feet, from) + (level ? Math.abs(dy) * 4 : 0);
       if (d < bestD) {
         best = feet;
         bestD = d;
@@ -516,6 +757,30 @@ function floor(p) {
 /** @param {Vector3} p */
 function center(p) {
   return { x: p.x + 0.5, y: p.y + 0.5, z: p.z + 0.5 };
+}
+
+/** @param {Vector3} p */
+function blockKey(p) {
+  return `${p.x},${p.y},${p.z}`;
+}
+
+/** @param {import("@minecraft/server").Entity} ai */
+function eyeOf(ai) {
+  return { x: ai.location.x, y: ai.location.y + 1.6, z: ai.location.z };
+}
+
+/** Turns the AI to look at a point. @param {import("@minecraft/server").Entity} ai @param {Vector3} p */
+function face(ai, p) {
+  const eye = eyeOf(ai);
+  const dx = p.x - eye.x;
+  const dz = p.z - eye.z;
+  const pitch = (-Math.atan2(p.y - eye.y, Math.hypot(dx, dz)) * 180) / Math.PI;
+  ai.setRotation({ x: pitch, y: (Math.atan2(-dx, dz) * 180) / Math.PI });
+}
+
+/** Distance ignoring height. @param {Vector3} a @param {Vector3} b */
+function flatDist(a, b) {
+  return Math.hypot(a.x - (b.x + 0.5), a.z - (b.z + 0.5));
 }
 
 /** @param {Vector3} a @param {Vector3} b */

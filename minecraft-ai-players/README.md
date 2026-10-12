@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.14.0)
+## What it does (v1.15.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -108,6 +108,7 @@ from its block slots and tells you when it runs out.
   lapis and copper; iron for gold, redstone, diamonds and emeralds; diamond for ancient debris). Logs can be
   chopped by hand, slower. Mining takes as long as it would for a player (Efficiency counts).
 - Only chops real trees (logs with leaves above), so it won't take apart log houses.
+- Chops trees like a player: it walks up to the trunk, stands still and chops the bottom 2 logs, steps into that gap (breaking dirt or leaves in the way), chops the rest of the tree it can reach from there, then moves on to the next tree. It really walks (with gravity and leg movement), and stands still while working instead of strolling around.
 - Drops go into its block slots first (building blocks only), then its backpack (576 items).
 - **Lava:** it never mines a block touching lava. Lava within 2 blocks of either AI gets covered with blocks
   from its block slots; with no blocks it backs away, stops gathering for a moment and tells you.

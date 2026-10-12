@@ -50,7 +50,7 @@ import {
 import { handleTombs, createLootState } from "./tombs.js";
 import { stripMine, createStripState } from "./stripmine.js";
 import { bridgeTowards } from "./movement.js";
-import { createGatherState, avoidLava, gather, setGatherBehavior } from "./gather.js";
+import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from "./gather.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
 const THINK_TICKS = 10; // the brain thinks twice a second
@@ -589,11 +589,6 @@ function think(ai, ownerId, role, record, brain) {
     // ---- Direction: strictly follow its owner, or wander and gather (or strip mine, if upgraded).
     const wandering = record.mode === "wander";
     const stripping = wandering && brain.upgraded && record.focus === "Strip mine";
-    const modeEvent = stripping ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
-    if (brain.modeEvent !== modeEvent) {
-      ai.triggerEvent(modeEvent);
-      brain.modeEvent = modeEvent;
-    }
 
     // ---- Gather only while wandering, and not while being attacked or near lava.
     const safe = wandering && !lavaClose && now - lastHit > RECENT_MS;
@@ -604,10 +599,17 @@ function think(ai, ownerId, role, record, brain) {
         ? stripMine(ai, ownerId, record, brain.strip, () => placeTorch(ai, ownerId, record, brain, Date.now()))
         : gather(ai, ownerId, record, brain.gather, undefined);
     }
+    // While it's walking to or chopping/mining something it stands still instead of strolling off.
+    const working = wandering && !stripping && isBusy(brain.gather);
+    const modeEvent = stripping || working ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
+    if (brain.modeEvent !== modeEvent) {
+      ai.triggerEvent(modeEvent);
+      brain.modeEvent = modeEvent;
+    }
     equip(ai, brain, record, slot ?? firstTool(record, false));
     if (safe) placeTorch(ai, ownerId, record, brain, now);
     // Not mining and its owner is away: bridge/pillar to catch up.
-    if (slot === undefined && !brain.gather.walking && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
+    if (slot === undefined && !isBusy(brain.gather) && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
       bridgeTowards(ai, ownerId, role, record, owner.location);
     }
     return;

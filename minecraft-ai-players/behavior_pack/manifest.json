@@ -6,7 +6,7 @@
     "uuid": "5d947b8e-fdb9-4ceb-a411-304de32db015",
     "version": [
       1,
-      14,
+      15,
       0
     ],
     "min_engine_version": [
@@ -20,10 +20,10 @@
       "type": "data",
       "uuid": "5da8a4fe-41c8-4ea4-97d3-62b374959930",
       "version": [
-        1,
-        14,
-        0
-      ]
+      1,
+      15,
+      0
+    ]
     },
     {
       "type": "script",
@@ -31,20 +31,20 @@
       "entry": "scripts/main.js",
       "uuid": "72f57ecb-0c3c-4a1e-b146-181fa6cdc203",
       "version": [
-        1,
-        14,
-        0
-      ]
+      1,
+      15,
+      0
+    ]
     }
   ],
   "dependencies": [
     {
       "uuid": "40a27797-dca3-436f-a415-2cb01ae9d04f",
       "version": [
-        1,
-        14,
-        0
-      ]
+      1,
+      15,
+      0
+    ]
     },
     {
       "module_name": "@minecraft/server",
