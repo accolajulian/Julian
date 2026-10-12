@@ -131,7 +131,7 @@ AI when it dies; dismissing it gives you back the tools, arrows and spare chicke
 | `behavior_pack/scripts/tombs.js` | Tombstone breaking and looting |
 | `behavior_pack/scripts/gather_data.js` | Generated list of gatherable blocks (don't edit by hand) |
 | `behavior_pack/blocks/coder.json` | The Coder block (shop) |
-| `behavior_pack/blocks/ai_guide.json` | The AI Guide block |
+| `behavior_pack/items/ai_computer.json` | The AI Computer every player spawns with |
 | `behavior_pack/items/*_egg.json` | The eggs you get after buying |
 | `behavior_pack/entities/ai_capsule.json` | The egg while it's flying |
 | `behavior_pack/recipes/` | Crafting recipes |
