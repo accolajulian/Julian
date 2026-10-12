@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.9.0)
+## What it does (v1.10.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -18,7 +18,7 @@ An original add-on with AI companions that look like players. It's kept separate
   ```
 - **Resource AI** costs 30 gold ingots, **Fighter AI** costs 15 diamonds. Each player can only have one of each.
 - Prices show in red until you have enough. Trying to buy without enough only tells you how many more you need.
-- Buying: choose a look (10 options) and type a name (required). You get an **AI Egg**; use it to throw it,
+- Buying: type a name (required). The look is picked automatically (add-ons can't copy a player's skin). Every AI starts with full health and 10 cooked chicken. You get an **AI Egg**; use it to throw it,
   and your AI appears where it lands.
 - Lost the egg? Open the Coder and pick your AI to get a new one (the old egg stops working).
 - **Recall robot:** when you throw the egg, its hotbar slot gets a recall robot (**red** for the Fighter,
@@ -29,16 +29,13 @@ An original add-on with AI companions that look like players. It's kept separate
 ### Controls
 | Action | What happens |
 |---|---|
-| Hit (left click) your AI | Opens its menu. Your hits never hurt it. |
-| Interact (right click) holding food | Heals it (bread, cooked meat, golden apple) |
-| Interact with your AI holding an allowed tool | Puts it in the first empty tool slot |
-| Interact with your AI holding armor or a shield | Puts it on (swaps out the old piece) |
-| Interact with your AI holding solid blocks | Puts them in its block slots |
-| Interact with your Fighter AI holding arrows | Puts them in its arrow slots |
-| An ally interacts with your AI | They can take spare cooked chicken |
-| Interact with your Fighter AI (empty hand), then hit a player | The Fighter goes after that player |
+| Left click your AI, or its recall robot | Commands: teleport to me, attack a player, follow/guard, fighting style, targets, tombstones, gather focus, allies & enemies |
+| Right click your AI, or its recall robot | Its inventory (the only way to open it). To add something, hold it and open the slot. |
+| An ally right clicks your AI | They can take spare cooked chicken |
 
-**Fighter AI menu:** *Inventory*, *Fighting style*, *Targets*, *Follow and protect me*, *Guard this spot*, *Allies & enemies*.
+Your hits never hurt your own AI. AIs feed themselves with their own cooked chicken.
+
+**Fighter commands:** *Teleport to me*, *Attack a player*, *Follow and protect me*, *Guard this spot*, *Fighting style*, *Targets*, *Tombstones*, *Allies & enemies*.
 
 | Fighting style | What it does |
 |---|---|
@@ -54,7 +51,7 @@ worse pieces), a shield, better tools, arrows, blocks. Anything it can't use sta
 "grave", "tomb", "headstone" or "corpse" are found automatically; others can be taught in its menu
 (*Tombstones > Teach*, standing next to one). Looting can be turned off. **Targets:** *Mob killing and player killing*, or *Only player
 killing* (it still defends against mobs that attack, and attacks whatever you attack).
-**Resource AI menu:** *Inventory*, choose a focus (Wood, Stone, Ores, Everything, Nothing), *Allies & enemies*.
+**Resource commands:** *Teleport to me*, gather focus (Wood, Stone, Ores, Everything, Nothing), *Allies & enemies*.
 
 Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
 
@@ -65,7 +62,8 @@ When its target is 2+ blocks above it and close, it jumps and places a block und
 from its block slots and tells you when it runs out.
 
 ### Gathering (gather.js, Resource AI)
-- Walks to the nearest block of its focus (Minecraft's own pathfinding) and mines it when in reach.
+- Finds the nearest block of its focus within 12 blocks of you, walks to a free spot next to it (stepping up
+  blocks, never into lava or off a cliff) and mines it.
 - Uses the first tool slot that can mine the block; pickaxe tiers apply like for players (stone for iron,
   lapis and copper; iron for gold, redstone, diamonds and emeralds; diamond for ancient debris). Logs can be
   chopped by hand, slower. Mining takes as long as it would for a player (Efficiency counts).

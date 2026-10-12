@@ -478,11 +478,11 @@ function think(ai, ownerId, role, record, brain) {
     // ---- Gather, unless it was just attacked or there's lava close by.
     const safe = !lavaClose && now - lastHit > RECENT_MS;
     setGatherBehavior(ai, brain.gather, record.focus, safe);
-    const slot = fightSlot ?? (safe ? gather(ai, ownerId, record, brain.gather) : undefined);
+    const slot = fightSlot ?? (safe ? gather(ai, ownerId, record, brain.gather, owner) : undefined);
     equip(ai, brain, record, slot ?? firstTool(record, false));
     if (safe) placeTorch(ai, ownerId, record, brain, now);
     // Not mining and its owner is away: bridge/pillar to catch up.
-    if (slot === undefined && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
+    if (slot === undefined && !brain.gather.walking && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
       bridgeTowards(ai, ownerId, role, record, owner.location);
     }
     return;

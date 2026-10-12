@@ -1,7 +1,7 @@
 // Gathering (Resource AI) and lava safety (both AIs).
 //
-// Walking to blocks is done by the AI's own "move_to_block" behavior (see make_entity_targets.py).
-// This file does the mining once the AI is close: it picks a suitable tool from slots 1-2-3,
+// The AI finds the nearest block of its focus (within 12 blocks of its owner), walks to a free spot
+// next to it (stepping up blocks, never into lava or off a cliff), then mines it: it picks a suitable tool from slots 1-2-3,
 // takes as long as a player would, puts the drops in its valuables / block slots / backpack, and never mines
 // next to lava. Lava near any AI gets covered with blocks from its block slots, or the AI backs away.
 import { system, BlockVolume, ItemStack } from "@minecraft/server";
@@ -34,7 +34,13 @@ const LEAVES = [
 const REACH = 3.5;
 const MATERIAL_TIER = { wooden: 0, golden: 0, stone: 1, iron: 2, diamond: 3, netherite: 4 };
 const MATERIAL_SPEED = { wooden: 2, stone: 4, iron: 6, diamond: 8, netherite: 9, golden: 12 };
-const IDLE_MS = 25000; // nothing to mine for this long: stop walking to blocks for a bit
+const IDLE_MS = 25000; // nothing to mine for this long: take a short break from looking
+const WALK_RADIUS = 14; // how far it looks for blocks to walk to
+const OWNER_RANGE = 12; // only gathers this close to its owner
+const WALK_STEP = 0.22; // blocks per step; a step every 2 ticks is about 2 blocks a second
+const WALK_MS = 15000; // gives up on a walk after this long
+/** Blocks it can walk through (plants, torches, snow...). */
+const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers/;
 const WARN_MS = 30000; // don't repeat the same chat warning more often than this
 
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
@@ -45,12 +51,12 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
  * @property {number} idleSince
  * @property {Map<string, number>} avoid  Blocks it won't mine for a while (next to lava), key -> until.
  * @property {Map<string, number>} warned  Chat warning -> last time.
- * @property {string | undefined} groupEvent  The gather event currently applied.
+ * @property {boolean} walking  Walking to a block (see `walkers`).
  */
 
 /** @returns {GatherState} */
 export function createGatherState() {
-  return { mining: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(), groupEvent: undefined };
+  return { mining: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(), walking: false };
 }
 
 // ================================================================ lava safety (both AIs)
@@ -104,7 +110,7 @@ export function avoidLava(ai, ownerId, role, record, state) {
   state.mining = undefined;
   state.pausedUntil = Date.now() + 10000;
   warn(state, ownerId, "lava", `§6${record.name} found lava and backed away.` +
-    (covered === 0 ? " §7Give it blocks (Inventory > Blocks) so it can cover lava." : ""));
+    (covered === 0 ? " §7Right click it and add blocks (Inventory > Blocks) so it can cover lava." : ""));
   return true;
 }
 
@@ -142,20 +148,16 @@ function lavaNextTo(dim, p) {
 // ================================================================ gathering (Resource AI)
 
 /**
- * Turns the AI's walking-to-blocks behavior on/off to match its focus and situation.
+ * Stops mining and walking when the AI shouldn't gather right now (fighting, lava, healing, no focus).
  * @param {import("@minecraft/server").Entity} ai
  * @param {GatherState} state
  * @param {string} focus
  * @param {boolean} canGather
  */
 export function setGatherBehavior(ai, state, focus, canGather) {
-  const on = canGather && focus !== "Nothing" && Date.now() >= state.pausedUntil;
-  const event = on ? `aip:gather_${focus.toLowerCase()}` : "aip:gather_off";
-  if (state.groupEvent !== event) {
-    ai.triggerEvent(event);
-    state.groupEvent = event;
-  }
-  if (!on) state.mining = undefined;
+  if (canGather && focus !== "Nothing" && Date.now() >= state.pausedUntil) return;
+  state.mining = undefined;
+  stopWalking(ai.id, state);
 }
 
 /**
@@ -165,13 +167,14 @@ export function setGatherBehavior(ai, state, focus, canGather) {
  * @param {string} ownerId
  * @param {import("./data.js").AiRecord} record
  * @param {GatherState} state
+ * @param {import("@minecraft/server").Player | undefined} owner
  * @returns {number | undefined}
  */
-export function gather(ai, ownerId, record, state) {
+export function gather(ai, ownerId, record, state, owner) {
   const now = Date.now();
   if (record.focus === "Nothing" || now < state.pausedUntil) return undefined;
   if (bagCount(record) >= BAG_CAPACITY) {
-    warn(state, ownerId, "full", `§e${record.name}'s backpack is full. Hit it and open Inventory > Backpack.`);
+    warn(state, ownerId, "full", `§e${record.name}'s backpack is full. Right click it and open Inventory > Backpack.`);
     state.pausedUntil = now + 15000;
     return undefined;
   }
@@ -194,9 +197,22 @@ export function gather(ai, ownerId, record, state) {
     return undefined;
   }
 
+  if (state.walking) return undefined; // on its way to a block
+
   // Find the closest gatherable block in reach.
-  const target = findTarget(ai, record, state, ownerId);
+  const target = findTarget(ai, record, state, ownerId, REACH, owner);
   if (!target) {
+    // Nothing in reach: walk to the nearest one further away.
+    const far = findTarget(ai, record, state, ownerId, WALK_RADIUS, owner);
+    if (far) {
+      const stand = standSpot(dim, far.location, ai.location);
+      if (stand) {
+        startWalking(ai, state, stand, far.location);
+        state.idleSince = now;
+        return undefined;
+      }
+      state.avoid.set(`${far.location.x},${far.location.y},${far.location.z}`, now + 60000);
+    }
     if (now - state.idleSince > IDLE_MS) {
       // Probably stuck walking to something it can't mine: take a short break, then look again.
       state.pausedUntil = now + 15000;
@@ -213,12 +229,16 @@ export function gather(ai, ownerId, record, state) {
  * @param {import("./data.js").AiRecord} record
  * @param {GatherState} state
  * @param {string} ownerId
+ * @param {number} radius  how far from its eyes to look
+ * @param {import("@minecraft/server").Player | undefined} owner
  */
-function findTarget(ai, record, state, ownerId) {
+function findTarget(ai, record, state, ownerId, radius, owner) {
   const dim = ai.dimension;
   const feet = floor(ai.location);
   const types = Object.keys(GATHER).filter((id) => record.focus === "Everything" || GATHER[id].focus === record.focus);
-  const volume = new BlockVolume({ x: feet.x - 4, y: feet.y - 2, z: feet.z - 4 }, { x: feet.x + 4, y: feet.y + 3, z: feet.z + 4 });
+  const r = Math.ceil(radius);
+  const volume = new BlockVolume({ x: feet.x - r, y: feet.y - 4, z: feet.z - r }, { x: feet.x + r, y: feet.y + 6, z: feet.z + r });
+  const nearOwner = owner && owner.dimension.id === dim.id ? owner.location : undefined;
   let found;
   try {
     found = [...dim.getBlocks(volume, { includeTypes: types }).getBlockLocationIterator()];
@@ -233,7 +253,9 @@ function findTarget(ai, record, state, ownerId) {
   let missingTool;
   for (const p of found) {
     const d = dist(center(p), eye);
-    if (d > REACH || (best && d >= best.d)) continue;
+    if (d > radius || (best && d >= best.d)) continue;
+    // Stay close to its owner.
+    if (nearOwner && dist(center(p), nearOwner) > OWNER_RANGE) continue;
     const key = `${p.x},${p.y},${p.z}`;
     if ((state.avoid.get(key) ?? 0) > now) continue;
     // Don't dig out the block it's standing on.
@@ -342,6 +364,135 @@ function hasLeavesAbove(dim, p) {
   } catch {
     return false;
   }
+}
+
+// ================================================================ walking
+
+/** AIs walking to a block. @type {Map<string, { ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number }>} */
+const walkers = new Map();
+
+/**
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {GatherState} state
+ * @param {Vector3} stand  feet position to walk to
+ * @param {Vector3} block  the block it will mine
+ */
+function startWalking(ai, state, stand, block) {
+  walkers.set(ai.id, { ai, state, stand, block, until: Date.now() + WALK_MS, stuck: 0 });
+  state.walking = true;
+}
+
+/** @param {string} aiId @param {GatherState} state */
+function stopWalking(aiId, state) {
+  walkers.delete(aiId);
+  state.walking = false;
+}
+
+// Move walking AIs a small step every 2 ticks.
+system.runInterval(() => {
+  for (const [id, w] of walkers) {
+    if (!w.ai.isValid || Date.now() > w.until) {
+      stopWalking(id, w.state);
+      continue;
+    }
+    try {
+      step(id, w);
+    } catch {
+      stopWalking(id, w.state);
+    }
+  }
+}, 2);
+
+/**
+ * @param {string} id
+ * @param {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number }} w
+ */
+function step(id, w) {
+  const dim = w.ai.dimension;
+  const p = w.ai.location;
+  const tx = w.stand.x + 0.5;
+  const tz = w.stand.z + 0.5;
+  const dx = tx - p.x;
+  const dz = tz - p.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.35) {
+    stopWalking(id, w.state); // arrived: the next think starts mining
+    return;
+  }
+  const s = Math.min(WALK_STEP, d);
+  const nx = p.x + (dx / d) * s;
+  const nz = p.z + (dz / d) * s;
+  const fy = Math.floor(p.y + 0.01);
+  const cell = { x: Math.floor(nx), y: fy, z: Math.floor(nz) };
+  let ny = p.y;
+
+  if (!free(dim, cell)) {
+    // Step up one block if there's room.
+    const up = { ...cell, y: fy + 1 };
+    if (free(dim, up) && passable(dim.getBlock({ x: Math.floor(p.x), y: fy + 2, z: Math.floor(p.z) }))) {
+      ny = fy + 1;
+    } else {
+      if (++w.stuck > 12) giveUp(id, w);
+      return;
+    }
+  }
+  // Never walk into lava or off a drop of more than 2 blocks.
+  const landing = Math.floor(ny);
+  const below = [1, 2, 3].map((k) => dim.getBlock({ ...cell, y: landing - k }));
+  if (below.some((b) => b && LAVA.includes(b.typeId)) || below.every((b) => passable(b))) {
+    giveUp(id, w);
+    return;
+  }
+  w.ai.teleport({ x: nx, y: ny, z: nz }, { facingLocation: { x: w.block.x + 0.5, y: w.block.y + 0.5, z: w.block.z + 0.5 } });
+  w.stuck = 0;
+}
+
+/** Can't get there: skip that block for a minute. */
+/** @param {string} id @param {{ state: GatherState, block: Vector3 }} w */
+function giveUp(id, w) {
+  w.state.avoid.set(`${w.block.x},${w.block.y},${w.block.z}`, Date.now() + 60000);
+  stopWalking(id, w.state);
+}
+
+/**
+ * A free spot next to a block where the AI can stand and reach it.
+ * @param {import("@minecraft/server").Dimension} dim
+ * @param {Vector3} block
+ * @param {Vector3} from
+ */
+function standSpot(dim, block, from) {
+  /** @type {Vector3 | undefined} */
+  let best;
+  let bestD = Infinity;
+  const sides = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  for (const [sx, sz] of sides) {
+    for (const dy of [0, -1, -2, -3, 1]) {
+      const feet = { x: block.x + sx, y: block.y + dy, z: block.z + sz };
+      if (!free(dim, feet)) continue;
+      const floorBlock = dim.getBlock({ ...feet, y: feet.y - 1 });
+      if (!floorBlock || passable(floorBlock) || LAVA.includes(floorBlock.typeId)) continue;
+      const eye = { x: feet.x + 0.5, y: feet.y + 1.6, z: feet.z + 0.5 };
+      if (dist(eye, center(block)) > REACH) continue;
+      const d = dist(feet, from);
+      if (d < bestD) {
+        best = feet;
+        bestD = d;
+      }
+    }
+  }
+  return best;
+}
+
+/** Room for the AI's feet and head. */
+/** @param {import("@minecraft/server").Dimension} dim @param {Vector3} feet */
+function free(dim, feet) {
+  return passable(dim.getBlock(feet)) && passable(dim.getBlock({ ...feet, y: feet.y + 1 }));
+}
+
+/** @param {import("@minecraft/server").Block | undefined} block */
+function passable(block) {
+  if (!block) return false;
+  return block.isAir || (block.isLiquid && !LAVA.includes(block.typeId)) || PASSABLE.test(block.typeId);
 }
 
 // ================================================================ helpers

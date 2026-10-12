@@ -92,7 +92,7 @@ function hasBlocks(ownerId, record) {
   const now = Date.now();
   if (now - (warned.get(ownerId) ?? 0) > WARN_MS) {
     warned.set(ownerId, now);
-    findPlayer(ownerId)?.sendMessage(`§e${record.name} needs blocks to get across. §7Give it blocks (Inventory > Blocks).`);
+    findPlayer(ownerId)?.sendMessage(`§e${record.name} needs blocks to get across. §7Right click it and add blocks in Inventory > Blocks.`);
   }
   return false;
 }

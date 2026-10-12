@@ -1,4 +1,4 @@
-"""Writes the AI parts of behavior_pack/entities/ai_player.json (targeting, modes, gathering)
+"""Writes the AI parts of behavior_pack/entities/ai_player.json (targeting, modes)
 and behavior_pack/scripts/gather_data.js (what the Resource AI can gather).
 
 The Script API can't set a mob's target directly, so the script "points" each AI at a
@@ -98,17 +98,12 @@ def main():
     # The Resource AI may wander a bit further from its owner while gathering.
     g["aip:resource_follow"] = {"minecraft:behavior.follow_owner": dict(follow, start_distance=10)}
 
-    # Gathering: walk to the nearest block of the chosen focus. The script does the mining.
-    gather_groups = [f"aip:gather_{f.lower()}" for f in FOCUSES]
-    for focus, group in zip(FOCUSES, gather_groups):
-        g[group] = {"minecraft:behavior.move_to_block": {
-            "priority": 6, "speed_multiplier": 1.0, "search_range": 12, "search_height": 6,
-            "tick_interval": 20, "goal_radius": 1.8, "target_selection_method": "nearest",
-            "target_blocks": focus_blocks(focus),
-        }}
-        ev[group] = {"remove": {"component_groups": [x for x in gather_groups if x != group]},
-                     "add": {"component_groups": [group]}}
-    ev["aip:gather_off"] = {"remove": {"component_groups": gather_groups}}
+    # Gathering is done entirely by the script (gather.js walks the AI next to the block and mines it).
+    # Older versions used move_to_block here, which can't reach solid blocks like logs: remove it.
+    for focus in FOCUSES:
+        g.pop(f"aip:gather_{focus.lower()}", None)
+        ev.pop(f"aip:gather_{focus.lower()}", None)
+    ev.pop("aip:gather_off", None)
     # Low health: run from danger while the script heals it.
     g["aip:retreating"] = {"minecraft:behavior.avoid_mob_type": {
         "priority": 1,

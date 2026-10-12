@@ -2,11 +2,11 @@
 // The fighting brain and memory live in brain.js; saved data in data.js.
 // - AI Computer: every player spawns with one. Use it to see how to craft the Coder and the prices.
 // - Coder block: the shop. Buying an AI gives you an egg; throw it to spawn your AI.
-// - Hit (left click) your AI to open its menu (with its Inventory). Interact (right click) to feed it,
-//   put a tool or arrows in its slots, or (Fighter AI) select it and then hit a player to send it after them.
-// - Allies can interact with your AI to take cooked chicken from its food slot.
+// - Left click your AI (or its recall robot): commands (teleport, attack, follow/guard, settings, gather focus).
+// - Right click your AI (or its recall robot): its inventory. That's the only way to open it.
+// - Allies can right click your AI to take spare cooked chicken from its food slot.
 // - If an AI dies it respawns next to the player who bought it, and keeps its memory.
-import { world, system, ItemStack, EntityDamageCause } from "@minecraft/server";
+import { world, system, ItemStack, EntityDamageCause, EntitySwingSource } from "@minecraft/server";
 import { ActionFormData, MessageFormData, ModalFormData } from "@minecraft/server-ui";
 import {
   AI_ENTITY,
@@ -21,7 +21,6 @@ import {
   knownAis,
   countItem,
   takeItem,
-  takeOneFromHand,
   giveItem,
 } from "./data.js";
 import { commandAttack, toolsChanged } from "./brain.js";
@@ -41,7 +40,6 @@ import {
   toolFromStack,
   stackFromTool,
   describeTool,
-  addTool,
   addArrows,
   totalArrows,
   toolKind,
@@ -75,7 +73,7 @@ import { FOCUSES } from "./gather_data.js";
 const COMPUTER_ITEM = "aip:ai_computer";
 const MAX_NAME_LENGTH = 20;
 const RESPAWN_SECONDS = 5;
-const COMMAND_SECONDS = 20; // how long a selected Fighter AI waits for you to pick a target
+const START_FOOD = 10; // cooked chicken every AI comes with (it eats them to heal itself)
 
 /** @type {Record<RoleId, { title: string, egg: string, robot: string, color: string, price: { item: string, amount: number, label: string }, icon: string, about: string }>} */
 const ROLES = {
@@ -129,7 +127,7 @@ const ROLES = {
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
-      "§a+§r Interact with it, then hit a player, to send it after them\n" +
+      "§a+§r Left click it (or its recall robot) and pick Attack a player to send it after someone\n" +
       "§a+§r Respawns next to you if it dies, and keeps its memory\n\n" +
       "§7Health: 20 (same as a player)   Damage: 6 + tool",
   },
@@ -148,17 +146,7 @@ const TARGET_MODES = /** @type {const} */ ([
   { id: "players", label: "Only player killing", about: "Ignores monsters unless they attack" },
 ]);
 
-/** Food you can give your AI (interact while holding it) and how much it heals. */
-/** @type {Record<string, number>} */
-const FOODS = {
-  "minecraft:bread": 10,
-  "minecraft:cooked_beef": 16,
-  "minecraft:cooked_porkchop": 16,
-  "minecraft:cooked_chicken": 12,
-  "minecraft:golden_apple": 40,
-};
-
-// Order must match the skin numbers (aip:skin_0 ... aip:skin_9) and the icons.
+// The 10 looks (skin numbers aip:skin_0 ... aip:skin_9). An AI's look is picked automatically.
 const LOOKS = [
   "Robot with a glowing visor",
   "Red hair, green hoodie",
@@ -182,21 +170,20 @@ const GUIDE_TEXT =
   "§lStep 2: Buy an AI at the Coder§r\n" +
   `- Resource AI: §6${ROLES.resource.price.amount} ${ROLES.resource.price.label}§r\n` +
   `- Fighter AI: §b${ROLES.fighter.price.amount} ${ROLES.fighter.price.label}§r\n` +
-  "Each player can only have one of each. You choose its look and type its name.\n\n" +
+  "Each player can only have one of each. You type its name; it starts with full health and 10 cooked chicken.\n\n" +
   "§lStep 3: Throw the egg§r\n" +
   "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
   "§crecall robot§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
   "§lControls§r\n" +
-  "- §eHit§r your AI: open its menu\n" +
-  "- §eInteract§r with your AI while holding food: heal it\n" +
-  "- §eInteract§r with your AI while holding a tool, armor, a shield, blocks or arrows: put it in its slots\n" +
-  "- §eInteract§r with your Fighter AI (empty hand), then §ehit§r a player: it attacks them\n" +
-  "- Your AI's menu has §eInventory§r and §eAllies & enemies§r\n\n" +
+  "- §eLeft click§r your AI or its recall robot: commands (teleport to you, attack a player, follow/guard, " +
+  "fighting style, targets, gather focus, allies & enemies)\n" +
+  "- §eRight click§r your AI or its recall robot: its inventory (to add things, hold them, then open the slot)\n" +
+  "- Your AI feeds itself with its own cooked chicken when it's hurt\n\n" +
   "§lInventory§r\n" +
   "Food, tools 1-2-3 (used in order; next one when a tool breaks), armor, shield, 2 block slots " +
   "(no sand, gravel or other falling blocks; used to bridge, pillar and cover lava), 10 valuables slots, " +
   "arrows (Fighter) and a backpack (Resource AI).\n\n" +
-  "§lFighter settings§r (hit it to change)\n" +
+  "§lFighter settings§r (left click it to change)\n" +
   "Style: Sword Combat, Archer, or Archer then Combat. Targets: mobs and players, or only players.\n" +
   "Tombstones: it breaks tombstones near it and takes the most valuable loot (can be turned off).\n\n" +
   "§lFood§r\n" +
@@ -359,8 +346,7 @@ async function showRoleInfo(player, role) {
 /** @param {import("@minecraft/server").Player} player @param {RoleId} role */
 async function buy(player, role) {
   const info = ROLES[role];
-  const look = await chooseLook(player, info.title);
-  if (look === undefined) return;
+  const look = autoLook(player.id, role);
   const name = await askForName(player, info.title);
   if (name === undefined) return;
 
@@ -377,19 +363,21 @@ async function buy(player, role) {
   takeItem(player, info.price.item, info.price.amount);
   /** @type {AiRecord} */
   const record = { name, look, state: "egg", serial: Date.now(), mode: "follow", focus: "Everything", combat: "archer_sword", targets: "all" };
-  inventoryOf(record);
+  inventoryOf(record).food = START_FOOD;
   saveRecord(player.id, role, record);
   giveEgg(player, role, record);
   player.sendMessage(`§aYou bought a ${info.title}! Throw the egg to spawn §e${name}§a.`);
 }
 
-/** @param {import("@minecraft/server").Player} player @param {string} title @returns {Promise<number | undefined>} */
-async function chooseLook(player, title) {
-  const form = new ActionFormData().title(`${title}: choose a look`);
-  LOOKS.forEach((look, i) => form.button(look, `textures/aip/icons/${i}`));
-  const response = await form.show(player);
-  if (response.canceled) return undefined;
-  return response.selection;
+/**
+ * Picks the AI's look automatically: the same for a player every time (no choosing).
+ * Add-ons can't read a player's own skin, so it uses one of the 10 AI player skins.
+ * @param {string} playerId @param {RoleId} role
+ */
+function autoLook(playerId, role) {
+  let hash = role === "fighter" ? 3 : 0;
+  for (const ch of playerId) hash = (hash * 31 + ch.charCodeAt(0)) % 1000003;
+  return hash % LOOKS.length;
 }
 
 /**
@@ -494,16 +482,34 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   system.run(() => openMenu(player, showComputer));
 });
 
-// Using a recall robot opens its options.
+// Recall robot: right click (use) opens the AI's inventory...
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
-  const role = ROLE_IDS.find((r) => ROLES[r].robot === itemStack?.typeId);
-  if (!role || !itemStack) return;
-  if (itemStack.getDynamicProperty("aip:owner") !== player.id) {
-    player.sendMessage("§cThis recall robot doesn't belong to you.");
-    return;
-  }
-  system.run(() => openMenu(player, (p) => showRobotMenu(p, role)));
+  const role = robotRole(player, itemStack);
+  if (role) system.run(() => openMenu(player, (p) => showInventory(p, role)));
 });
+
+// ...and left click (an attack swing) opens its commands.
+world.afterEvents.playerSwingStart.subscribe(({ player, heldItemStack, swingSource }) => {
+  if (swingSource !== EntitySwingSource.Attack) return;
+  const role = robotRole(player, heldItemStack);
+  if (role) system.run(() => openMenu(player, (p) => showCommands(p, role)));
+});
+
+/**
+ * The role of the recall robot a player is holding (only their own).
+ * @param {import("@minecraft/server").Player} player
+ * @param {ItemStack | undefined} item
+ * @returns {RoleId | undefined}
+ */
+function robotRole(player, item) {
+  const role = ROLE_IDS.find((r) => ROLES[r].robot === item?.typeId);
+  if (!role || !item) return undefined;
+  if (item.getDynamicProperty("aip:owner") !== player.id) {
+    player.sendMessage("§cThis recall robot doesn't belong to you.");
+    return undefined;
+  }
+  return role;
+}
 
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   const role = ROLE_IDS.find((r) => ROLES[r].egg === itemStack?.typeId);
@@ -592,31 +598,9 @@ function hatch(egg, location, dimension) {
 function makeRecallRobot(player, role, record) {
   const robot = new ItemStack(ROLES[role].robot, 1);
   robot.nameTag = `§r${ROLES[role].color}${record.name}'s Recall Robot`;
-  robot.setLore([`§7Owner: ${player.name}`, "§7Use it to call your AI to you."]);
+  robot.setLore([`§7Owner: ${player.name}`, "§7Left click: commands and teleport", "§7Right click: inventory"]);
   robot.setDynamicProperty("aip:owner", player.id);
   return robot;
-}
-
-/** @param {import("@minecraft/server").Player} player @param {RoleId} role */
-async function showRobotMenu(player, role) {
-  const record = getRecord(player.id, role);
-  if (!record) {
-    player.sendMessage(`§eYou don't have a ${ROLES[role].title} anymore.`);
-    return;
-  }
-  const ai = record.id ? world.getEntity(record.id) : undefined;
-  const health = ai?.getComponent("minecraft:health");
-  const where = ai
-    ? `At ${Math.floor(ai.location.x)}, ${Math.floor(ai.location.y)}, ${Math.floor(ai.location.z)}` +
-      (health ? `  Health: ${Math.round(health.currentValue)}/${health.effectiveMax}` : "")
-    : record.state === "alive" ? "Far away (not loaded)." : "Not in the world right now.";
-  const response = await new ActionFormData()
-    .title(`${ROLES[role].color}${record.name}`)
-    .body(where)
-    .button("Teleport to me")
-    .button("Close")
-    .show(player);
-  if (response.selection === 0) recallAi(player, role);
 }
 
 /**
@@ -679,6 +663,12 @@ function spawnAi(owner, role, location, dimension, quiet = false) {
   ai.triggerEvent(`aip:skin_${record.look}`);
   ai.nameTag = record.name;
 
+  // Start at full health (a moment later, after its role has set its max health).
+  system.runTimeout(() => {
+    const health = ai.isValid ? ai.getComponent("minecraft:health") : undefined;
+    health?.setCurrentValue(health.effectiveMax);
+  }, 2);
+
   record.state = "alive";
   record.id = ai.id;
   record.mode = "follow";
@@ -725,172 +715,130 @@ world.afterEvents.entityDie.subscribe(
   { entityTypes: [AI_ENTITY] }
 );
 
-// ================================================================ hitting & interacting
+// ================================================================ left click & right click
 
-// Your own hits never hurt your AI.
+// Your own hits never hurt your AI: a left click opens its commands instead.
 world.beforeEvents.entityHurt.subscribe((event) => {
   if (event.hurtEntity.typeId !== AI_ENTITY) return;
   const attacker = event.damageSource.damagingEntity;
   const info = ownerInfo(event.hurtEntity);
   if (!attacker || !info || attacker.id !== info.ownerId) return;
   event.cancel = true;
-
-  // Hitting your own AI opens its menu (the hit handler below does this too;
-  // openMenu makes sure only one menu opens).
   if (event.damageSource.cause === EntityDamageCause.entityAttack) {
-    const ai = event.hurtEntity;
     const player = /** @type {import("@minecraft/server").Player} */ (attacker);
-    system.run(() => openMenu(player, (p) => showAiMenu(p, ai, info.role)));
+    system.run(() => openMenu(player, (p) => showCommands(p, info.role)));
   }
 });
 
-/** Fighter AIs waiting for their owner to pick a target. */
-/** @type {Map<string, { aiId: string, until: number }>} */
-const commandSelections = new Map();
-
-// Left click (hit).
+// Left click your AI: commands. (openMenu makes sure only one menu opens.)
 world.afterEvents.entityHitEntity.subscribe(({ damagingEntity, hitEntity }) => {
-  if (damagingEntity.typeId !== "minecraft:player") return;
+  if (damagingEntity.typeId !== "minecraft:player" || hitEntity.typeId !== AI_ENTITY) return;
+  const info = ownerInfo(hitEntity);
+  if (!info || info.ownerId !== damagingEntity.id) return;
   const player = /** @type {import("@minecraft/server").Player} */ (damagingEntity);
-  const info = hitEntity.typeId === AI_ENTITY ? ownerInfo(hitEntity) : undefined;
-
-  if (info && info.ownerId === player.id) {
-    system.run(() => openMenu(player, (p) => showAiMenu(p, hitEntity, info.role)));
-    return;
-  }
-  sendFighterAfter(player, hitEntity);
+  system.run(() => openMenu(player, (p) => showCommands(p, info.role)));
 });
 
-// Right click (interact).
-world.afterEvents.playerInteractWithEntity.subscribe(({ player, target, itemStack }) => {
-  const info = target.typeId === AI_ENTITY ? ownerInfo(target) : undefined;
-
-  if (info && info.ownerId === player.id) {
-    const heal = itemStack ? FOODS[itemStack.typeId] : undefined;
-    if (heal) {
-      feed(player, target, heal);
-    } else if (itemStack && info.role === "resource" && (SWORDS.has(itemStack.typeId) || RANGED.has(itemStack.typeId))) {
-      quickAddArm(player, target);
-    } else if (itemStack && ALLOWED_TOOLS[info.role].has(itemStack.typeId)) {
-      quickAddTool(player, info.role, target);
-    } else if (itemStack && (armorSlotFor(itemStack.typeId) || itemStack.typeId === SHIELD_ITEM)) {
-      quickAddGear(player, info.role, target);
-    } else if (itemStack && isValuable(itemStack.typeId)) {
-      quickAddValuables(player, info.role, target);
-    } else if (itemStack && isPlaceableBlock(itemStack.typeId)) {
-      quickAddBlocks(player, info.role, target);
-    } else if (itemStack && itemStack.typeId === ARROW_ITEM) {
-      quickAddArrows(player, info.role, target);
-    } else if (itemStack && (ALLOWED_TOOLS.fighter.has(itemStack.typeId) || ALLOWED_TOOLS.resource.has(itemStack.typeId))) {
-      player.sendMessage(`§c${target.nameTag} can only use a ${toolKind(info.role)}.`);
-    } else if (info.role === "fighter") {
-      commandSelections.set(player.id, { aiId: target.id, until: Date.now() + COMMAND_SECONDS * 1000 });
-      player.sendMessage(`§e${target.nameTag} is ready! §fNow hit the player it should attack.`);
-    } else {
-      player.sendMessage(`§7Hit ${target.nameTag} to open its menu. Interact while holding food to heal it.`);
-    }
-    return;
-  }
-  // Allies of the owner can take chicken from the AI's food slot.
-  if (info && getMemory(info.ownerId).allies[player.id] && !commandSelections.has(player.id)) {
+// Right click your AI: its inventory. Allies can take spare chicken.
+world.afterEvents.playerInteractWithEntity.subscribe(({ player, target }) => {
+  if (target.typeId !== AI_ENTITY) return;
+  const info = ownerInfo(target);
+  if (!info) return;
+  if (info.ownerId === player.id) {
+    system.run(() => openMenu(player, (p) => showInventory(p, info.role)));
+  } else if (getMemory(info.ownerId).allies[player.id]) {
     system.run(() => openMenu(player, (p) => takeFood(p, info.ownerId, info.role)));
-    return;
   }
-  sendFighterAfter(player, target);
 });
 
-/**
- * If the player picked a Fighter AI a moment ago, send it after this target.
- * @param {import("@minecraft/server").Player} player
- * @param {import("@minecraft/server").Entity} target
- */
-function sendFighterAfter(player, target) {
-  const selection = commandSelections.get(player.id);
-  if (!selection) return;
-  commandSelections.delete(player.id);
-  if (Date.now() > selection.until || target.id === player.id) return;
-  const ai = world.getEntity(selection.aiId);
-  if (ai && ai.id !== target.id) commandAttack(player, ai, target);
-}
+// ================================================================ commands (left click)
 
 /**
+ * Everything you can tell your AI to do. Opened by left clicking the AI or its recall robot.
  * @param {import("@minecraft/server").Player} player
- * @param {import("@minecraft/server").Entity} ai
- * @param {number} amount
- */
-function feed(player, ai, amount) {
-  const health = ai.getComponent("minecraft:health");
-  if (!health) return;
-  if (health.currentValue >= health.effectiveMax) {
-    player.sendMessage(`§7${ai.nameTag} is already at full health.`);
-    return;
-  }
-  health.setCurrentValue(Math.min(health.effectiveMax, health.currentValue + amount));
-  takeOneFromHand(player);
-  player.sendMessage(`§a${ai.nameTag} healed (${Math.round(health.currentValue)}/${health.effectiveMax}).`);
-}
-
-// ================================================================ AI menus (left click)
-
-/**
- * @param {import("@minecraft/server").Player} player
- * @param {import("@minecraft/server").Entity} ai
  * @param {RoleId} role
  */
-async function showAiMenu(player, ai, role) {
+async function showCommands(player, role) {
   const record = getRecord(player.id, role);
-  if (!record || !ai.isValid) return;
-  const health = ai.getComponent("minecraft:health");
-  const hp = health ? `${Math.round(health.currentValue)}/${health.effectiveMax}` : "?";
+  if (!record) {
+    player.sendMessage(`§eYou don't have a ${ROLES[role].title} anymore.`);
+    return;
+  }
+  const ai = record.id ? world.getEntity(record.id) : undefined;
+  const health = ai?.getComponent("minecraft:health");
+  const where = ai
+    ? `Health: ${Math.round(health?.currentValue ?? 0)}/${health?.effectiveMax ?? 20}   ` +
+      `At ${Math.floor(ai.location.x)}, ${Math.floor(ai.location.y)}, ${Math.floor(ai.location.z)}`
+    : record.state === "alive" ? "Far away (teleport it to you first)." : "Not in the world right now.";
   const memory = getMemory(player.id);
   const memoryLine = `Remembers ${Object.keys(memory.enemies).length} enemies, ${Object.keys(memory.allies).length} allies`;
 
   /** @type {{ label: string, run: () => unknown }[]} */
-  const actions = [];
-  let body;
+  const actions = [{ label: "Teleport to me", run: () => recallAi(player, role) }];
+  let body = `${where}\n`;
+  const needAi = (/** @type {(ai: import("@minecraft/server").Entity) => unknown} */ fn) => () =>
+    ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far away. Teleport it to you first.`);
 
   if (role === "fighter") {
     const mode = record.mode === "guard" ? "Guarding a spot" : "Following and protecting you";
-    const tool = inventoryOf(record).tools.find((t) => t);
-    body =
-      `Health: ${hp}\nRight now: §e${mode}§r\n` +
-      `First tool: §e${tool ? describeTool(tool) : "fists"}§r   Arrows: ${totalArrows(record)}\n${memoryLine}`;
     const style = COMBAT_STYLES.find((c) => c.id === (record.combat ?? "archer_sword")) ?? COMBAT_STYLES[2];
     const targets = TARGET_MODES.find((t) => t.id === (record.targets ?? "all")) ?? TARGET_MODES[0];
-    body += `\nStyle: §e${style.label}§r   Targets: §e${targets.label}§r`;
+    body += `Right now: §e${mode}§r\nStyle: §e${style.label}§r   Targets: §e${targets.label}§r\n${memoryLine}`;
+    actions.push({ label: "Attack a player", run: needAi((a) => chooseAttackTarget(player, a)) });
+    actions.push({ label: "Follow and protect me", run: needAi((a) => setFighterMode(player, a, "follow")) });
+    actions.push({ label: "Guard this spot\n§8Attacks any other player who comes near", run: needAi((a) => setFighterMode(player, a, "guard")) });
     actions.push({ label: `Fighting style\n§8${style.label}`, run: () => chooseCombat(player) });
     actions.push({ label: `Targets\n§8${targets.label}`, run: () => chooseTargets(player) });
     actions.push({ label: `Tombstones\n§8Looting ${record.loot === false ? "off" : "on"}`, run: () => showTombs(player) });
-    actions.push({ label: "Follow and protect me", run: () => setFighterMode(player, ai, "follow") });
-    actions.push({
-      label: "Guard this spot\n§8Attacks any other player who comes near",
-      run: () => setFighterMode(player, ai, "guard"),
-    });
   } else {
-    body =
-      `Health: ${hp}\nFocus: §e${record.focus}§r\n${memoryLine}\n\n` +
-      `Backpack: ${bagCount(record)} / ${BAG_CAPACITY}\n\n` +
-      "§7Choose what it should gather. It needs a pickaxe for stone and ores (iron or better for gold, " +
-      "redstone, diamonds and emeralds). Choose Nothing to just follow you.";
+    body +=
+      `Gathering: §e${record.focus}§r   Backpack: ${bagCount(record)} / ${BAG_CAPACITY}\n${memoryLine}\n\n` +
+      "§7Choose what it should gather (within 12 blocks of you). It needs a pickaxe for stone and ores " +
+      "(iron or better for gold, redstone, diamonds and emeralds). Nothing = just follow you.";
     for (const focus of RESOURCE_FOCUS) {
       actions.push({
         label: focus === record.focus ? `§2${focus} (current)` : focus,
         run: () => {
-          record.focus = focus;
-          saveRecord(player.id, role, record);
-          player.sendMessage(focus === "Nothing" ? `§e${record.name} will just follow you.` : `§e${record.name} will gather: ${focus}`);
+          const r = getRecord(player.id, role);
+          if (!r) return;
+          r.focus = focus;
+          saveRecord(player.id, role, r);
+          toolsChanged(r.id);
+          player.sendMessage(focus === "Nothing" ? `§e${r.name} will just follow you.` : `§e${r.name} will gather: ${focus}`);
         },
       });
     }
   }
-  actions.unshift({ label: `Inventory\n§8Food, tools, armor, shield, blocks${role === "fighter" ? ", arrows" : ", backpack"}`, run: () => showInventory(player, role) });
   actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
+  body += `\n\n§7Right click ${record.name} or its recall robot to open its inventory.`;
 
-  const form = new ActionFormData().title(`${record.name} (${role === "fighter" ? "Fighter" : "Resource"} AI)`).body(body);
+  const form = new ActionFormData().title(`${ROLES[role].color}${record.name}§r (${ROLES[role].title})`).body(body);
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
-  if (response.canceled || response.selection === undefined || !ai.isValid) return;
+  if (response.canceled || response.selection === undefined) return;
   await actions[response.selection].run();
+}
+
+/**
+ * Pick a player for the Fighter to go after.
+ * @param {import("@minecraft/server").Player} player
+ * @param {import("@minecraft/server").Entity} ai
+ */
+async function chooseAttackTarget(player, ai) {
+  const allies = getMemory(player.id).allies;
+  const choices = world
+    .getPlayers()
+    .filter((p) => p.id !== player.id && !allies[p.id] && p.dimension.id === ai.dimension.id)
+    .filter((p) => Math.hypot(p.location.x - ai.location.x, p.location.z - ai.location.z) <= 64);
+  if (choices.length === 0) {
+    player.sendMessage("§eThere are no other players near your Fighter (allies don't count).");
+    return;
+  }
+  const form = new ActionFormData().title("Attack a player").body("Your Fighter goes after them, even if it's fighting someone else.");
+  choices.forEach((p) => form.button(p.name));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  commandAttack(player, ai, choices[response.selection]);
 }
 
 /**
@@ -1209,7 +1157,7 @@ async function showGear(player, role) {
   const body =
     ARMOR_SLOTS.map((slot) => `${ARMOR_NAMES[slot]}: ${describeTool(inv.armor[slot])}`).join("\n") +
     `\nShield: ${describeTool(inv.shield)}\n\n§7To add armor or a shield, hold it and open this again ` +
-    `(or interact with ${record.name} while holding it). Armor wears down when it gets hurt. ` +
+    "Armor wears down when it gets hurt. " +
     "The shield blocks hits from the front; an axe knocks it down for a few seconds.";
   const form = new ActionFormData().title("Armor & shield").body(body);
   actions.forEach((a) => form.button(a.label));
@@ -1494,38 +1442,6 @@ function takeArm(player, key) {
   saveRecord(player.id, "resource", record);
   toolsChanged(record.id);
   giveItem(player, stackFromTool(item));
-}
-
-/** @param {import("@minecraft/server").Player} player @param {RoleId} role @param {import("@minecraft/server").Entity} ai */
-function quickAddTool(player, role, ai) {
-  const record = getRecord(player.id, role);
-  const container = player.getComponent("minecraft:inventory")?.container;
-  const held = container?.getItem(player.selectedSlotIndex);
-  if (!record || !container || !held) return;
-  const slot = addTool(record, toolFromStack(held));
-  if (slot === -1) {
-    player.sendMessage(`§e${record.name}'s tool slots are full. Hit it and open Inventory to swap tools.`);
-    return;
-  }
-  container.setItem(player.selectedSlotIndex, undefined);
-  saveRecord(player.id, role, record);
-  toolsChanged(ai.id);
-  player.sendMessage(`§a${record.name} put the ${itemName(held.typeId)} in slot ${slot + 1}.`);
-}
-
-/** @param {import("@minecraft/server").Player} player @param {RoleId} role @param {import("@minecraft/server").Entity} ai */
-function quickAddArrows(player, role, ai) {
-  const record = getRecord(player.id, role);
-  if (!record) return;
-  const added = addArrows(record, countItem(player, ARROW_ITEM));
-  if (added === 0) {
-    player.sendMessage(`§e${record.name}'s arrow slots are full.`);
-    return;
-  }
-  takeItem(player, ARROW_ITEM, added);
-  saveRecord(player.id, role, record);
-  toolsChanged(ai.id);
-  player.sendMessage(`§a${record.name} took ${added} arrows (${totalArrows(record)} total).`);
 }
 
 /** @param {import("@minecraft/server").Player} player @param {number} total */
