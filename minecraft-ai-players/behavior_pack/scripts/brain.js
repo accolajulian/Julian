@@ -11,7 +11,7 @@
 import { world, system, GameMode, EntityDamageCause, EquipmentSlot, BlockVolume } from "@minecraft/server";
 import {
   AI_ENTITY,
-  getRecord,
+  getAi,
   saveRecord,
   getMemory,
   saveMemory,
@@ -208,6 +208,13 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damageSource }) => {
   }
 });
 
+// Mobs can't hurt AI players (hits, arrows, explosions). Only players and other AI players can.
+world.beforeEvents.entityHurt.subscribe((event) => {
+  if (event.hurtEntity.typeId !== AI_ENTITY) return;
+  const attacker = event.damageSource.damagingEntity;
+  if (attacker && attacker.typeId !== "minecraft:player" && attacker.typeId !== AI_ENTITY) event.cancel = true;
+});
+
 // An AI with a shield blocks hits and arrows coming from in front of it (not every hit: it needs
 // a moment between blocks, and an axe knocks the shield down for a few seconds).
 world.beforeEvents.entityHurt.subscribe((event) => {
@@ -243,7 +250,7 @@ function shieldBlocked(ai, brain, damage, byAxe) {
   if (!ai.isValid) return;
   ai.dimension.playSound(byAxe ? "random.break" : "item.shield.block", ai.location);
   const info = ownerInfo(ai);
-  const record = info ? getRecord(info.ownerId, info.role) : undefined;
+  const record = info ? getAi(info.key) : undefined;
   const shield = record ? inventoryOf(record).shield : undefined;
   if (!info || !record || !shield) return;
   if (wearItem(shield, Math.max(1, Math.floor(damage))) === "broke") {
@@ -266,7 +273,7 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damage, damageSource }) =>
   ];
   if (!wearing.includes(damageSource.cause)) return;
   const info = ownerInfo(hurtEntity);
-  const record = info ? getRecord(info.ownerId, info.role) : undefined;
+  const record = info ? getAi(info.key) : undefined;
   if (!info || !record) return;
   const armor = inventoryOf(record).armor;
   const amount = Math.max(1, Math.floor(damage / 4));
@@ -286,16 +293,19 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damage, damageSource }) =>
   if (changed) saveRecord(info.ownerId, info.role, record);
 });
 
-// AIs never hurt their friends, the Resource AI only fights players with a bow or crossbow,
+// AIs never hurt their friends, the Resource AI only fights players (with a bow or crossbow),
 // and melee tools add damage.
 world.beforeEvents.entityHurt.subscribe((event) => {
   const attacker = event.damageSource.damagingEntity;
   if (!attacker || attacker.typeId !== AI_ENTITY) return;
   const brain = brains.get(attacker.id);
-  if (brain?.role === "resource" && event.hurtEntity.typeId === "minecraft:player" &&
-      event.damageSource.cause === EntityDamageCause.entityAttack) {
-    event.cancel = true;
-    return;
+  // The Resource AI never hurts mobs, and only hurts players with its bow or crossbow (not melee).
+  if (brain?.role === "resource") {
+    const hurtIsPlayer = event.hurtEntity.typeId === "minecraft:player";
+    if (!hurtIsPlayer || event.damageSource.cause === EntityDamageCause.entityAttack) {
+      event.cancel = true;
+      return;
+    }
   }
   if (brain?.slot !== undefined && event.hurtEntity.hasTag(`aip_a${brain.slot}`)) {
     event.cancel = true;
@@ -324,7 +334,7 @@ world.afterEvents.entitySpawn.subscribe(({ entity }) => {
     if (!shooter || shooter.typeId !== AI_ENTITY) return;
     const brain = brains.get(shooter.id);
     const info = ownerInfo(shooter);
-    const record = info ? getRecord(info.ownerId, info.role) : undefined;
+    const record = info ? getAi(info.key) : undefined;
     if (!brain || !info || !record) return;
     useArrow(record);
     saveRecord(info.ownerId, info.role, record);
@@ -339,7 +349,7 @@ world.afterEvents.entitySpawn.subscribe(({ entity }) => {
  */
 function useTool(ai, brain) {
   const info = ownerInfo(ai);
-  const record = info ? getRecord(info.ownerId, info.role) : undefined;
+  const record = info ? getAi(info.key) : undefined;
   if (!info || !record) return;
   const slot = brain.activeSlot;
   const toolId = slotItem(record, slot)?.id;
@@ -390,12 +400,12 @@ system.runInterval(() => {
     ais.push(...world.getDimension(dimensionId).getEntities({ type: AI_ENTITY }));
   }
 
-  // Remove leftover AIs that were dismissed or replaced (one of each per player).
+  // Remove leftover copies of AIs that were deleted, recalled from far away, or handed to a new controller.
   const live = [];
   for (const ai of ais) {
     const info = ownerInfo(ai);
-    const record = info ? getRecord(info.ownerId, info.role) : undefined;
-    if (!info || !record || record.id !== ai.id) {
+    const record = info ? getAi(info.key) : undefined;
+    if (!info || !record || record.id !== ai.id || record.ownerId !== info.ownerId) {
       ai.remove();
     } else {
       knownAis.set(ai.id, info);
@@ -696,8 +706,8 @@ function equip(ai, brain, record, slot) {
 }
 
 /**
- * Resource AI self-defense. Against a mob that hit it: its sword (or a tool). Against a player:
- * only its bow/crossbow, and if it has none (or no arrows) it runs away instead.
+ * Resource AI self-defense against players: only its bow/crossbow, and if it has none (or no arrows)
+ * it runs away instead. It never fights mobs (they can't hurt it either).
  * Returns the slot to hold while fighting, or undefined when it isn't fighting.
  * @param {import("@minecraft/server").Entity} ai
  * @param {Brain} brain
@@ -712,7 +722,8 @@ function resourceDefense(ai, brain, record, owner, now) {
   for (const [id, time] of recentHits.get(ai.id) ?? []) {
     if (now - time > RECENT_MS || time < latest) continue;
     const e = world.getEntity(id);
-    if (e?.isValid && id !== owner?.id) {
+    // Mobs can't hurt it and it doesn't fight them: only players count.
+    if (e?.isValid && id !== owner?.id && e.typeId === "minecraft:player") {
       attacker = e;
       latest = time;
     }
@@ -731,8 +742,7 @@ function resourceDefense(ai, brain, record, owner, now) {
   }
 
   if (!attacker) return undefined;
-  if (byPlayer) return canShoot ? BOW_SLOT : -1;
-  return inventoryOf(record).arms.sword ? SWORD_SLOT : firstTool(record, true);
+  return canShoot ? BOW_SLOT : -1;
 }
 
 /**

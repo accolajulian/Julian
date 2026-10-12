@@ -8,7 +8,7 @@
 //   made... show up), and puts the labels back in empty slots.
 // The AI's own 10 chicken and its torches are shown on info labels, so they can't be taken.
 import { world, system, ItemStack } from "@minecraft/server";
-import { AI_ENTITY, getRecord, saveRecord, findPlayer, knownAis, giveItem } from "./data.js";
+import { AI_ENTITY, getAi, saveRecord, findPlayer, knownAis, giveItem } from "./data.js";
 import {
   inventoryOf,
   toolFromStack,
@@ -230,10 +230,11 @@ const snapshots = new Map();
  * @param {import("@minecraft/server").Entity} ai
  * @param {string} ownerId
  * @param {import("./data.js").RoleId} role
+ * @param {string} key
  */
-function sync(ai, ownerId, role) {
+function sync(ai, ownerId, role, key) {
   const container = ai.getComponent("minecraft:inventory")?.container;
-  let record = getRecord(ownerId, role);
+  let record = getAi(key);
   if (!container || !record) return;
   const slots = layout(role).slice(0, container.size);
   const current = slots.map((_, i) => container.getItem(i));
@@ -259,7 +260,7 @@ function sync(ai, ownerId, role) {
     });
     if (changed) {
       saveRecord(ownerId, role, record);
-      record = getRecord(ownerId, role) ?? record;
+      record = getAi(key) ?? record;
     }
   }
 
@@ -324,7 +325,7 @@ system.runInterval(() => {
       continue;
     }
     try {
-      sync(ai, info.ownerId, info.role);
+      sync(ai, info.ownerId, info.role, info.key);
     } catch (error) {
       console.warn(`[AI Players] inventory sync error: ${error}`);
     }

@@ -12,8 +12,14 @@ import {
   AI_ENTITY,
   CAPSULE_ENTITY,
   ROLE_IDS,
-  getRecord,
+  getAi,
   saveRecord,
+  removeAi,
+  newKey,
+  allAis,
+  controlledBy,
+  hasBought,
+  markBought,
   getMemory,
   saveMemory,
   findPlayer,
@@ -144,7 +150,8 @@ const GUIDE_TEXT =
   "§lStep 2: Buy an AI at the Coder§r\n" +
   `- Resource AI: §6${ROLES.resource.price.amount} ${ROLES.resource.price.label}§r\n` +
   `- Fighter AI: §b${ROLES.fighter.price.amount} ${ROLES.fighter.price.label}§r\n` +
-  "Each player can only have one of each. You type its name; it starts with full health and 10 cooked chicken.\n\n" +
+  "Each player can only buy one of each. You type its name; it starts with full health and 10 cooked chicken. " +
+  "Give your recall robot to a friend (drop it) and they control your AI; it doesn't let anyone buy extra.\n\n" +
   "§lStep 3: Throw the egg§r\n" +
   "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
   "§crecall robot§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
@@ -167,12 +174,13 @@ const GUIDE_TEXT =
   `It respawns next to you after ${RESPAWN_SECONDS} seconds, and still remembers its enemies and allies.\n\n` +
   "§7Lost your egg? Open the Coder and pick your AI to get a new one.";
 
-/** @param {import("@minecraft/server").Player} player @param {RoleId} role @param {AiRecord} record */
-function giveEgg(player, role, record) {
-  const egg = new ItemStack(ROLES[role].egg, 1);
-  egg.nameTag = `§r${ROLES[role].title} Egg: §e${record.name}`;
-  egg.setLore([`§7Owner: ${player.name}`, "§7Use it to throw it and spawn your AI."]);
-  egg.setDynamicProperty("aip:owner", player.id);
+
+/** @param {import("@minecraft/server").Player} player @param {AiRecord} record */
+function giveEgg(player, record) {
+  const egg = new ItemStack(ROLES[record.role].egg, 1);
+  egg.nameTag = `§r${ROLES[record.role].title} Egg: §e${record.name}`;
+  egg.setLore([`§7Bought by: ${player.name}`, "§7Use it to throw it and spawn your AI."]);
+  egg.setDynamicProperty("aip:key", record.key);
   egg.setDynamicProperty("aip:serial", record.serial);
   giveItem(player, egg);
 }
@@ -205,6 +213,15 @@ async function openMenu(player, menu) {
   }
 }
 
+/**
+ * The AI with this key, if this player controls it.
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+function mine(player, key) {
+  const record = getAi(key);
+  return record && record.ownerId === player.id ? record : undefined;
+}
+
 // ================================================================ guide
 
 /** @param {import("@minecraft/server").Player} player */
@@ -220,8 +237,7 @@ async function showGuide(player) {
 async function showComputer(player) {
   const prices = ROLE_IDS.map((role) => {
     const { title, price } = ROLES[role];
-    const owned = getRecord(player.id, role);
-    if (owned) return `- ${title}: §2you have one (${owned.name})§r`;
+    if (hasBought(player.id, role)) return `- ${title}: §7you already bought one§r`;
     const have = countItem(player, price.item);
     const color = have >= price.amount ? "§a" : "§c";
     return `- ${title}: ${color}${price.amount} ${price.label}§r §7(you have ${have})§r`;
@@ -236,7 +252,7 @@ async function showComputer(player) {
         "  Iron Ingot  -  Iron Ingot  -  Iron Ingot\n\n" +
         "§lPlace the Coder and tap it to buy an AI§r\n" +
         prices.join("\n") +
-        "\n\n§7Each player can only have one of each AI."
+        "\n\n§7Each player can only buy one of each AI. If someone gives you their recall robot, you control their AI too."
     )
     .button("More help")
     .button("Close")
@@ -252,22 +268,27 @@ world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
     if (initialSpawn) player.sendMessage("§aYou have an §eAI Computer§a in your hotbar. Use it to see how to get AI players.");
   }
   system.runTimeout(() => {
-    for (const role of ROLE_IDS) {
-      if (getRecord(player.id, role)?.state === "respawn") respawnAi(player.id, role);
+    for (const record of controlledBy(player.id)) {
+      if (record.state === "respawn") respawnAi(record.key);
     }
   }, 40);
 });
 
 // ================================================================ Coder (shop)
 
+
 /** @param {import("@minecraft/server").Player} player */
 async function showCoder(player) {
-  const form = new ActionFormData().title("Coder").body("Tap an AI to see what it does and what it costs.");
+  const form = new ActionFormData().title("Coder").body("Tap an AI to see what it does and what it costs.\n§7Each player can only buy one of each.");
   for (const role of ROLE_IDS) {
     const info = ROLES[role];
-    const owned = getRecord(player.id, role);
+    const controlled = controlledBy(player.id, role);
     const enough = countItem(player, info.price.item) >= info.price.amount;
-    const line2 = owned ? `§2Yours: ${owned.name}` : `${enough ? "§2" : "§c"}${info.price.amount} ${info.price.label}`;
+    const line2 = controlled.length
+      ? `§2Yours: ${controlled.map((r) => r.name).join(", ")}`
+      : hasBought(player.id, role)
+        ? "§7Already bought"
+        : `${enough ? "§2" : "§c"}${info.price.amount} ${info.price.label}`;
     form.button(`${info.title}\n${line2}`, info.icon);
   }
   form.button("How it works", "textures/items/book_writable");
@@ -277,11 +298,20 @@ async function showCoder(player) {
   if (response.selection >= ROLE_IDS.length) return showGuide(player);
 
   const role = ROLE_IDS[response.selection];
-  if (getRecord(player.id, role)) {
-    await manageOwned(player, role);
-  } else {
-    await showRoleInfo(player, role);
+  const controlled = controlledBy(player.id, role);
+  if (controlled.length === 1) return manageOwned(player, controlled[0].key);
+  if (controlled.length > 1) {
+    const pick = new ActionFormData().title(`Your ${ROLES[role].title}s`);
+    controlled.forEach((r) => pick.button(r.name));
+    const choice = await pick.show(player);
+    if (choice.canceled || choice.selection === undefined) return;
+    return manageOwned(player, controlled[choice.selection].key);
   }
+  if (hasBought(player.id, role)) {
+    player.sendMessage(`§cEach player can only buy one ${ROLES[role].title}, and you already bought yours.`);
+    return;
+  }
+  await showRoleInfo(player, role);
 }
 
 /**
@@ -329,17 +359,21 @@ async function buy(player, role) {
     player.sendMessage(needMore(player, role));
     return;
   }
-  if (getRecord(player.id, role)) {
-    player.sendMessage(`§cYou can only have one ${info.title}.`);
+  if (hasBought(player.id, role)) {
+    player.sendMessage(`§cEach player can only buy one ${info.title}.`);
     return;
   }
 
   takeItem(player, info.price.item, info.price.amount);
+  markBought(player.id, role);
   /** @type {AiRecord} */
-  const record = { name, look, state: "egg", serial: Date.now(), mode: "follow", focus: "Everything", combat: "archer_sword", targets: "all" };
+  const record = {
+    key: newKey(), role, ownerId: player.id, buyerId: player.id,
+    name, look, state: "egg", serial: Date.now(), mode: "follow", focus: "Everything", combat: "archer_sword", targets: "all",
+  };
   inventoryOf(record).food = START_FOOD;
   saveRecord(player.id, role, record);
-  giveEgg(player, role, record);
+  giveEgg(player, record);
   player.sendMessage(`§aYou bought a ${info.title}! Throw the egg to spawn §e${name}§a.`);
 }
 
@@ -379,12 +413,11 @@ async function askForName(player, title) {
   }
 }
 
-/** @param {import("@minecraft/server").Player} player @param {RoleId} role */
-async function manageOwned(player, role) {
-  const info = ROLES[role];
-  const record = getRecord(player.id, role);
-  if (!record) return;
 
+/** @param {import("@minecraft/server").Player} player @param {string} key */
+async function manageOwned(player, key) {
+  const record = mine(player, key);
+  if (!record) return;
   const status = {
     egg: "Waiting in its egg. Throw the egg to spawn it.",
     thrown: "Its egg was thrown.",
@@ -395,41 +428,41 @@ async function manageOwned(player, role) {
   /** @type {{ label: string, run: () => unknown }[]} */
   const actions = [];
   if (record.state === "alive" || record.state === "respawn") {
-    if (record.state === "alive") actions.push({ label: "Call it to me", run: () => recallAi(player, role) });
+    if (record.state === "alive") actions.push({ label: "Call it to me", run: () => recallAi(player, key) });
     actions.push({
       label: "Get a new recall robot\n§8If you lost it",
       run: () => {
-        const r = getRecord(player.id, role);
-        if (r) giveItem(player, makeRecallRobot(player, role, r));
+        const r = mine(player, key);
+        if (r) giveItem(player, makeRecallRobot(player, r));
       },
     });
   } else {
-    actions.push({ label: "Get a new egg (if you lost it)", run: () => replaceEgg(player, role) });
+    actions.push({ label: "Get a new egg (if you lost it)", run: () => replaceEgg(player, key) });
   }
-  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, role) });
+  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
 
-  const form = new ActionFormData().title(`${info.title}: ${record.name}`).body(status);
+  const form = new ActionFormData().title(`${ROLES[record.role].title}: ${record.name}`).body(status);
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
   await actions[response.selection].run();
 }
 
-/** @param {import("@minecraft/server").Player} player @param {RoleId} role */
-function replaceEgg(player, role) {
-  const record = getRecord(player.id, role);
+
+/** @param {import("@minecraft/server").Player} player @param {string} key */
+function replaceEgg(player, key) {
+  const record = mine(player, key);
   if (!record || record.state === "alive") return;
   record.state = "egg";
   record.serial = Date.now(); // the old egg stops working
-  saveRecord(player.id, role, record);
-  giveEgg(player, role, record);
+  saveRecord(player.id, record.role, record);
+  giveEgg(player, record);
   player.sendMessage("§aHere's a new egg. Your old one won't work anymore.");
 }
 
-
 // ================================================================ throwing the egg
 
-/** @type {Map<string, { ownerId: string, role: RoleId, thrownAt: number }>} */
+/** @type {Map<string, { key: string, thrownAt: number }>} */
 const flyingEggs = new Map();
 
 // Using the AI Computer shows how to craft the Coder and the prices.
@@ -441,50 +474,64 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
 // Recall robot: right click (use) brings the AI next to you so you can right click it to open its
 // inventory (Minecraft only opens an inventory screen when you right click the AI itself)...
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
-  const role = robotRole(player, itemStack);
-  if (!role) return;
-  const record = getRecord(player.id, role);
-  const ai = record?.id ? world.getEntity(record.id) : undefined;
+  const record = robotRecord(player, itemStack);
+  if (!record) return;
+  const ai = record.id ? world.getEntity(record.id) : undefined;
   const near = ai && ai.dimension.id === player.dimension.id &&
     Math.hypot(ai.location.x - player.location.x, ai.location.y - player.location.y, ai.location.z - player.location.z) < 4;
-  if (!near) recallAi(player, role);
-  if (record) player.sendMessage(`§eRight click ${record.name} to open its inventory.`);
+  if (!near) recallAi(player, record.key);
+  player.sendMessage(`§eRight click ${record.name} to open its inventory.`);
 });
 
 // ...and left click (an attack swing) opens its commands.
 world.afterEvents.playerSwingStart.subscribe(({ player, heldItemStack, swingSource }) => {
   if (swingSource !== EntitySwingSource.Attack) return;
-  const role = robotRole(player, heldItemStack);
-  if (role) system.run(() => openMenu(player, (p) => showCommands(p, role)));
+  const record = robotRecord(player, heldItemStack);
+  if (record) system.run(() => openMenu(player, (p) => showCommands(p, record.key)));
 });
 
+
 /**
- * The role of the recall robot a player is holding (only their own).
+ * The AI a recall robot controls. Holding someone else's robot makes you its controller.
  * @param {import("@minecraft/server").Player} player
  * @param {ItemStack | undefined} item
- * @returns {RoleId | undefined}
+ * @returns {AiRecord | undefined}
  */
-function robotRole(player, item) {
-  const role = ROLE_IDS.find((r) => ROLES[r].robot === item?.typeId);
-  if (!role || !item) return undefined;
-  if (item.getDynamicProperty("aip:owner") !== player.id) {
-    player.sendMessage("§cThis recall robot doesn't belong to you.");
+function robotRecord(player, item) {
+  if (!item || !ROLE_IDS.some((r) => ROLES[r].robot === item.typeId)) return undefined;
+  const key = robotKey(item);
+  const record = key ? getAi(key) : undefined;
+  if (!record) {
+    player.sendMessage("§cThis AI doesn't exist anymore.");
     return undefined;
   }
-  return role;
+  if (record.ownerId !== player.id) takeControl(player, record);
+  return getAi(record.key);
+}
+
+/**
+ * The key stored on a recall robot (robots from before version 1.12 only know their owner).
+ * @param {ItemStack} item
+ */
+function robotKey(item) {
+  const key = item.getDynamicProperty("aip:key");
+  if (typeof key === "string") return key;
+  const ownerId = item.getDynamicProperty("aip:owner");
+  const role = ROLE_IDS.find((r) => ROLES[r].robot === item.typeId);
+  return typeof ownerId === "string" && role ? controlledBy(ownerId, role)[0]?.key : undefined;
 }
 
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   const role = ROLE_IDS.find((r) => ROLES[r].egg === itemStack?.typeId);
   if (!role || !itemStack) return;
 
-  const ownerId = itemStack.getDynamicProperty("aip:owner");
+  const eggKey = itemStack.getDynamicProperty("aip:key");
   const serial = itemStack.getDynamicProperty("aip:serial");
-  if (ownerId !== player.id) {
+  const record = typeof eggKey === "string" ? getAi(eggKey) : controlledBy(player.id, role)[0];
+  if (record && record.ownerId !== player.id) {
     player.sendMessage("§cThis egg doesn't belong to you.");
     return;
   }
-  const record = getRecord(player.id, role);
   if (!record || record.state !== "egg" || record.serial !== serial) {
     player.sendMessage("§cThis egg doesn't work anymore.");
     return;
@@ -493,9 +540,9 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   // The egg leaves the player's hand and its slot gets the AI's recall robot.
   const container = player.getComponent("minecraft:inventory")?.container;
   if (container?.getItem(player.selectedSlotIndex)?.typeId === itemStack.typeId) {
-    container.setItem(player.selectedSlotIndex, makeRecallRobot(player, role, record));
+    container.setItem(player.selectedSlotIndex, makeRecallRobot(player, record));
   } else {
-    giveItem(player, makeRecallRobot(player, role, record));
+    giveItem(player, makeRecallRobot(player, record));
   }
 
   // Throw it.
@@ -505,6 +552,7 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   const egg = player.dimension.spawnEntity(CAPSULE_ENTITY, start);
   egg.setDynamicProperty("aip:owner", player.id);
   egg.setDynamicProperty("aip:role", role);
+  egg.setDynamicProperty("aip:key", record.key);
   const projectile = egg.getComponent("minecraft:projectile");
   if (projectile) {
     projectile.owner = player;
@@ -513,7 +561,7 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
 
   record.state = "thrown";
   saveRecord(player.id, role, record);
-  flyingEggs.set(egg.id, { ownerId: player.id, role, thrownAt: Date.now() });
+  flyingEggs.set(egg.id, { key: record.key, thrownAt: Date.now() });
 });
 
 world.afterEvents.projectileHitBlock.subscribe(({ projectile, location, hitVector, dimension }) => {
@@ -527,6 +575,7 @@ world.afterEvents.projectileHitEntity.subscribe(({ projectile, location, dimensi
   hatch(projectile, location, dimension);
 });
 
+
 /**
  * The egg landed: spawn the AI there.
  * @param {import("@minecraft/server").Entity} egg
@@ -535,44 +584,104 @@ world.afterEvents.projectileHitEntity.subscribe(({ projectile, location, dimensi
  */
 function hatch(egg, location, dimension) {
   const saved = flyingEggs.get(egg.id);
-  const info = saved ?? (egg.isValid ? ownerInfo(egg) : undefined);
+  const stored = egg.isValid ? egg.getDynamicProperty("aip:key") : undefined;
+  const key = saved?.key ?? (typeof stored === "string" ? stored : undefined);
   flyingEggs.delete(egg.id);
   if (egg.isValid) egg.remove();
-  if (!info) return;
-
-  const record = getRecord(info.ownerId, info.role);
-  if (record?.state !== "thrown") return;
-  const owner = findPlayer(info.ownerId);
+  const record = key ? getAi(key) : undefined;
+  if (!record || record.state !== "thrown") return;
+  const owner = findPlayer(record.ownerId);
   if (!owner) {
     // Owner left while the egg was flying: spawn it next to them when they're back.
     record.state = "respawn";
-    saveRecord(info.ownerId, info.role, record);
+    saveRecord(record.ownerId, record.role, record);
     return;
   }
-  spawnAi(owner, info.role, location, dimension);
+  spawnAi(owner, record.key, location, dimension);
 }
 
 // ================================================================ recall robots
 
+
 /**
- * The recall robot that replaces the egg: red for the Fighter, blue for the Resource AI.
- * @param {import("@minecraft/server").Player} player @param {RoleId} role @param {AiRecord} record
+ * The recall robot (controller) that replaces the egg: red for the Fighter, blue for the Resource AI.
+ * Whoever holds it controls the AI.
+ * @param {import("@minecraft/server").Player} player @param {AiRecord} record
  */
-function makeRecallRobot(player, role, record) {
-  const robot = new ItemStack(ROLES[role].robot, 1);
-  robot.nameTag = `§r${ROLES[role].color}${record.name}'s Recall Robot`;
-  robot.setLore([`§7Owner: ${player.name}`, "§7Left click: commands and teleport", "§7Right click: inventory"]);
+function makeRecallRobot(player, record) {
+  const robot = new ItemStack(ROLES[record.role].robot, 1);
+  robot.nameTag = `§r${ROLES[record.role].color}${record.name}'s Recall Robot`;
+  robot.setLore([`§7Controlled by: ${player.name}`, "§7Left click: commands and teleport", "§7Right click: bring it here", "§7Give it to a friend to let them control it."]);
+  robot.setDynamicProperty("aip:key", record.key);
   robot.setDynamicProperty("aip:owner", player.id);
   return robot;
 }
 
 /**
+ * Makes a player the controller of an AI (they picked up its recall robot). The AI comes to them
+ * and follows and protects them from now on; everything it carries stays with it.
+ * This does NOT count as buying: it doesn't stop either player from buying their own.
+ * @param {import("@minecraft/server").Player} player @param {AiRecord} record
+ */
+function takeControl(player, record) {
+  const previous = findPlayer(record.ownerId);
+  record.ownerId = player.id;
+  saveRecord(player.id, record.role, record);
+
+  // Re-tame it to the new controller: it rejoins (next to where it was, or next to them).
+  const ai = record.id ? world.getEntity(record.id) : undefined;
+  if (record.state === "alive") {
+    if (ai?.isValid) {
+      if (spawnAi(player, record.key, ai.location, ai.dimension, true)) ai.remove();
+    } else {
+      record.state = "respawn";
+      delete record.id;
+      saveRecord(player.id, record.role, record);
+      respawnAi(record.key);
+    }
+  }
+
+  // Update the robot(s) the player holds for this AI.
+  const container = player.getComponent("minecraft:inventory")?.container;
+  if (container) {
+    for (let i = 0; i < container.size; i++) {
+      const item = container.getItem(i);
+      if (item && ROLES[record.role].robot === item.typeId && robotKey(item) === record.key) {
+        container.setItem(i, makeRecallRobot(player, record));
+      }
+    }
+  }
+  player.sendMessage(`§aYou now control ${record.name} (${ROLES[record.role].title}).`);
+  previous?.sendMessage(`§e${player.name} picked up ${record.name}'s recall robot and now controls it.`);
+}
+
+// Someone picked up another player's recall robot: they become its controller.
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    const container = player.getComponent("minecraft:inventory")?.container;
+    if (!container) continue;
+    for (let i = 0; i < container.size; i++) {
+      const item = container.getItem(i);
+      if (!item || !ROLE_IDS.some((r) => ROLES[r].robot === item.typeId)) continue;
+      const key = robotKey(item);
+      const record = key ? getAi(key) : undefined;
+      if (!record) {
+        container.setItem(i, undefined); // its AI was deleted
+      } else if (record.ownerId !== player.id) {
+        takeControl(player, record);
+      }
+    }
+  }
+}, 20);
+
+
+/**
  * Brings the AI to the player. If it's too far away to be loaded, it rejoins next to the player
  * (with everything it carries), and the old copy disappears when its area loads.
- * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ * @param {import("@minecraft/server").Player} player @param {string} key
  */
-function recallAi(player, role) {
-  const record = getRecord(player.id, role);
+function recallAi(player, key) {
+  const record = mine(player, key);
   if (!record) return;
   if (record.state === "egg" || record.state === "thrown") {
     player.sendMessage("§eThrow its egg first.");
@@ -585,35 +694,37 @@ function recallAi(player, role) {
   const ai = record.id ? world.getEntity(record.id) : undefined;
   if (ai) {
     ai.teleport(player.location, { dimension: player.dimension });
-  } else if (!spawnAi(player, role, player.location, player.dimension, true)) {
+  } else if (!spawnAi(player, key, player.location, player.dimension, true)) {
     return;
   }
   player.sendMessage(`§a${record.name} teleported to you.`);
 }
 
+
 /**
  * Deletes the AI and its recall robot (after asking). Everything it carries is given back, except
- * its own 10 chicken and its torches. You can buy a new one after that.
- * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ * its own 10 chicken and its torches. Whoever bought it still can't buy another one.
+ * @param {import("@minecraft/server").Player} player @param {string} key
  */
-async function deleteAi(player, role) {
-  const record = getRecord(player.id, role);
+async function deleteAi(player, key) {
+  const record = mine(player, key);
   if (!record) return;
+  const role = record.role;
   const confirm = await new MessageFormData()
     .title(`Delete ${record.name}?`)
     .body(
-      `${record.name} and its recall robot will be gone for good. You get back everything it carries, ` +
-        `but not the ${ROLES[role].price.amount} ${ROLES[role].price.label} you paid.`
+      `${record.name} and its recall robot will be gone for good. You get back everything it carries.\n\n` +
+        `§cThere's no refund, and whoever bought it can't buy another ${ROLES[role].title} (one per player).`
     )
     .button1("Delete")
     .button2("Keep")
     .show(player);
   if (confirm.selection !== 0) return;
 
-  const latest = getRecord(player.id, role);
+  const latest = mine(player, key);
   if (!latest) return;
   returnEverything(player, latest);
-  saveRecord(player.id, role, undefined);
+  removeAi(key);
   const ai = latest.id ? world.getEntity(latest.id) : undefined;
   ai?.remove();
 
@@ -621,8 +732,11 @@ async function deleteAi(player, role) {
   const container = player.getComponent("minecraft:inventory")?.container;
   if (container) {
     for (let i = 0; i < container.size; i++) {
-      const id = container.getItem(i)?.typeId;
-      if (id === ROLES[role].robot || id === ROLES[role].egg) container.setItem(i, undefined);
+      const item = container.getItem(i);
+      if (!item) continue;
+      const isRobot = item.typeId === ROLES[role].robot && robotKey(item) === key;
+      const isEgg = item.typeId === ROLES[role].egg && item.getDynamicProperty("aip:key") === key;
+      if (isRobot || isEgg) container.setItem(i, undefined);
     }
   }
   world.sendMessage(`§e${latest.name} left the game`);
@@ -631,15 +745,16 @@ async function deleteAi(player, role) {
 // ================================================================ spawning & respawning
 
 /**
- * @param {import("@minecraft/server").Player} owner
- * @param {RoleId} role
+ * @param {import("@minecraft/server").Player} owner  its controller
+ * @param {string} key
  * @param {import("@minecraft/server").Vector3} location
  * @param {import("@minecraft/server").Dimension} dimension
  * @param {boolean} [quiet]  true for a recall (no "joined the game")
  */
-function spawnAi(owner, role, location, dimension, quiet = false) {
-  const record = getRecord(owner.id, role);
+function spawnAi(owner, key, location, dimension, quiet = false) {
+  const record = getAi(key);
   if (!record) return false;
+  const role = record.role;
 
   const ai = dimension.spawnEntity(AI_ENTITY, location);
   const tameable = ai.getComponent("minecraft:tameable");
@@ -649,14 +764,15 @@ function spawnAi(owner, role, location, dimension, quiet = false) {
     record.state = "egg";
     record.serial = Date.now();
     saveRecord(owner.id, role, record);
-    giveEgg(owner, role, record);
+    giveEgg(owner, record);
     owner.sendMessage("§cYour AI couldn't spawn there. You got your egg back.");
     return false;
   }
 
   ai.setDynamicProperty("aip:owner", owner.id);
   ai.setDynamicProperty("aip:role", role);
-  knownAis.set(ai.id, { ownerId: owner.id, role });
+  ai.setDynamicProperty("aip:key", key);
+  knownAis.set(ai.id, { ownerId: owner.id, role, key });
   ai.triggerEvent("aip:on_tame");
   ai.triggerEvent(`aip:role_${role}`);
   ai.triggerEvent(role === "fighter" ? "aip:fighter_follow" : "aip:resource_follow");
@@ -678,14 +794,15 @@ function spawnAi(owner, role, location, dimension, quiet = false) {
   return true;
 }
 
-/** @param {string} ownerId @param {RoleId} role */
-function respawnAi(ownerId, role) {
-  const record = getRecord(ownerId, role);
-  const owner = findPlayer(ownerId);
-  // If the owner is offline or dead, this runs again when they next spawn.
-  if (record?.state !== "respawn" || !owner) return;
+
+/** @param {string} key */
+function respawnAi(key) {
+  const record = getAi(key);
+  const owner = record ? findPlayer(record.ownerId) : undefined;
+  // If its controller is offline or dead, this runs again when they next spawn.
+  if (!record || record.state !== "respawn" || !owner) return;
   if ((owner.getComponent("minecraft:health")?.currentValue ?? 0) <= 0) return;
-  spawnAi(owner, role, owner.location, owner.dimension);
+  spawnAi(owner, key, owner.location, owner.dimension);
 }
 
 world.afterEvents.entityDie.subscribe(
@@ -700,17 +817,17 @@ world.afterEvents.entityDie.subscribe(
     }
     knownAis.delete(id);
     if (!info) return;
-    const record = getRecord(info.ownerId, info.role);
-    if (!record || record.id !== id) return; // an old or dismissed AI
+    const record = getAi(info.key);
+    if (!record || record.id !== id) return; // an old or deleted AI
 
     record.state = "respawn";
     delete record.id;
-    saveRecord(info.ownerId, info.role, record);
+    saveRecord(record.ownerId, record.role, record);
 
-    const owner = findPlayer(info.ownerId);
+    const owner = findPlayer(record.ownerId);
     world.sendMessage(`§e${record.name} died`);
     owner?.sendMessage(`§7${record.name} will respawn next to you in ${RESPAWN_SECONDS} seconds.`);
-    system.runTimeout(() => respawnAi(info.ownerId, info.role), RESPAWN_SECONDS * 20);
+    system.runTimeout(() => respawnAi(record.key), RESPAWN_SECONDS * 20);
   },
   { entityTypes: [AI_ENTITY] }
 );
@@ -726,7 +843,7 @@ world.beforeEvents.entityHurt.subscribe((event) => {
   event.cancel = true;
   if (event.damageSource.cause === EntityDamageCause.entityAttack) {
     const player = /** @type {import("@minecraft/server").Player} */ (attacker);
-    system.run(() => openMenu(player, (p) => showCommands(p, info.role)));
+    system.run(() => openMenu(player, (p) => showCommands(p, info.key)));
   }
 });
 
@@ -736,7 +853,7 @@ world.afterEvents.entityHitEntity.subscribe(({ damagingEntity, hitEntity }) => {
   const info = ownerInfo(hitEntity);
   if (!info || info.ownerId !== damagingEntity.id) return;
   const player = /** @type {import("@minecraft/server").Player} */ (damagingEntity);
-  system.run(() => openMenu(player, (p) => showCommands(p, info.role)));
+  system.run(() => openMenu(player, (p) => showCommands(p, info.key)));
 });
 
 // Right click your AI: Minecraft opens its inventory screen (owner only; see container.js).
@@ -745,7 +862,7 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target }) => {
   if (target.typeId !== AI_ENTITY) return;
   const info = ownerInfo(target);
   if (info && info.ownerId !== player.id && getMemory(info.ownerId).allies[player.id]) {
-    system.run(() => openMenu(player, (p) => takeFood(p, info.ownerId, info.role)));
+    system.run(() => openMenu(player, (p) => takeFood(p, info.key)));
   }
 });
 
@@ -754,18 +871,19 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target }) => {
 /**
  * Everything you can tell your AI to do. Opened by left clicking the AI or its recall robot.
  * @param {import("@minecraft/server").Player} player
- * @param {RoleId} role
+ * @param {string} key
  */
-async function showCommands(player, role) {
-  const record = getRecord(player.id, role);
+async function showCommands(player, key) {
+  const record = mine(player, key);
   if (!record) {
-    player.sendMessage(`§eYou don't have a ${ROLES[role].title} anymore.`);
+    player.sendMessage("§eYou don't control that AI anymore.");
     return;
   }
+  const role = record.role;
   const ai = record.id ? world.getEntity(record.id) : undefined;
 
   /** @type {{ label: string, run: () => unknown }[]} */
-  const actions = [{ label: "Teleport to me", run: () => recallAi(player, role) }];
+  const actions = [{ label: "Teleport to me", run: () => recallAi(player, key) }];
   let body = "";
   const needAi = (/** @type {(ai: import("@minecraft/server").Entity) => unknown} */ fn) => () =>
     ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far away. Teleport it to you first.`);
@@ -776,18 +894,18 @@ async function showCommands(player, role) {
     const targets = TARGET_MODES.find((t) => t.id === (record.targets ?? "all")) ?? TARGET_MODES[0];
     body = `Right now: §e${mode}§r\nStyle: §e${style.label}§r\nTargets: §e${targets.label}§r`;
     actions.push({ label: "Attack a player", run: needAi((a) => chooseAttackTarget(player, a)) });
-    actions.push({ label: "Follow and protect me", run: needAi((a) => setFighterMode(player, a, "follow")) });
-    actions.push({ label: "Guard this spot\n§8Attacks any other player who comes near", run: needAi((a) => setFighterMode(player, a, "guard")) });
-    actions.push({ label: `Fighting style\n§8${style.label}`, run: () => chooseCombat(player) });
-    actions.push({ label: `Targets\n§8${targets.label}`, run: () => chooseTargets(player) });
-    actions.push({ label: `Tombstones\n§8Looting ${record.loot === false ? "off" : "on"}`, run: () => showTombs(player) });
+    actions.push({ label: "Follow and protect me", run: needAi((a) => setFighterMode(player, key, a, "follow")) });
+    actions.push({ label: "Guard this spot\n§8Attacks any other player who comes near", run: needAi((a) => setFighterMode(player, key, a, "guard")) });
+    actions.push({ label: `Fighting style\n§8${style.label}`, run: () => chooseCombat(player, key) });
+    actions.push({ label: `Targets\n§8${targets.label}`, run: () => chooseTargets(player, key) });
+    actions.push({ label: `Tombstones\n§8Looting ${record.loot === false ? "off" : "on"}`, run: () => showTombs(player, key) });
   } else {
     body = "Choose resource";
     for (const focus of RESOURCE_FOCUS) {
       actions.push({
         label: focus === record.focus ? `§2${focus} (current)` : focus,
         run: () => {
-          const r = getRecord(player.id, role);
+          const r = mine(player, key);
           if (!r) return;
           r.focus = focus;
           saveRecord(player.id, role, r);
@@ -798,7 +916,7 @@ async function showCommands(player, role) {
     }
   }
   actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
-  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, role) });
+  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
 
   const form = new ActionFormData().title(`${ROLES[role].color}${record.name}§r (${ROLES[role].title})`).body(body);
   actions.forEach((a) => form.button(a.label));
@@ -831,10 +949,10 @@ async function chooseAttackTarget(player, ai) {
 
 /**
  * Fighter tombstone settings: looting on/off, and teaching it tombstones from another add-on.
- * @param {import("@minecraft/server").Player} player
+ * @param {import("@minecraft/server").Player} player @param {string} key
  */
-async function showTombs(player) {
-  const record = getRecord(player.id, "fighter");
+async function showTombs(player, key) {
+  const record = mine(player, key);
   if (!record) return;
   const types = tombTypes();
   const known = [...types.blocks, ...types.entities];
@@ -874,9 +992,9 @@ async function showTombs(player) {
   }
 }
 
-/** @param {import("@minecraft/server").Player} player */
-async function chooseCombat(player) {
-  const record = getRecord(player.id, "fighter");
+/** @param {import("@minecraft/server").Player} player @param {string} key */
+async function chooseCombat(player, key) {
+  const record = mine(player, key);
   if (!record) return;
   const form = new ActionFormData()
     .title("Fighting style")
@@ -891,9 +1009,9 @@ async function chooseCombat(player) {
   player.sendMessage(`§e${record.name}: ${choice.label}.`);
 }
 
-/** @param {import("@minecraft/server").Player} player */
-async function chooseTargets(player) {
-  const record = getRecord(player.id, "fighter");
+/** @param {import("@minecraft/server").Player} player @param {string} key */
+async function chooseTargets(player, key) {
+  const record = mine(player, key);
   if (!record) return;
   const form = new ActionFormData()
     .title("Targets")
@@ -909,11 +1027,12 @@ async function chooseTargets(player) {
 
 /**
  * @param {import("@minecraft/server").Player} player
+ * @param {string} key
  * @param {import("@minecraft/server").Entity} ai
  * @param {"follow" | "guard"} mode
  */
-function setFighterMode(player, ai, mode) {
-  const record = getRecord(player.id, "fighter");
+function setFighterMode(player, key, ai, mode) {
+  const record = mine(player, key);
   if (!record) return;
   record.mode = mode;
   if (mode === "guard") {
@@ -934,11 +1053,10 @@ function setFighterMode(player, ai, mode) {
 /**
  * Take cooked chicken from an AI's food slot (only what's above its own 10).
  * @param {import("@minecraft/server").Player} player
- * @param {string} ownerId
- * @param {RoleId} role
+ * @param {string} key
  */
-async function takeFood(player, ownerId, role) {
-  let record = getRecord(ownerId, role);
+async function takeFood(player, key) {
+  let record = getAi(key);
   if (!record) return;
   const takeable = takeableFood(record);
   if (takeable <= 0) {
@@ -958,12 +1076,12 @@ async function takeFood(player, ownerId, role) {
     amount = Number(response.formValues?.[0] ?? takeable);
   }
   // Read again: someone else may have taken some while the menu was open.
-  record = getRecord(ownerId, role);
+  record = getAi(key);
   if (!record) return;
   amount = Math.min(amount, takeableFood(record));
   if (amount <= 0) return;
   inventoryOf(record).food -= amount;
-  saveRecord(ownerId, role, record);
+  saveRecord(record.ownerId, record.role, record);
   giveItem(player, new ItemStack(FOOD_ITEM, amount));
   player.sendMessage(`§aYou took ${amount} cooked chicken from ${record.name}.`);
 }
@@ -1103,22 +1221,17 @@ async function forgiveEnemy(player) {
 
 // Every 10 seconds: each AI makes 10 cooked chicken per 10 minutes of game time, up to 30.
 system.runInterval(() => {
-  for (const key of world.getDynamicPropertyIds()) {
-    const match = /^aip:ai:(.+):(resource|fighter)$/.exec(key);
-    if (!match) continue;
-    const [, ownerId, role] = match;
-    const record = getRecord(ownerId, /** @type {RoleId} */ (role));
-    if (!record) continue;
+  for (const record of allAis()) {
     if (record.state === "egg" || record.state === "thrown") {
       // Not in the world yet: the 10-minute timer starts when it first joins.
       inventoryOf(record).foodAt = world.getAbsoluteTime();
-      saveRecord(ownerId, /** @type {RoleId} */ (role), record);
+      saveRecord(record.ownerId, record.role, record);
       continue;
     }
     const added = generateFood(record);
-    saveRecord(ownerId, /** @type {RoleId} */ (role), record);
+    saveRecord(record.ownerId, record.role, record);
     if (added > 0) {
-      findPlayer(ownerId)?.sendMessage(
+      findPlayer(record.ownerId)?.sendMessage(
         `§7${record.name} made ${added} cooked chicken (${inventoryOf(record).food}/${FOOD_CAP}, §a${takeableFood(record)} you can take§7).`
       );
     }
@@ -1132,18 +1245,18 @@ system.runInterval(() => {
   for (const [eggId, egg] of flyingEggs) {
     if (Date.now() - egg.thrownAt < 8000) continue;
     const entity = world.getEntity(eggId);
-    const owner = findPlayer(egg.ownerId);
     if (entity) {
       hatch(entity, entity.location, entity.dimension);
     } else {
       flyingEggs.delete(eggId);
-      const record = getRecord(egg.ownerId, egg.role);
+      const record = getAi(egg.key);
       if (record?.state !== "thrown") continue;
+      const owner = findPlayer(record.ownerId);
       if (owner) {
-        spawnAi(owner, egg.role, owner.location, owner.dimension);
+        spawnAi(owner, record.key, owner.location, owner.dimension);
       } else {
         record.state = "respawn";
-        saveRecord(egg.ownerId, egg.role, record);
+        saveRecord(record.ownerId, record.role, record);
       }
     }
   }

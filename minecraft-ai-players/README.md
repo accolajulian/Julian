@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.11.0)
+## What it does (v1.12.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -16,7 +16,7 @@ An original add-on with AI companions that look like players. It's kept separate
   Iron   Redstone  Iron
   Iron   Iron      Iron
   ```
-- **Resource AI** costs 30 gold ingots, **Fighter AI** costs 15 diamonds. Each player can only have one of each.
+- **Resource AI** costs 30 gold ingots, **Fighter AI** costs 15 diamonds. Each player can only **buy** one of each, ever.
 - Prices show in red until you have enough. Trying to buy without enough only tells you how many more you need.
 - Buying: type a name (required). The look is picked automatically (add-ons can't copy a player's skin). Every AI starts with full health and 10 cooked chicken. You get an **AI Egg**; use it to throw it,
   and your AI appears where it lands.
@@ -25,6 +25,17 @@ An original add-on with AI companions that look like players. It's kept separate
   **blue** for the Resource AI). Use it to teleport your AI to you. If the AI is too far away to be loaded,
   it rejoins next to you with everything it carries. Lost it? The Coder gives you a new one.
 - **If an AI dies, it respawns next to its owner** after 5 seconds (or when the owner next joins).
+
+### Controllers (recall robots)
+- Whoever holds an AI's recall robot controls it. Drop it and let another player pick it up, and the AI
+  rejoins next to them and follows, protects and obeys them, keeping everything it carries.
+- Handing over a controller never changes who bought it: the buyer still can't buy another of that kind,
+  and the new controller can still buy their own if they haven't yet. A player can control several AIs.
+
+### Mobs
+- Mobs can't hurt either AI (hits, arrows and explosions do nothing).
+- The Resource AI never hurts mobs. It only fights players, with its bow or crossbow.
+- The Fighter AI kills mobs as before.
 
 ### Controls
 | Action | What happens |

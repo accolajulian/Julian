@@ -7,7 +7,11 @@ const MAX_ENEMIES = 40;
 
 /** @typedef {"resource" | "fighter"} RoleId */
 /**
- * @typedef {Object} AiRecord  Saved per player per role. Survives the AI dying.
+ * @typedef {Object} AiRecord  Saved per AI. Survives the AI dying.
+ * @property {string} key  This AI's own ID (also stored on its egg, its recall robot and the AI itself).
+ * @property {RoleId} role
+ * @property {string} ownerId  Who controls it now: whoever has its recall robot (controller).
+ * @property {string} buyerId  Who bought it. Never changes.
  * @property {string} name
  * @property {number} look
  * @property {"egg" | "thrown" | "alive" | "respawn"} state
@@ -47,20 +51,91 @@ export function isRole(value) {
 }
 
 // ---------------------------------------------------------------- AI records
+// Every AI has its own record (key "aip:rec:<key>"). Who controls it can change (by passing its
+// recall robot to another player); who bought it never does. Each player can BUY one AI of each kind,
+// ever ("aip:bought:<player>:<role>"), but can control any number of AIs others hand them.
 
-/** @param {string} playerId @param {RoleId} role @returns {AiRecord | undefined} */
-export function getRecord(playerId, role) {
-  return readJson(`aip:ai:${playerId}:${role}`);
+/** @param {string} key @returns {AiRecord | undefined} */
+export function getAi(key) {
+  return readJson(`aip:rec:${key}`);
 }
 
-/** @param {string} playerId @param {RoleId} role @param {AiRecord | undefined} record */
-export function saveRecord(playerId, role, record) {
-  writeJson(`aip:ai:${playerId}:${role}`, record);
+/**
+ * Saves an AI record. (The first two arguments are kept so older call sites read naturally.)
+ * @param {string} _ownerId @param {RoleId} _role @param {AiRecord} record
+ */
+export function saveRecord(_ownerId, _role, record) {
+  writeJson(`aip:rec:${record.key}`, record);
+}
+
+/** @param {string} key */
+export function removeAi(key) {
+  writeJson(`aip:rec:${key}`, undefined);
+}
+
+/** A new unique AI key. */
+export function newKey() {
+  return `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`;
+}
+
+/** Every AI record in the world. @returns {AiRecord[]} */
+export function allAis() {
+  migrateOldRecords();
+  /** @type {AiRecord[]} */
+  const list = [];
+  for (const id of world.getDynamicPropertyIds()) {
+    if (!id.startsWith("aip:rec:")) continue;
+    const record = readJson(id);
+    if (record) list.push(record);
+  }
+  return list;
+}
+
+/**
+ * The AIs a player controls (optionally only one kind).
+ * @param {string} playerId @param {RoleId} [role]
+ */
+export function controlledBy(playerId, role) {
+  return allAis().filter((r) => r.ownerId === playerId && (!role || r.role === role));
 }
 
 /** @param {string} playerId */
 export function ownsAnyAi(playerId) {
-  return ROLE_IDS.some((role) => getRecord(playerId, role));
+  return controlledBy(playerId).length > 0;
+}
+
+/** Has this player already bought an AI of this kind? (Only one of each, ever.) */
+/** @param {string} playerId @param {RoleId} role */
+export function hasBought(playerId, role) {
+  return world.getDynamicProperty(`aip:bought:${playerId}:${role}`) === true;
+}
+
+/** @param {string} playerId @param {RoleId} role */
+export function markBought(playerId, role) {
+  world.setDynamicProperty(`aip:bought:${playerId}:${role}`, true);
+}
+
+/** Converts records saved by versions before 1.12 ("aip:ai:<player>:<role>"). */
+function migrateOldRecords() {
+  try {
+    migrate();
+  } catch {
+    // Can't save right now (e.g. inside a "before" event); it runs again on the next lookup.
+  }
+}
+
+function migrate() {
+  for (const id of world.getDynamicPropertyIds()) {
+    const match = /^aip:ai:(.+):(resource|fighter)$/.exec(id);
+    if (!match) continue;
+    const old = readJson(id);
+    world.setDynamicProperty(id, undefined);
+    if (!old) continue;
+    const [, playerId, role] = match;
+    const record = { ...old, key: newKey(), role, ownerId: playerId, buyerId: playerId };
+    writeJson(`aip:rec:${record.key}`, record);
+    markBought(playerId, /** @type {RoleId} */ (role));
+  }
 }
 
 // ---------------------------------------------------------------- memory
@@ -111,11 +186,23 @@ export function ownerInfo(entity) {
   const ownerId = entity.getDynamicProperty("aip:owner");
   const role = entity.getDynamicProperty("aip:role");
   if (typeof ownerId !== "string" || !isRole(role)) return undefined;
-  return { ownerId, role };
+  let key = entity.getDynamicProperty("aip:key");
+  if (typeof key !== "string") {
+    // An AI from before version 1.12: find its record and remember its key.
+    const record = allAis().find((r) => r.id === entity.id);
+    if (!record) return undefined;
+    key = record.key;
+    try {
+      entity.setDynamicProperty("aip:key", key);
+    } catch {
+      // Read-only moment (before an event); it'll be saved next time.
+    }
+  }
+  return { ownerId, role, key };
 }
 
 /** Which player and role each AI belongs to, in case a dead AI's saved data can't be read. */
-/** @type {Map<string, { ownerId: string, role: RoleId }>} */
+/** @type {Map<string, { ownerId: string, role: RoleId, key: string }>} */
 export const knownAis = new Map();
 
 // ---------------------------------------------------------------- inventory
