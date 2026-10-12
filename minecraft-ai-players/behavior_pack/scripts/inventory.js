@@ -1,5 +1,5 @@
 // AI inventories: food, 3 tool slots used in order (1 -> 2 -> 3), 4 armor slots, a shield slot,
-// 2 block slots, 2 arrow slots (Fighter) and a backpack for gathered items (Resource AI).
+// 2 block slots, 2 arrow slots and 10 valuables slots. (The old backpack is no longer used.)
 // Everything is saved in the AI's record, so it is kept when the AI dies and respawns.
 import { world, ItemStack, EnchantmentType, BlockTypes } from "@minecraft/server";
 

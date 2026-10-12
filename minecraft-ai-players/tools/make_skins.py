@@ -421,6 +421,41 @@ def robot_icon(base, seed):
     return img
 
 
+SLOT_SHAPES = {
+    "tool": ["..........XXX...", ".........XXXXX..", "........XX.XXX..", ".......XX...X...", "......XX........",
+             ".....XX.........", "....XX..........", "...XX...........", "..XX............", ".XX............."],
+    "weapon": [".............XX.", "............XXX.", "...........XXX..", "..........XXX...", ".........XXX....",
+               "...X....XXX.....", "....X..XXX......", ".....XXXX.......", "......XX........", ".....X..X.......", "....X....X......"],
+    "armor": ["...XX......XX...", "..XXXX....XXXX..", "..XXXXXXXXXXXX..", "...XXXXXXXXXX...", "...XXXXXXXXXX...",
+              "...XXXXXXXXXX...", "...XXXXXXXXXX...", "...XXXXXXXXXX...", "....XXXXXXXX...."],
+    "shield": ["..XXXXXXXXXX....", "..XXXXXXXXXX....", "..XXXXXXXXXX....", "..XXXXXXXXXX....", "..XXXXXXXXXX....",
+               "...XXXXXXXX.....", "....XXXXXX......", ".....XXXX.......", "......XX........"],
+    "food": [".......XXXX.....", "......XXXXXX....", ".....XXXXXXXX...", ".....XXXXXXXX...", "......XXXXXX....",
+             ".......XXXX.....", "........XX......", "........XX......", ".......X..X.....", "........XX......"],
+    "arrows": ["...........XXXX.", "............XXX.", "...........X.XX.", "..........X...X.", ".........X......",
+               "........X.......", ".......X........", "..X..X..........", "...XX...........", "..X.X...........", "...X............"],
+    "blocks": ["....XXXXXXXX....", "...X.......XX...", "..XXXXXXXXX.X...", "..X.......X.X...", "..X.......X.X...",
+               "..X.......X.X...", "..X.......XX....", "..XXXXXXXXX....."],
+    "valuables": ["....XXXXXXXX....", "...XX..XX..XX...", "..XXXXXXXXXXXX..", "...XX......XX...", "....XX....XX....",
+                  ".....XX..XX.....", "......XXXX......", ".......XX......."],
+    "info": [".......XX.......", ".......XX.......", "................", "......XXX.......", ".......XX.......",
+             ".......XX.......", ".......XX.......", "......XXXX......"],
+}
+
+
+def slot_icon(kind):
+    """16x16 slot label: a light outline of what goes in the slot, on a dark square."""
+    img = Image.new("RGBA", (16, 16), (40, 42, 50, 170))
+    p = img.load()
+    shape = SLOT_SHAPES[kind]
+    top = (16 - len(shape)) // 2
+    for y, row in enumerate(shape):
+        for x, ch in enumerate(row):
+            if ch == "X":
+                p[x, top + y] = (190, 195, 205, 255)
+    return img
+
+
 def main():
     skins = []
     for i, paint in enumerate(AI):
@@ -433,6 +468,8 @@ def main():
     for name, img in zip(("side", "top", "bottom"), coder_textures()):
         img.save(RP / f"textures/blocks/coder_{name}.png")
     computer_icon().save(RP / "textures/items/ai_computer.png")
+    for kind in SLOT_SHAPES:
+        slot_icon(kind).save(RP / f"textures/items/slot_{kind}.png")
     egg_icon((200, 50, 50), (255, 210, 70), 1).save(RP / "textures/items/fighter_egg.png")
     egg_icon((70, 160, 70), (79, 224, 255), 2).save(RP / "textures/items/resource_egg.png")
     egg_icon((120, 200, 230), (255, 255, 255), 3).save(RP / "textures/items/ai_capsule.png")

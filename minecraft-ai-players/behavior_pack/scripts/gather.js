@@ -2,18 +2,16 @@
 //
 // The AI finds the nearest block of its focus (within 12 blocks of its owner), walks to a free spot
 // next to it (stepping up blocks, never into lava or off a cliff), then mines it: it picks a suitable tool from slots 1-2-3,
-// takes as long as a player would, puts the drops in its valuables / block slots / backpack, and never mines
+// takes as long as a player would, puts the drops in its valuables / block slots (anything else goes to
+// its owner), and never mines
 // next to lava. Lava near any AI gets covered with blocks from its block slots, or the AI backs away.
 import { system, BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER } from "./gather_data.js";
-import { saveRecord, findPlayer } from "./data.js";
+import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
   inventoryOf,
   takeBlock,
   addBlocks,
-  addToBag,
-  bagCount,
-  BAG_CAPACITY,
   wearTool,
   enchantLevel,
   itemName,
@@ -173,11 +171,6 @@ export function setGatherBehavior(ai, state, focus, canGather) {
 export function gather(ai, ownerId, record, state, owner) {
   const now = Date.now();
   if (record.focus === "Nothing" || now < state.pausedUntil) return undefined;
-  if (bagCount(record) >= BAG_CAPACITY) {
-    warn(state, ownerId, "full", `§e${record.name}'s backpack is full. Right click it and open Inventory > Backpack.`);
-    state.pausedUntil = now + 15000;
-    return undefined;
-  }
 
   const dim = ai.dimension;
   const m = state.mining;
@@ -191,7 +184,7 @@ export function gather(ai, ownerId, record, state, owner) {
       ai.playAnimation("animation.aip.ai_player.mine");
       return m.slot;
     }
-    finishMining(ai, ownerId, record, state, m);
+    finishMining(ai, ownerId, record, state, m, owner);
     state.mining = undefined;
     state.idleSince = now;
     return undefined;
@@ -293,8 +286,9 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
  * @param {import("./data.js").AiRecord} record
  * @param {GatherState} state
  * @param {{ x: number, y: number, z: number, id: string, slot: number }} m
+ * @param {import("@minecraft/server").Player | undefined} owner
  */
-function finishMining(ai, ownerId, record, state, m) {
+function finishMining(ai, ownerId, record, state, m, owner) {
   const dim = ai.dimension;
   const info = GATHER[m.id];
   if (!info) return;
@@ -315,15 +309,19 @@ function finishMining(ai, ownerId, record, state, m) {
   dim.setBlockType(m, "minecraft:air");
   dim.playSound(info.tool === "axe" ? "dig.wood" : "dig.stone", m);
 
-  // Drops go to the block slots (if they're building blocks) and then the backpack.
+  // Drops go to its valuables / block slots; anything that doesn't fit goes to its owner (or is dropped).
   const amount = info.min !== undefined && info.max !== undefined
     ? info.min + Math.floor(Math.random() * (info.max - info.min + 1))
     : 1;
   let left = amount;
   if (isValuable(info.drop)) left -= addValuables(record, info.drop, left);
   if (isPlaceableBlock(info.drop)) left -= addBlocks(record, info.drop, left);
-  left -= addToBag(record, info.drop, left);
-  if (left > 0) dim.spawnItem(new ItemStack(info.drop, left), center(m)); // no room: drop it
+  if (left > 0) {
+    const stack = new ItemStack(info.drop, left);
+    const ownerClose = owner && owner.dimension.id === dim.id && dist(owner.location, ai.location) <= 32;
+    if (ownerClose) giveItem(owner, stack);
+    else dim.spawnItem(stack, center(m));
+  }
 
   // Wear the tool. If it breaks, the next think uses the next suitable slot.
   if (m.slot >= 0) {

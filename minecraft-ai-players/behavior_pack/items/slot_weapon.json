@@ -1,0 +1,18 @@
+{
+  "format_version": "1.21.0",
+  "minecraft:item": {
+    "description": {
+      "identifier": "aip:slot_weapon",
+      "menu_category": {
+        "category": "none"
+      }
+    },
+    "components": {
+      "minecraft:icon": "aip_slot_weapon",
+      "minecraft:display_name": {
+        "value": "Weapon slot"
+      },
+      "minecraft:max_stack_size": 1
+    }
+  }
+}

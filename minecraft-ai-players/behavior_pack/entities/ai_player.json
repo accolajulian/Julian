@@ -1332,21 +1332,11 @@
           "target": "self"
         }
       },
-      "minecraft:interact": {
-        "interactions": [
-          {
-            "on_interact": {
-              "filters": {
-                "test": "is_family",
-                "subject": "other",
-                "value": "player"
-              },
-              "event": "aip:interacted",
-              "target": "self"
-            },
-            "interact_text": "action.interact.aip_command"
-          }
-        ]
+      "minecraft:inventory": {
+        "container_type": "container",
+        "inventory_size": 27,
+        "restrict_to_owner": true,
+        "private": true
       }
     },
     "events": {
@@ -1485,7 +1475,6 @@
           ]
         }
       },
-      "aip:interacted": {},
       "aip:retreat": {
         "add": {
           "component_groups": [

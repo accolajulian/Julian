@@ -1,0 +1,18 @@
+{
+  "format_version": "1.21.0",
+  "minecraft:item": {
+    "description": {
+      "identifier": "aip:slot_food",
+      "menu_category": {
+        "category": "none"
+      }
+    },
+    "components": {
+      "minecraft:icon": "aip_slot_food",
+      "minecraft:display_name": {
+        "value": "Food slot"
+      },
+      "minecraft:max_stack_size": 1
+    }
+  }
+}

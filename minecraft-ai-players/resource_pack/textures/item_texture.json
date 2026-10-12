@@ -16,6 +16,33 @@
     },
     "aip_ai_computer": {
       "textures": "textures/items/ai_computer"
+    },
+    "aip_slot_tool": {
+      "textures": "textures/items/slot_tool"
+    },
+    "aip_slot_weapon": {
+      "textures": "textures/items/slot_weapon"
+    },
+    "aip_slot_armor": {
+      "textures": "textures/items/slot_armor"
+    },
+    "aip_slot_shield": {
+      "textures": "textures/items/slot_shield"
+    },
+    "aip_slot_food": {
+      "textures": "textures/items/slot_food"
+    },
+    "aip_slot_arrows": {
+      "textures": "textures/items/slot_arrows"
+    },
+    "aip_slot_blocks": {
+      "textures": "textures/items/slot_blocks"
+    },
+    "aip_slot_valuables": {
+      "textures": "textures/items/slot_valuables"
+    },
+    "aip_slot_info": {
+      "textures": "textures/items/slot_info"
     }
   }
 }
