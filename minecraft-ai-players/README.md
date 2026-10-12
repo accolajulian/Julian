@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.13.0)
+## What it does (v1.14.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -40,7 +40,17 @@ An original add-on with AI companions that look like players. It's kept separate
 | AI | Cost | What it gets |
 |---|---|---|
 | Resource AI | 10 diamonds | Strip mining (digs a tunnel straight to diamonds, or netherite in the Nether), no lava/fire/fall damage (no potion bubbles), Computer Chest access |
-| Fighter AI | 10 netherite ingots | No lava/fire/fall damage, Computer Chest access |
+| Fighter AI | 10 netherite ingots | The 30-block sequence (below), 2 opening arrows at 3x speed in Bow and Sword Combat, no lava/fire damage, Computer Chest access |
+
+### Upgraded Fighter: the 30-block sequence
+When an enemy player comes within 30 blocks, the upgraded Fighter gets each of these once:
+- **Full sprint:** 1.5x a player's speed and higher jumps, until it lands its first hit on them.
+- **Knockback:** that first hit knocks the player back about 7 blocks.
+- **Power jump:** if the player is more than 2 blocks higher and within 8 blocks sideways, it jumps about
+  10 blocks towards them, swinging the whole way, with no fall damage for 5 seconds.
+
+When the player leaves the 30 blocks and comes back, the sequence starts again. Faster arrows do the same
+damage as a normal full-power arrow.
 
 ### Computer Chest (chest.js)
 Craft: chest + redstone + glass pane. Place it, **left click** it to choose one of your upgraded AIs (or pick

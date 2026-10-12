@@ -72,7 +72,7 @@
           "priority": 1,
           "must_see": false,
           "reselect_targets": true,
-          "within_radius": 24.0,
+          "within_radius": 32.0,
           "scan_interval": 5,
           "entity_types": [
             {
@@ -90,7 +90,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -107,7 +107,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -124,7 +124,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -141,7 +141,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -158,7 +158,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -175,7 +175,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -192,7 +192,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -209,7 +209,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -226,7 +226,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -243,7 +243,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -260,7 +260,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -277,7 +277,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -294,7 +294,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -311,7 +311,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -328,7 +328,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             },
             {
               "filters": {
@@ -345,7 +345,7 @@
                   }
                 ]
               },
-              "max_dist": 24
+              "max_dist": 32
             }
           ]
         },

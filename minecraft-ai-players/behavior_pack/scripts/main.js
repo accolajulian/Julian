@@ -73,7 +73,13 @@ const UPGRADES = {
     amount: 10,
     label: "Netherite Ingots",
     about:
-      "§a+§r Can't be hurt by lava or fire (no potion bubbles), and takes no fall damage\n" +
+      "When an enemy player comes within 30 blocks, once each time they come back into range:\n" +
+      "§a+§r Full sprint: runs and jumps 1.5x faster than a player until it lands its first hit\n" +
+      "§a+§r That first hit knocks the player back about 7 blocks\n" +
+      "§a+§r Power jump: jumps about 10 blocks to reach a player more than 2 blocks above it, swinging all\n" +
+      "   the way up (no fall damage for 5 seconds after)\n" +
+      "§a+§r Bow and Sword Combat: 2 opening arrows at 3x speed instead of 1\n" +
+      "§a+§r Can't be hurt by lava or fire (no potion bubbles)\n" +
       "§a+§r Its inventory can be opened from a Computer Chest",
   },
 };
@@ -131,7 +137,7 @@ const ROLES = {
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
       "§a+§r Left click it (or its recall robot) and pick Attack a player to send it after someone\n" +
       "§a+§r Respawns near the player who bought it 60 seconds after dying, and keeps its memory\n" +
-      "§a+§r Upgrade it at the Coder (10 netherite ingots): lava and fall proof, Computer Chest access\n\n" +
+      "§a+§r Upgrade it at the Coder (10 netherite ingots): sprint, power jump, knockback, double arrows\n\n" +
       "§7Health: 20 (same as a player)   Damage: 6 + tool",
   },
 };

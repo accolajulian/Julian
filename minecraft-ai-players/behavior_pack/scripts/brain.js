@@ -65,6 +65,18 @@ const OPENING_RANGE = 20; // "Bow and Sword": one arrow from about this far, the
 const SHOT_EVERY_MS = 1300;
 const ARROW_SPEED = 3; // blocks per tick (a fully drawn bow)
 const ARROW_GRAVITY = 0.05; // blocks per tick per tick
+
+// Upgraded Fighter: a "sequence" against an enemy player starts when that player is within 30 blocks
+// and ends when they leave the 30 blocks. Each sequence gets ONE of each: the sprint (until its first
+// hit), the 7-block knockback (on that first hit), and the 10-block power jump.
+const SEQUENCE_RADIUS = 30;
+const SPRINT_MOVEMENT = 0.45; // normal is 0.3: 1.5x faster
+const POWER_JUMP_UP = 1.3; // upward push for about a 10-block jump
+const NO_FALL_MS = 5000; // no fall damage for this long after a power jump
+const KNOCKBACK_FORCE = 2.6; // about 7 blocks
+const VOLLEY_ARROWS = 2; // upgraded "Bow and Sword": 2 opening arrows...
+const VOLLEY_SPEED = 3; // ...at 3 times the speed
+const NORMAL_ARROW_DAMAGE = 9; // faster arrows don't hit harder than a normal full-power arrow
 const EAT_EVERY_MS = 2500; // how often it can eat a cooked chicken
 const SHIELD_COOLDOWN_MS = 1000; // time between shield blocks
 const AXE_DISABLES_SHIELD_MS = 5000; // an axe hit knocks its shield down for this long
@@ -138,6 +150,9 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {boolean} upgraded
  * @property {string | undefined} modeEvent  Resource AI: follow/wander/stay event applied.
  * @property {import("./stripmine.js").StripState} strip
+ * @property {Map<string, { hit: boolean, jumped: boolean }>} sequences  Upgraded Fighter: enemy players within 30 blocks.
+ * @property {boolean} sprinting
+ * @property {number} noFallUntil
  * @property {number} warnedAt  Last "Archer needs a bow and arrows" message.
  * @property {string | undefined} commandId
  * @property {number} commandUntil
@@ -222,7 +237,6 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damageSource }) => {
 // Upgraded AIs also take no fire, lava or fall damage.
 const EXPLOSIONS = [EntityDamageCause.entityExplosion, EntityDamageCause.blockExplosion];
 const UPGRADED_IMMUNE = [
-  EntityDamageCause.fall,
   EntityDamageCause.lava,
   EntityDamageCause.fire,
   EntityDamageCause.fireTick,
@@ -234,7 +248,12 @@ world.beforeEvents.entityHurt.subscribe((event) => {
   const cause = event.damageSource.cause;
   if (attacker && attacker.typeId !== "minecraft:player" && attacker.typeId !== AI_ENTITY) event.cancel = true;
   if (EXPLOSIONS.includes(cause)) event.cancel = true;
-  if (brains.get(event.hurtEntity.id)?.upgraded && UPGRADED_IMMUNE.includes(cause)) event.cancel = true;
+  const brain = brains.get(event.hurtEntity.id);
+  if (brain?.upgraded && UPGRADED_IMMUNE.includes(cause)) event.cancel = true;
+  // No fall damage: upgraded Resource AI always, Fighter for 5 seconds after a power jump.
+  if (cause === EntityDamageCause.fall && brain && ((brain.upgraded && brain.role === "resource") || Date.now() < brain.noFallUntil)) {
+    event.cancel = true;
+  }
 });
 
 // An AI with a shield blocks hits and arrows coming from in front of it (not every hit: it needs
@@ -329,9 +348,34 @@ world.beforeEvents.entityHurt.subscribe((event) => {
     event.cancel = true;
     return;
   }
+  if (event.damageSource.damagingProjectile?.getDynamicProperty("aip:fast")) {
+    event.damage = Math.min(event.damage, NORMAL_ARROW_DAMAGE);
+  }
   if (brain?.equipped && event.damageSource.cause === EntityDamageCause.entityAttack) {
     event.damage += Math.max(0, (TOOL_DAMAGE[brain.equipped] ?? 0) - 3);
   }
+});
+
+// Upgraded Fighter: its first hit on an enemy player in a sequence knocks them back about 7 blocks.
+world.afterEvents.entityHurt.subscribe(({ hurtEntity, damageSource }) => {
+  const ai = damageSource.damagingEntity;
+  if (!ai || ai.typeId !== AI_ENTITY || hurtEntity.typeId !== "minecraft:player") return;
+  if (damageSource.cause !== EntityDamageCause.entityAttack || !hurtEntity.isValid) return;
+  const brain = brains.get(ai.id);
+  if (!brain?.upgraded || brain.role !== "fighter") return;
+  if (distance(ai.location, hurtEntity.location) > SEQUENCE_RADIUS) return;
+  let seq = brain.sequences.get(hurtEntity.id);
+  if (!seq) brain.sequences.set(hurtEntity.id, (seq = { hit: false, jumped: false }));
+  if (seq.hit) return;
+  seq.hit = true;
+  const dx = hurtEntity.location.x - ai.location.x;
+  const dz = hurtEntity.location.z - ai.location.z;
+  const len = Math.hypot(dx, dz) || 1;
+  /** @type {import("@minecraft/server").Player} */ (hurtEntity).applyKnockback(
+    { x: (dx / len) * KNOCKBACK_FORCE, z: (dz / len) * KNOCKBACK_FORCE },
+    0.5
+  );
+  stopSprint(ai, brain);
 });
 
 // Melee hits wear down the tool in use. When it breaks, the AI moves on to the next slot.
@@ -359,20 +403,22 @@ world.afterEvents.entitySpawn.subscribe(({ entity }) => {
  * @param {import("@minecraft/server").Entity} ai
  * @param {Brain} brain
  * @param {import("@minecraft/server").Entity} target
+ * @param {number} [speedTimes]  3 for the upgraded Fighter's opening volley
  */
-function fireArrow(ai, brain, target) {
+function fireArrow(ai, brain, target, speedTimes = 1) {
   const info = ownerInfo(ai);
   const record = info ? getAi(info.key) : undefined;
   if (!info || !record || !useArrow(record)) return false;
 
+  const speed = ARROW_SPEED * speedTimes;
   const from = ai.getHeadLocation();
   const v = target.getVelocity();
   const aim = { x: target.location.x, y: target.location.y + 1, z: target.location.z };
-  let t = distance(from, aim) / ARROW_SPEED;
+  let t = distance(from, aim) / speed;
   let at = aim;
   for (let i = 0; i < 3; i++) {
     at = { x: aim.x + v.x * t, y: aim.y + Math.max(0, v.y) * t, z: aim.z + v.z * t };
-    t = distance(from, at) / ARROW_SPEED;
+    t = distance(from, at) / speed;
   }
   at = { ...at, y: at.y + 0.5 * ARROW_GRAVITY * t * t * 1.1 };
   const d = distance(from, at) || 1;
@@ -380,10 +426,11 @@ function fireArrow(ai, brain, target) {
 
   const arrow = ai.dimension.spawnEntity("minecraft:arrow", { x: from.x + dir.x * 0.8, y: from.y + dir.y * 0.8, z: from.z + dir.z * 0.8 });
   arrow.setDynamicProperty("aip:aimed", true);
+  if (speedTimes > 1) arrow.setDynamicProperty("aip:fast", true);
   const projectile = arrow.getComponent("minecraft:projectile");
   if (projectile) {
     projectile.owner = ai;
-    projectile.shoot({ x: dir.x * ARROW_SPEED, y: dir.y * ARROW_SPEED, z: dir.z * ARROW_SPEED });
+    projectile.shoot({ x: dir.x * speed, y: dir.y * speed, z: dir.z * speed });
   }
   ai.dimension.playSound("random.bow", ai.location);
   saveRecord(info.ownerId, info.role, record);
@@ -515,6 +562,7 @@ function think(ai, ownerId, role, record, brain) {
   // ---- Back off and heal when low on health.
   if (!brain.retreating && hpRatio < RETREAT_BELOW) {
     brain.retreating = true;
+    stopSprint(ai, brain);
     ai.triggerEvent("aip:retreat");
     setHunt(brain, undefined);
     owner?.sendMessage(`§e${record.name} is badly hurt and backing off to heal.`);
@@ -588,6 +636,7 @@ function think(ai, ownerId, role, record, brain) {
 
   // ---- Nothing to fight: break and loot tombstones nearby.
   if (!brain.huntId && now - lastHit > RECENT_MS && handleTombs(ai, ownerId, record, brain.loot)) {
+    stopSprint(ai, brain);
     equip(ai, brain, record, chooseSlot(record, brain, owner, undefined, 0));
     return;
   }
@@ -603,13 +652,24 @@ function think(ai, ownerId, role, record, brain) {
   equip(ai, brain, record, chooseSlot(record, brain, owner, target, dist));
   const holdingBow = isRanged(slotItem(record, brain.activeSlot)?.id);
   const range = brain.wantRanged ? BOW_RANGE : OPENING_RANGE;
-  if (target && holdingBow && dist <= range && now >= brain.nextShotAt && fireArrow(ai, brain, target)) {
+  const volley = brain.upgraded && !brain.wantRanged; // upgraded "Bow and Sword": 2 fast opening arrows
+  if (target && holdingBow && dist <= range && now >= brain.nextShotAt && fireArrow(ai, brain, target, volley ? VOLLEY_SPEED : 1)) {
     brain.nextShotAt = now + SHOT_EVERY_MS;
+    if (volley) {
+      for (let i = 1; i < VOLLEY_ARROWS; i++) {
+        system.runTimeout(() => {
+          if (ai.isValid && target.isValid) fireArrow(ai, brain, target, VOLLEY_SPEED);
+        }, 4 * i);
+      }
+    }
     if (!brain.wantRanged) {
       brain.openingDone = true; // Bow and Sword: that was the one arrow; now the sword
       equip(ai, brain, record, chooseSlot(record, brain, owner, target, dist));
     }
   }
+
+  // ---- Upgraded: the 30-block sequence against enemy players (sprint, knockback, power jump).
+  upgradedSequence(ai, brain, target, dist, now);
 
   // ---- Bridge or pillar towards the target (or the owner it's following).
   if (!lavaClose) {
@@ -638,9 +698,10 @@ function chooseTarget(ai, ownerId, owner, record, memory, brain, now) {
   const huntMobs = record.targets !== "players";
   const sameDimOwner = owner && owner.dimension.id === ai.dimension.id ? owner : undefined;
 
+  const radius = brain.upgraded ? SEQUENCE_RADIUS : SCAN_RADIUS;
   const candidates = ai.dimension.getEntities({
     location: ai.location,
-    maxDistance: SCAN_RADIUS,
+    maxDistance: radius,
     excludeGameModes: [GameMode.Creative, GameMode.Spectator],
   });
 
@@ -688,13 +749,91 @@ function chooseTarget(ai, ownerId, owner, record, memory, brain, now) {
       const held = e.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Mainhand)?.typeId;
       if (held && ALLOWED_TOOLS.fighter.has(held)) score += 20;
     }
-    score += (SCAN_RADIUS - distance(e.location, ai.location)) * 2;
+    score += Math.max(0, radius - distance(e.location, ai.location)) * 2;
     if (eHealth.currentValue / eHealth.effectiveMax < 0.3) score += 10;
 
     if (e.id === brain.huntId) currentScore = score;
     if (!best || score > best.score) best = { entity: e, id: e.id, score };
   }
   return { best, currentScore };
+}
+
+// ================================================================ upgraded Fighter sequence
+
+/**
+ * Against an enemy player within 30 blocks: sprint (1.5x speed and jump) until its first hit, and one
+ * 10-block power jump if they're more than 2 blocks higher. Each once per sequence; a sequence ends
+ * when the player leaves the 30 blocks (coming back starts a new one).
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {Brain} brain
+ * @param {import("@minecraft/server").Entity | undefined} target
+ * @param {number} dist
+ * @param {number} now
+ */
+function upgradedSequence(ai, brain, target, dist, now) {
+  if (!brain.upgraded) return stopSprint(ai, brain);
+
+  // Players who left the 30 blocks: their sequence is over.
+  for (const [id] of brain.sequences) {
+    const p = world.getEntity(id);
+    if (!p?.isValid || p.dimension.id !== ai.dimension.id || distance(p.location, ai.location) > SEQUENCE_RADIUS) {
+      brain.sequences.delete(id);
+    }
+  }
+  if (!target || target.typeId !== "minecraft:player" || dist > SEQUENCE_RADIUS) return stopSprint(ai, brain);
+
+  let seq = brain.sequences.get(target.id);
+  if (!seq) brain.sequences.set(target.id, (seq = { hit: false, jumped: false }));
+
+  // Full sprint until the first hit lands.
+  if (!seq.hit) startSprint(ai, brain);
+  else stopSprint(ai, brain);
+
+  // Power jump: the enemy is more than 2 blocks higher and fairly close.
+  const above = target.location.y - ai.location.y;
+  const flat = Math.hypot(target.location.x - ai.location.x, target.location.z - ai.location.z);
+  if (!seq.jumped && above > 2 && flat < 8 && ai.isOnGround) {
+    seq.jumped = true;
+    powerJump(ai, brain, target, now);
+  }
+}
+
+/** @param {import("@minecraft/server").Entity} ai @param {Brain} brain */
+function startSprint(ai, brain) {
+  ai.addEffect("jump_boost", 30, { amplifier: 1, showParticles: false }); // jumps higher too
+  if (brain.sprinting) return;
+  brain.sprinting = true;
+  ai.getComponent("minecraft:movement")?.setCurrentValue(SPRINT_MOVEMENT);
+}
+
+/** @param {import("@minecraft/server").Entity} ai @param {Brain} brain */
+function stopSprint(ai, brain) {
+  if (!brain.sprinting) return;
+  brain.sprinting = false;
+  ai.getComponent("minecraft:movement")?.resetToDefaultValue();
+  ai.removeEffect("jump_boost");
+}
+
+/**
+ * Jumps about 10 blocks up towards the enemy, swinging all the way. No fall damage for 5 seconds.
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {Brain} brain
+ * @param {import("@minecraft/server").Entity} target
+ * @param {number} now
+ */
+function powerJump(ai, brain, target, now) {
+  const dx = target.location.x - ai.location.x;
+  const dz = target.location.z - ai.location.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const reach = Math.min(0.6, len / 10);
+  brain.noFallUntil = now + NO_FALL_MS;
+  ai.applyImpulse({ x: (dx / len) * reach, y: POWER_JUMP_UP, z: (dz / len) * reach });
+  ai.dimension.playSound("mob.irongolem.throw", ai.location);
+  for (let i = 0; i < 8; i++) {
+    system.runTimeout(() => {
+      if (ai.isValid) ai.playAnimation("animation.aip.ai_player.mine"); // keeps swinging
+    }, i * 5);
+  }
 }
 
 // ================================================================ tools
@@ -976,6 +1115,9 @@ function ensureBrain(ai, role) {
     upgraded: false,
     modeEvent: undefined,
     strip: createStripState(),
+    sequences: new Map(),
+    sprinting: false,
+    noFallUntil: 0,
     warnedAt: 0,
     commandId: undefined,
     commandUntil: 0,

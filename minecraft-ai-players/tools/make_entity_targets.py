@@ -78,12 +78,12 @@ def main():
     g["aip:role_fighter"] = {
         # The script's chosen target (tagged aip_h<slot>) comes first.
         "minecraft:behavior.nearest_attackable_target": {
-            "priority": 1, "must_see": False, "reselect_targets": True, "within_radius": 24.0,
+            "priority": 1, "must_see": False, "reselect_targets": True, "within_radius": 32.0,
             "scan_interval": 5,
             "entity_types": [{"filters": {"all_of": [
                 {"test": "has_tag", "subject": "self", "value": f"aip_s{k}"},
                 {"test": "has_tag", "subject": "other", "value": f"aip_h{k}"},
-            ]}, "max_dist": 24} for k in range(SLOTS)],
+            ]}, "max_dist": 32} for k in range(SLOTS)],
         },
         # Instant reactions while the script catches up. Never against friends.
         "minecraft:behavior.owner_hurt_by_target": {"priority": 2, "entity_types": safe},
