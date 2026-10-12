@@ -456,6 +456,41 @@ def slot_icon(kind):
     return img
 
 
+def computer_chest_textures():
+    """The Computer Chest: a wooden chest with a screen on the front (64x32 box texture) and its item icon."""
+    rng = random.Random(77)
+    wood, dark, metal = (150, 105, 55), (95, 65, 32), (170, 175, 185)
+    screen, face = (79, 224, 255), (24, 30, 44)
+    tex = Image.new("RGBA", (64, 32))
+    p = tex.load()
+    for x in range(64):
+        for y in range(32):
+            d = rng.randint(-10, 10)
+            c = dark if (x % 16 in (0, 15) or y in (0, 15, 16, 31) or y == 22) else wood
+            p[x, y] = tuple(max(0, min(255, v + d)) for v in c) + (255,)
+    # front face (16..32, 16..32): a screen with a face and a latch
+    for x in range(19, 29):
+        for y in range(18, 22):
+            p[x, y] = metal + (255,)
+    for x in range(20, 28):
+        for y in range(23, 30):
+            p[x, y] = screen + (255,)
+    for x, y in ((22, 25), (25, 25), (22, 27), (23, 28), (24, 28), (25, 27)):
+        p[x, y] = face + (255,)
+    icon = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    q = icon.load()
+    for x in range(1, 15):
+        for y in range(3, 15):
+            q[x, y] = (dark if x in (1, 14) or y in (3, 14, 7) else wood) + (255,)
+    for x in range(4, 12):
+        for y in range(8, 13):
+            q[x, y] = screen + (255,)
+    q[6, 10] = q[9, 10] = face + (255,)
+    for x in range(6, 10):
+        q[x, 5] = metal + (255,)
+    return tex, icon
+
+
 def main():
     skins = []
     for i, paint in enumerate(AI):
@@ -468,6 +503,9 @@ def main():
     for name, img in zip(("side", "top", "bottom"), coder_textures()):
         img.save(RP / f"textures/blocks/coder_{name}.png")
     computer_icon().save(RP / "textures/items/ai_computer.png")
+    chest_tex, chest_icon = computer_chest_textures()
+    chest_tex.save(RP / "textures/entity/computer_chest.png")
+    chest_icon.save(RP / "textures/items/computer_chest.png")
     for kind in SLOT_SHAPES:
         slot_icon(kind).save(RP / f"textures/items/slot_{kind}.png")
     egg_icon((200, 50, 50), (255, 210, 70), 1).save(RP / "textures/items/fighter_egg.png")

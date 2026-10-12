@@ -95,8 +95,17 @@ def main():
     # Modes. mark_variant is just a harmless marker so each group has a component.
     g["aip:fighter_follow"] = {"minecraft:behavior.follow_owner": follow, "minecraft:mark_variant": {"value": 0}}
     g["aip:fighter_guard"] = {"minecraft:mark_variant": {"value": 1}}
-    # The Resource AI may wander a bit further from its owner while gathering.
-    g["aip:resource_follow"] = {"minecraft:behavior.follow_owner": dict(follow, start_distance=10)}
+    # Resource AI directions: strictly follow its owner, or wander on its own to gather.
+    g["aip:resource_follow"] = {"minecraft:behavior.follow_owner": follow}
+    g["aip:resource_wander"] = {"minecraft:behavior.random_stroll": {"priority": 7, "speed_multiplier": 0.9, "xz_dist": 12, "y_dist": 4}}
+    ev["aip:resource_follow"] = {"remove": {"component_groups": ["aip:resource_wander"]}, "add": {"component_groups": ["aip:resource_follow"]}}
+    ev["aip:resource_wander"] = {"remove": {"component_groups": ["aip:resource_follow"]}, "add": {"component_groups": ["aip:resource_wander"]}}
+    # Strip mining: the script moves it through its tunnel, so neither follow nor wander.
+    ev["aip:resource_stay"] = {"remove": {"component_groups": ["aip:resource_follow", "aip:resource_wander"]}}
+
+    # Upgraded (at the Coder): can't burn and walks through lava. No potion effect, so no bubbles.
+    g["aip:upgraded"] = {"minecraft:fire_immune": {}}
+    ev["aip:upgrade"] = {"add": {"component_groups": ["aip:upgraded"]}}
 
     # Gathering is done entirely by the script (gather.js walks the AI next to the block and mines it).
     # Older versions used move_to_block here, which can't reach solid blocks like logs: remove it.
@@ -125,11 +134,13 @@ def main():
     c.pop("minecraft:behavior.melee_attack", None)
     # Melee sprints at the target (1.45x speed) and keeps hitting.
     g["aip:melee"] = {"minecraft:behavior.melee_attack": {"priority": 3, "speed_multiplier": 1.45, "track_target": True}}
+    # Ranged: this behavior keeps the AI at bow range (up to 25 blocks). The script fires the actual
+    # arrows (aiming ahead of moving targets) and removes the plain arrows this behavior shoots.
     g["aip:ranged"] = {
         "minecraft:shooter": {"def": "minecraft:arrow"},
         "minecraft:behavior.ranged_attack": {
             "priority": 3, "speed_multiplier": 1.0, "attack_interval_min": 1.0,
-            "attack_interval_max": 2.0, "attack_radius": 15.0,
+            "attack_interval_max": 2.0, "attack_radius": 25.0,
         },
     }
     ev["aip:use_melee"] = {"remove": {"component_groups": ["aip:ranged"]}, "add": {"component_groups": ["aip:melee"]}}

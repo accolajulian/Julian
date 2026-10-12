@@ -31,6 +31,7 @@ import {
 } from "./data.js";
 import { commandAttack, toolsChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
+import "./chest.js"; // Computer Chest (upgraded AIs' inventories from anywhere)
 import {
   FOOD_ITEM,
   FOOD_RESERVED,
@@ -52,8 +53,30 @@ import { FOCUSES } from "./gather_data.js";
 
 const COMPUTER_ITEM = "aip:ai_computer";
 const MAX_NAME_LENGTH = 20;
-const RESPAWN_SECONDS = 5;
+const RESPAWN_SECONDS = 60;
 const START_FOOD = 10; // cooked chicken every AI comes with (it eats them to heal itself)
+
+/** Upgrades at the Coder. */
+/** @type {Record<RoleId, { item: string, amount: number, label: string, about: string }>} */
+const UPGRADES = {
+  resource: {
+    item: "minecraft:diamond",
+    amount: 10,
+    label: "Diamonds",
+    about:
+      "§a+§r Strip mining: it digs a tunnel straight to diamonds (or netherite in the Nether) and mines them\n" +
+      "§a+§r Can't be hurt by lava or fire (no potion bubbles), and takes no fall damage\n" +
+      "§a+§r Its inventory can be opened from a Computer Chest",
+  },
+  fighter: {
+    item: "minecraft:netherite_ingot",
+    amount: 10,
+    label: "Netherite Ingots",
+    about:
+      "§a+§r Can't be hurt by lava or fire (no potion bubbles), and takes no fall damage\n" +
+      "§a+§r Its inventory can be opened from a Computer Chest",
+  },
+};
 
 /** @type {Record<RoleId, { title: string, egg: string, robot: string, color: string, price: { item: string, amount: number, label: string }, icon: string, about: string }>} */
 const ROLES = {
@@ -65,22 +88,21 @@ const ROLES = {
     price: { item: "minecraft:gold_ingot", amount: 30, label: "Gold Ingots" },
     icon: "textures/items/gold_ingot",
     about:
-      "A helper that gathers resources for you.\n\n" +
-      "§a+§r Follows you around and gathers what you choose: wood, stone, ores or everything\n" +
+      "A helper that gathers resources for you. It never fights, and mobs can't hurt it.\n\n" +
+      "§a+§r Two directions: strictly follow you, or wander and get what you choose (wood, stone, ores...)\n" +
       "§a+§r Chops real trees (not log houses) and mines with the right pickaxe, like a player\n" +
       "§a+§r Never mines next to lava: covers it with blocks or backs away\n" +
       "§a+§r Keeps ores and blocks in its slots; anything else it gathers goes to you\n" +
       "§a+§r 3 tool slots for harvesting/mining tools, used in order 1, 2, 3\n" +
-      "§a+§r A sword slot and a bow slot (bow or crossbow) with 2 arrow slots: sword against mobs,\n" +
-      "   and it only fights players with its bow or crossbow (it runs if it has none)\n" +
-      "§a+§r Its own stack of torches to light up caves (refills itself)\n" +
+      "§a+§r Its own stack of torches: places one about every 10 blocks underground (refills itself)\n" +
       "§a+§r Armor slots, a shield slot and 2 block slots (bridges over ravines and lava, pillars up)\n" +
       "§a+§r 10 slots for valuables; ores it mines go straight in\n" +
       "§a+§r A blue recall robot to call it to you from anywhere\n" +
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
-      "§a+§r Fights back if something attacks it, backs off to heal when hurt\n" +
-      "§a+§r Respawns next to you if it dies, and remembers who attacked it\n\n" +
-      "§7Health: 20 (same as a player)   Damage: 3 + tool",
+      "§a+§r Runs away from players who attack it\n" +
+      "§a+§r Respawns near the player who bought it 60 seconds after dying\n" +
+      "§a+§r Upgrade it at the Coder (10 diamonds): strip mines to diamonds/netherite, lava and fall proof\n\n" +
+      "§7Health: 20 (same as a player)",
   },
   fighter: {
     title: "Fighter AI",
@@ -94,8 +116,8 @@ const ROLES = {
       "§a+§r Follows you and protects you from mobs and players\n" +
       "§a+§r Goes after the most dangerous enemy first, and protects you first when you're hurt\n" +
       "§a+§r Attacks whatever you attack\n" +
-      "§a+§r Backs off to heal when badly hurt\n" +
-      "§a+§r Fighting styles: Sword Combat, Archer, or Archer then Combat\n" +
+      "§a+§r Backs off to heal when badly hurt. Mobs and explosions can't hurt it\n" +
+      "§a+§r Fighting: Sword Combat, Bow Only (25 blocks, aims ahead), or Bow and Sword Combat\n" +
       "§a+§r Can hunt mobs and players, or only players\n" +
       "§a+§r 3 tool slots for fighting tools, used in order 1, 2, 3 (next one when a tool breaks)\n" +
       "§a+§r 2 arrow slots, so it can fight with a bow or crossbow\n" +
@@ -108,7 +130,8 @@ const ROLES = {
       "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
       "§a+§r Left click it (or its recall robot) and pick Attack a player to send it after someone\n" +
-      "§a+§r Respawns next to you if it dies, and keeps its memory\n\n" +
+      "§a+§r Respawns near the player who bought it 60 seconds after dying, and keeps its memory\n" +
+      "§a+§r Upgrade it at the Coder (10 netherite ingots): lava and fall proof, Computer Chest access\n\n" +
       "§7Health: 20 (same as a player)   Damage: 6 + tool",
   },
 };
@@ -116,9 +139,9 @@ const RESOURCE_FOCUS = FOCUSES; // Wood, Stone, Ores, Everything, Nothing
 
 /** Fighter fighting styles. */
 const COMBAT_STYLES = /** @type {const} */ ([
-  { id: "sword", label: "Sword Combat", about: "Sprints at the enemy and keeps hitting with its melee tool" },
-  { id: "archer", label: "Archer", about: "Shoots with a bow or crossbow from a distance (needs arrows)" },
-  { id: "archer_sword", label: "Archer then Combat", about: "Fires a few arrows, then charges in with its melee tool" },
+  { id: "sword", label: "Sword Combat", about: "Sprints at the enemy and keeps hitting with its sword" },
+  { id: "archer", label: "Bow Only", about: "Shoots from up to 25 blocks, aiming ahead of moving targets" },
+  { id: "archer_sword", label: "Bow and Sword Combat", about: "One arrow from 20 blocks, then runs in with its sword" },
 ]);
 /** Fighter target modes. */
 const TARGET_MODES = /** @type {const} */ ([
@@ -165,13 +188,13 @@ const GUIDE_TEXT =
   "(no sand, gravel or other falling blocks; used to bridge, pillar and cover lava), 10 valuables slots, " +
   "and arrows. Drag items into the labeled slots; wrong items are handed back.\n\n" +
   "§lFighter settings§r (left click it to change)\n" +
-  "Style: Sword Combat, Archer, or Archer then Combat. Targets: mobs and players, or only players.\n" +
+  "Fighting: Sword Combat, Bow Only, or Bow and Sword Combat. Targets: mobs and players, or only players.\n" +
   "Tombstones: it breaks tombstones near it and takes the most valuable loot (can be turned off).\n\n" +
   "§lFood§r\n" +
   `Each AI makes ${FOOD_RESERVED} cooked chicken every 10 minutes, up to ${FOOD_CAP}. ` +
   `The first ${FOOD_RESERVED} are its own (it eats them to heal); you and your allies can take the rest.\n\n` +
   "§lIf your AI dies§r\n" +
-  `It respawns next to you after ${RESPAWN_SECONDS} seconds, and still remembers its enemies and allies.\n\n` +
+  `It respawns near the player who bought it after ${RESPAWN_SECONDS} seconds, and still remembers its enemies and allies.\n\n` +
   "§7Lost your egg? Open the Coder and pick your AI to get a new one.";
 
 
@@ -252,7 +275,9 @@ async function showComputer(player) {
         "  Iron Ingot  -  Iron Ingot  -  Iron Ingot\n\n" +
         "§lPlace the Coder and tap it to buy an AI§r\n" +
         prices.join("\n") +
-        "\n\n§7Each player can only buy one of each AI. If someone gives you their recall robot, you control their AI too."
+        "\n\n§lUpgrades§r (at the Coder): Resource AI §b10 Diamonds§r, Fighter AI §b10 Netherite Ingots§r\n" +
+        "§lComputer Chest§r: chest + redstone + glass pane. Opens your upgraded AIs' inventories from anywhere.\n\n" +
+        "§7Each player can only buy one of each AI. If someone gives you their recall robot, you control their AI too."
     )
     .button("More help")
     .button("Close")
@@ -268,8 +293,8 @@ world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
     if (initialSpawn) player.sendMessage("§aYou have an §eAI Computer§a in your hotbar. Use it to see how to get AI players.");
   }
   system.runTimeout(() => {
-    for (const record of controlledBy(player.id)) {
-      if (record.state === "respawn") respawnAi(record.key);
+    for (const record of allAis()) {
+      if (record.state === "respawn" && (record.ownerId === player.id || record.buyerId === player.id)) respawnAi(record.key);
     }
   }, 40);
 });
@@ -439,15 +464,55 @@ async function manageOwned(player, key) {
   } else {
     actions.push({ label: "Get a new egg (if you lost it)", run: () => replaceEgg(player, key) });
   }
+  if (!record.upgraded) {
+    const up = UPGRADES[record.role];
+    const enough = countItem(player, up.item) >= up.amount;
+    actions.push({ label: `Upgrade\n${enough ? "§2" : "§c"}${up.amount} ${up.label}`, run: () => upgradeAi(player, key) });
+  }
   actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
 
-  const form = new ActionFormData().title(`${ROLES[record.role].title}: ${record.name}`).body(status);
+  const form = new ActionFormData()
+    .title(`${ROLES[record.role].title}: ${record.name}`)
+    .body(`${status}${record.upgraded ? "\n§bUpgraded" : ""}`);
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
   await actions[response.selection].run();
 }
 
+
+/**
+ * The upgrade at the Coder: shows what it does and its price (red until you have enough).
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+async function upgradeAi(player, key) {
+  const record = mine(player, key);
+  if (!record || record.upgraded) return;
+  const up = UPGRADES[record.role];
+  const have = countItem(player, up.item);
+  const enough = have >= up.amount;
+  const response = await new MessageFormData()
+    .title(`Upgrade ${record.name}`)
+    .body(`${up.about}\n\n§rCost: ${enough ? "§a" : "§c"}${up.amount} ${up.label}§r\nYou have: ${enough ? "§a" : "§c"}${have}`)
+    .button1("Upgrade")
+    .button2("Back")
+    .show(player);
+  if (response.selection !== 0) return;
+  if (countItem(player, up.item) < up.amount) {
+    player.sendMessage(`§cYou need ${up.amount - countItem(player, up.item)} more ${up.label}.`);
+    return;
+  }
+  const latest = mine(player, key);
+  if (!latest || latest.upgraded) return;
+  takeItem(player, up.item, up.amount);
+  latest.upgraded = true;
+  saveRecord(player.id, latest.role, latest);
+  toolsChanged(latest.id);
+  player.sendMessage(
+    `§b${latest.name} is upgraded!` +
+      (latest.role === "resource" ? " §fLeft click it and pick Strip mine." : " §fIts inventory now works with a Computer Chest.")
+  );
+}
 
 /** @param {import("@minecraft/server").Player} player @param {string} key */
 function replaceEgg(player, key) {
@@ -787,6 +852,7 @@ function spawnAi(owner, key, location, dimension, quiet = false) {
 
   record.state = "alive";
   record.id = ai.id;
+  delete record.diedAt;
   record.mode = "follow";
   delete record.post;
   saveRecord(owner.id, role, record);
@@ -795,14 +861,22 @@ function spawnAi(owner, key, location, dimension, quiet = false) {
 }
 
 
-/** @param {string} key */
+/**
+ * Brings back an AI that's waiting to respawn. After dying it waits 60 seconds and comes back near the
+ * player who bought it (or near its controller if the buyer isn't around). It's always tamed to its
+ * controller, so that player has to be online.
+ * @param {string} key
+ */
 function respawnAi(key) {
   const record = getAi(key);
-  const owner = record ? findPlayer(record.ownerId) : undefined;
-  // If its controller is offline or dead, this runs again when they next spawn.
-  if (!record || record.state !== "respawn" || !owner) return;
-  if ((owner.getComponent("minecraft:health")?.currentValue ?? 0) <= 0) return;
-  spawnAi(owner, key, owner.location, owner.dimension);
+  if (!record || record.state !== "respawn") return;
+  if (record.diedAt && Date.now() - record.diedAt < RESPAWN_SECONDS * 1000) return; // not yet
+  const alive = (/** @type {import("@minecraft/server").Player | undefined} */ p) =>
+    p && (p.getComponent("minecraft:health")?.currentValue ?? 0) > 0 ? p : undefined;
+  const controller = alive(findPlayer(record.ownerId));
+  if (!controller) return; // tried again when they spawn
+  const near = (record.diedAt ? alive(findPlayer(record.buyerId)) : undefined) ?? controller;
+  spawnAi(controller, key, near.location, near.dimension);
 }
 
 world.afterEvents.entityDie.subscribe(
@@ -821,13 +895,16 @@ world.afterEvents.entityDie.subscribe(
     if (!record || record.id !== id) return; // an old or deleted AI
 
     record.state = "respawn";
+    record.diedAt = Date.now();
     delete record.id;
     saveRecord(record.ownerId, record.role, record);
 
     const owner = findPlayer(record.ownerId);
+    const buyer = findPlayer(record.buyerId);
     world.sendMessage(`§e${record.name} died`);
-    owner?.sendMessage(`§7${record.name} will respawn next to you in ${RESPAWN_SECONDS} seconds.`);
-    system.runTimeout(() => respawnAi(record.key), RESPAWN_SECONDS * 20);
+    const where = buyer ? `near ${buyer.id === owner?.id ? "you" : buyer.name}` : "near you";
+    owner?.sendMessage(`§7${record.name} will respawn ${where} in ${RESPAWN_SECONDS} seconds.`);
+    system.runTimeout(() => respawnAi(record.key), RESPAWN_SECONDS * 20 + 5);
   },
   { entityTypes: [AI_ENTITY] }
 );
@@ -896,23 +973,30 @@ async function showCommands(player, key) {
     actions.push({ label: "Attack a player", run: needAi((a) => chooseAttackTarget(player, a)) });
     actions.push({ label: "Follow and protect me", run: needAi((a) => setFighterMode(player, key, a, "follow")) });
     actions.push({ label: "Guard this spot\n§8Attacks any other player who comes near", run: needAi((a) => setFighterMode(player, key, a, "guard")) });
-    actions.push({ label: `Fighting style\n§8${style.label}`, run: () => chooseCombat(player, key) });
-    actions.push({ label: `Targets\n§8${targets.label}`, run: () => chooseTargets(player, key) });
+    actions.push({ label: `Fighting\n§8${style.label}, ${targets.label.toLowerCase()}`, run: () => chooseFighting(player, key) });
     actions.push({ label: `Tombstones\n§8Looting ${record.loot === false ? "off" : "on"}`, run: () => showTombs(player, key) });
   } else {
     body = "Choose resource";
-    for (const focus of RESOURCE_FOCUS) {
-      actions.push({
-        label: focus === record.focus ? `§2${focus} (current)` : focus,
-        run: () => {
-          const r = mine(player, key);
-          if (!r) return;
-          r.focus = focus;
-          saveRecord(player.id, role, r);
-          toolsChanged(r.id);
-          player.sendMessage(focus === "Nothing" ? `§e${r.name} will just follow you.` : `§e${r.name} will gather: ${focus}`);
-        },
-      });
+    const wandering = record.mode === "wander";
+    const setResource = (/** @type {{ mode?: "follow" | "wander", focus?: string }} */ change) => () => {
+      const r = mine(player, key);
+      if (!r) return;
+      if (change.mode) r.mode = change.mode;
+      if (change.focus) {
+        r.focus = change.focus;
+        r.mode = "wander"; // picking something to get sends it off to get it
+      }
+      saveRecord(player.id, role, r);
+      toolsChanged(r.id);
+      player.sendMessage(r.mode === "wander" ? `§e${r.name} will wander and get: ${r.focus}` : `§e${r.name} will follow you.`);
+    };
+    actions.push({ label: `${wandering ? "" : "§2"}Follow me\n§8Strictly follows you, doesn't gather`, run: setResource({ mode: "follow" }) });
+    actions.push({ label: `${wandering ? "§2" : ""}Wander and gather\n§8Goes off to get the resource below`, run: setResource({ mode: "wander" }) });
+    const resources = RESOURCE_FOCUS.filter((f) => f !== "Nothing");
+    if (record.upgraded) resources.push("Strip mine");
+    for (const focus of resources) {
+      const about = focus === "Strip mine" ? `\n§8Tunnels to ${ai?.dimension.id === "minecraft:nether" ? "netherite" : "diamonds"}` : "";
+      actions.push({ label: `${focus === record.focus ? "§2" : ""}${focus}${about}`, run: setResource({ focus }) });
     }
   }
   actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
@@ -992,37 +1076,33 @@ async function showTombs(player, key) {
   }
 }
 
-/** @param {import("@minecraft/server").Player} player @param {string} key */
-async function chooseCombat(player, key) {
+/**
+ * The Fighter's one fighting section: how it fights, and what it goes after.
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+async function chooseFighting(player, key) {
   const record = mine(player, key);
   if (!record) return;
+  const targets = TARGET_MODES.find((t) => t.id === (record.targets ?? "all")) ?? TARGET_MODES[0];
+  const other = TARGET_MODES.find((t) => t.id !== targets.id) ?? TARGET_MODES[1];
   const form = new ActionFormData()
-    .title("Fighting style")
-    .body("All styles back off to heal at 30% health.");
-  COMBAT_STYLES.forEach((c) => form.button(`${c.id === record.combat ? "§2" : ""}${c.label}\n§8${c.about}`));
+    .title("Fighting")
+    .body(`Pick how ${record.name} fights. Every style backs off to heal at 30% health.\n\nTargets: §e${targets.label}`);
+  COMBAT_STYLES.forEach((c) => form.button(`${c.id === (record.combat ?? "archer_sword") ? "§2" : ""}${c.label}\n§8${c.about}`));
+  form.button(`Switch targets to: ${other.label}\n§8${other.about}`);
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
-  const choice = COMBAT_STYLES[response.selection];
-  record.combat = choice.id;
-  saveRecord(player.id, "fighter", record);
-  toolsChanged(record.id);
-  player.sendMessage(`§e${record.name}: ${choice.label}.`);
-}
-
-/** @param {import("@minecraft/server").Player} player @param {string} key */
-async function chooseTargets(player, key) {
-  const record = mine(player, key);
-  if (!record) return;
-  const form = new ActionFormData()
-    .title("Targets")
-    .body("Either way it protects you, attacks whatever you attack, and goes after remembered enemies.");
-  TARGET_MODES.forEach((t) => form.button(`${t.id === record.targets ? "§2" : ""}${t.label}\n§8${t.about}`));
-  const response = await form.show(player);
-  if (response.canceled || response.selection === undefined) return;
-  const choice = TARGET_MODES[response.selection];
-  record.targets = choice.id;
-  saveRecord(player.id, "fighter", record);
-  player.sendMessage(`§e${record.name}: ${choice.label}.`);
+  const latest = mine(player, key);
+  if (!latest) return;
+  if (response.selection < COMBAT_STYLES.length) {
+    latest.combat = COMBAT_STYLES[response.selection].id;
+    player.sendMessage(`§e${latest.name}: ${COMBAT_STYLES[response.selection].label}.`);
+  } else {
+    latest.targets = other.id;
+    player.sendMessage(`§e${latest.name}: ${other.label}.`);
+  }
+  saveRecord(player.id, "fighter", latest);
+  toolsChanged(latest.id);
 }
 
 /**
@@ -1222,6 +1302,10 @@ async function forgiveEnemy(player) {
 // Every 10 seconds: each AI makes 10 cooked chicken per 10 minutes of game time, up to 30.
 system.runInterval(() => {
   for (const record of allAis()) {
+    if (record.state === "respawn") {
+      respawnAi(record.key); // in case its timer was missed (world reloaded); its food updates next round
+      continue;
+    }
     if (record.state === "egg" || record.state === "thrown") {
       // Not in the world yet: the 10-minute timer starts when it first joins.
       inventoryOf(record).foodAt = world.getAbsoluteTime();

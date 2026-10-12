@@ -44,11 +44,11 @@ import {
   slotItem,
   wearSlot,
   SWORD_SLOT,
-  BOW_SLOT,
   useTorch,
   TORCH_ITEM,
 } from "./inventory.js";
 import { handleTombs, createLootState } from "./tombs.js";
+import { stripMine, createStripState } from "./stripmine.js";
 import { bridgeTowards } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior } from "./gather.js";
 
@@ -60,13 +60,16 @@ const RETREAT_BELOW = 0.3; // back off under 30% health...
 const RECOVERED_AT = 0.7; // ...until back to 70%
 const GUARD_LEASH = 14;
 const COMMAND_MS = 30000;
-const RANGED_FROM = 6; // use a bow/crossbow when the target is further than this
+const BOW_RANGE = 25; // "Bow Only": shoots from up to this far
+const OPENING_RANGE = 20; // "Bow and Sword": one arrow from about this far, then the sword
+const SHOT_EVERY_MS = 1300;
+const ARROW_SPEED = 3; // blocks per tick (a fully drawn bow)
+const ARROW_GRAVITY = 0.05; // blocks per tick per tick
 const EAT_EVERY_MS = 2500; // how often it can eat a cooked chicken
 const SHIELD_COOLDOWN_MS = 1000; // time between shield blocks
 const AXE_DISABLES_SHIELD_MS = 5000; // an axe hit knocks its shield down for this long
-const OPENING_SHOTS = 5; // "Archer then Combat": arrows to fire before charging in with the sword
 const TORCH_EVERY_MS = 3000;
-const TORCH_SPACING = 5; // no torch within this many blocks: place one
+const TORCH_SPACING = 9; // underground with no torch within this many blocks: place one (about every 10 blocks)
 /** How dangerous each mob is. Higher = attacked first. Mobs not listed count as 20. */
 /** @type {Record<string, number>} */
 const DANGER = {
@@ -107,7 +110,7 @@ const LEAVE_ALONE = new Set([
   "minecraft:wither",
   "minecraft:ender_dragon",
 ]);
-const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:armor_stand", "aip:ai_capsule"]);
+const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:armor_stand", "aip:ai_capsule", "aip:computer_chest"]);
 
 /**
  * @typedef {Object} Brain  Per loaded AI. Not saved: rebuilt when the AI loads.
@@ -128,6 +131,13 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {boolean} fleeing  Resource AI running from a player it can't shoot at.
  * @property {number} torchReadyAt
  * @property {number} shots  Arrows fired at the current target.
+ * @property {boolean} openingDone  "Bow and Sword": the opening arrow of this fight was fired.
+ * @property {number} lastFightAt  Last time it had a target (a new fight starts after a pause).
+ * @property {number} nextShotAt
+ * @property {boolean} wantRanged  Keep its distance (Bow Only) instead of charging in.
+ * @property {boolean} upgraded
+ * @property {string | undefined} modeEvent  Resource AI: follow/wander/stay event applied.
+ * @property {import("./stripmine.js").StripState} strip
  * @property {number} warnedAt  Last "Archer needs a bow and arrows" message.
  * @property {string | undefined} commandId
  * @property {number} commandUntil
@@ -208,11 +218,23 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damageSource }) => {
   }
 });
 
-// Mobs can't hurt AI players (hits, arrows, explosions). Only players and other AI players can.
+// Mobs can't hurt AI players (hits, arrows), and no explosion can (creepers, ghast fireballs, TNT).
+// Upgraded AIs also take no fire, lava or fall damage.
+const EXPLOSIONS = [EntityDamageCause.entityExplosion, EntityDamageCause.blockExplosion];
+const UPGRADED_IMMUNE = [
+  EntityDamageCause.fall,
+  EntityDamageCause.lava,
+  EntityDamageCause.fire,
+  EntityDamageCause.fireTick,
+  EntityDamageCause.magma,
+];
 world.beforeEvents.entityHurt.subscribe((event) => {
   if (event.hurtEntity.typeId !== AI_ENTITY) return;
   const attacker = event.damageSource.damagingEntity;
+  const cause = event.damageSource.cause;
   if (attacker && attacker.typeId !== "minecraft:player" && attacker.typeId !== AI_ENTITY) event.cancel = true;
+  if (EXPLOSIONS.includes(cause)) event.cancel = true;
+  if (brains.get(event.hurtEntity.id)?.upgraded && UPGRADED_IMMUNE.includes(cause)) event.cancel = true;
 });
 
 // An AI with a shield blocks hits and arrows coming from in front of it (not every hit: it needs
@@ -293,19 +315,15 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damage, damageSource }) =>
   if (changed) saveRecord(info.ownerId, info.role, record);
 });
 
-// AIs never hurt their friends, the Resource AI only fights players (with a bow or crossbow),
-// and melee tools add damage.
+// AIs never hurt their friends, the Resource AI never fights, and melee tools add damage.
 world.beforeEvents.entityHurt.subscribe((event) => {
   const attacker = event.damageSource.damagingEntity;
   if (!attacker || attacker.typeId !== AI_ENTITY) return;
   const brain = brains.get(attacker.id);
-  // The Resource AI never hurts mobs, and only hurts players with its bow or crossbow (not melee).
+  // The Resource AI never fights: it can't hurt mobs or players.
   if (brain?.role === "resource") {
-    const hurtIsPlayer = event.hurtEntity.typeId === "minecraft:player";
-    if (!hurtIsPlayer || event.damageSource.cause === EntityDamageCause.entityAttack) {
-      event.cancel = true;
-      return;
-    }
+    event.cancel = true;
+    return;
   }
   if (brain?.slot !== undefined && event.hurtEntity.hasTag(`aip_a${brain.slot}`)) {
     event.cancel = true;
@@ -325,23 +343,54 @@ world.afterEvents.entityHurt.subscribe(({ damageSource }) => {
   useTool(ai, brain);
 });
 
-// Each arrow the AI shoots uses one arrow from its slots and wears the bow.
+// The AI's ranged behavior only keeps it at bow distance: the plain arrows it shoots are removed,
+// and the script fires aimed arrows instead (see fireArrow).
 world.afterEvents.entitySpawn.subscribe(({ entity }) => {
   if (entity.typeId !== "minecraft:arrow") return;
-  system.run(() => {
-    if (!entity.isValid) return;
-    const shooter = entity.getComponent("minecraft:projectile")?.owner;
-    if (!shooter || shooter.typeId !== AI_ENTITY) return;
-    const brain = brains.get(shooter.id);
-    const info = ownerInfo(shooter);
-    const record = info ? getAi(info.key) : undefined;
-    if (!brain || !info || !record) return;
-    useArrow(record);
-    saveRecord(info.ownerId, info.role, record);
-    brain.shots += 1;
-    if (brain.activeSlot >= 0) useTool(shooter, brain);
-  });
+  if (entity.getDynamicProperty("aip:aimed")) return;
+  const shooter = entity.getComponent("minecraft:projectile")?.owner;
+  if (shooter?.typeId === AI_ENTITY) entity.remove();
 });
+
+/**
+ * Shoots an arrow that leads the target: it aims where the target will be when the arrow gets
+ * there (using the target's speed and the distance), and a bit higher to make up for gravity.
+ * Uses one arrow and wears the bow.
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {Brain} brain
+ * @param {import("@minecraft/server").Entity} target
+ */
+function fireArrow(ai, brain, target) {
+  const info = ownerInfo(ai);
+  const record = info ? getAi(info.key) : undefined;
+  if (!info || !record || !useArrow(record)) return false;
+
+  const from = ai.getHeadLocation();
+  const v = target.getVelocity();
+  const aim = { x: target.location.x, y: target.location.y + 1, z: target.location.z };
+  let t = distance(from, aim) / ARROW_SPEED;
+  let at = aim;
+  for (let i = 0; i < 3; i++) {
+    at = { x: aim.x + v.x * t, y: aim.y + Math.max(0, v.y) * t, z: aim.z + v.z * t };
+    t = distance(from, at) / ARROW_SPEED;
+  }
+  at = { ...at, y: at.y + 0.5 * ARROW_GRAVITY * t * t * 1.1 };
+  const d = distance(from, at) || 1;
+  const dir = { x: (at.x - from.x) / d, y: (at.y - from.y) / d, z: (at.z - from.z) / d };
+
+  const arrow = ai.dimension.spawnEntity("minecraft:arrow", { x: from.x + dir.x * 0.8, y: from.y + dir.y * 0.8, z: from.z + dir.z * 0.8 });
+  arrow.setDynamicProperty("aip:aimed", true);
+  const projectile = arrow.getComponent("minecraft:projectile");
+  if (projectile) {
+    projectile.owner = ai;
+    projectile.shoot({ x: dir.x * ARROW_SPEED, y: dir.y * ARROW_SPEED, z: dir.z * ARROW_SPEED });
+  }
+  ai.dimension.playSound("random.bow", ai.location);
+  saveRecord(info.ownerId, info.role, record);
+  brain.shots += 1;
+  if (brain.activeSlot >= 0) useTool(ai, brain);
+  return true;
+}
 
 /**
  * @param {import("@minecraft/server").Entity} ai
@@ -443,8 +492,12 @@ function think(ai, ownerId, role, record, brain) {
   const hpRatio = health.currentValue / health.effectiveMax;
   const now = Date.now();
 
-  // ---- Lava: cover it with blocks or back away (both AIs).
-  const lavaClose = avoidLava(ai, ownerId, role, record, brain.gather);
+  // ---- Upgrade (lava/fire/fall proof).
+  if (record.upgraded && !brain.upgraded) ai.triggerEvent("aip:upgrade");
+  brain.upgraded = !!record.upgraded;
+
+  // ---- Lava: cover it with blocks or back away (both AIs; upgraded AIs don't mind lava).
+  const lavaClose = brain.upgraded ? false : avoidLava(ai, ownerId, role, record, brain.gather);
 
   // ---- Wear armor and a shield.
   wearGear(ai, brain, record);
@@ -482,13 +535,27 @@ function think(ai, ownerId, role, record, brain) {
 
   pickUpItems(ai, ownerId, role, record);
   if (role !== "fighter") {
-    // ---- Defend itself: sword against mobs, bow/crossbow only against players.
-    const fightSlot = resourceDefense(ai, brain, record, owner, now);
+    // ---- It never fights: it runs from players who attack it.
+    const fleeSlot = resourceDefense(ai, brain, record, owner, now);
 
-    // ---- Gather, unless it was just attacked or there's lava close by.
-    const safe = !lavaClose && now - lastHit > RECENT_MS;
-    setGatherBehavior(ai, brain.gather, record.focus, safe);
-    const slot = fightSlot ?? (safe ? gather(ai, ownerId, record, brain.gather, owner) : undefined);
+    // ---- Direction: strictly follow its owner, or wander and gather (or strip mine, if upgraded).
+    const wandering = record.mode === "wander";
+    const stripping = wandering && brain.upgraded && record.focus === "Strip mine";
+    const modeEvent = stripping ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
+    if (brain.modeEvent !== modeEvent) {
+      ai.triggerEvent(modeEvent);
+      brain.modeEvent = modeEvent;
+    }
+
+    // ---- Gather only while wandering, and not while being attacked or near lava.
+    const safe = wandering && !lavaClose && now - lastHit > RECENT_MS;
+    setGatherBehavior(ai, brain.gather, stripping ? "Nothing" : record.focus, safe && !stripping);
+    let slot = fleeSlot;
+    if (slot === undefined && safe) {
+      slot = stripping
+        ? stripMine(ai, ownerId, record, brain.strip, () => placeTorch(ai, ownerId, record, brain, Date.now()))
+        : gather(ai, ownerId, record, brain.gather, undefined);
+    }
     equip(ai, brain, record, slot ?? firstTool(record, false));
     if (safe) placeTorch(ai, ownerId, record, brain, now);
     // Not mining and its owner is away: bridge/pillar to catch up.
@@ -525,9 +592,24 @@ function think(ai, ownerId, role, record, brain) {
     return;
   }
 
-  // ---- Pick the tool for this target (slot order, with a few smart switches).
+  // ---- Pick the tool for this target and shoot if it's holding a bow.
   const target = brain.huntId ? world.getEntity(brain.huntId) : undefined;
-  equip(ai, brain, record, chooseSlot(record, brain, owner, target, target ? distance(target.location, ai.location) : 0));
+  const dist = target ? distance(target.location, ai.location) : 0;
+  if (target) {
+    // A new fight (after a pause), or a new target that's far away: the opening arrow is allowed again.
+    if (now - brain.lastFightAt > 10000 || (brain.shots === 0 && dist > OPENING_RANGE)) brain.openingDone = false;
+    brain.lastFightAt = now;
+  }
+  equip(ai, brain, record, chooseSlot(record, brain, owner, target, dist));
+  const holdingBow = isRanged(slotItem(record, brain.activeSlot)?.id);
+  const range = brain.wantRanged ? BOW_RANGE : OPENING_RANGE;
+  if (target && holdingBow && dist <= range && now >= brain.nextShotAt && fireArrow(ai, brain, target)) {
+    brain.nextShotAt = now + SHOT_EVERY_MS;
+    if (!brain.wantRanged) {
+      brain.openingDone = true; // Bow and Sword: that was the one arrow; now the sword
+      equip(ai, brain, record, chooseSlot(record, brain, owner, target, dist));
+    }
+  }
 
   // ---- Bridge or pillar towards the target (or the owner it's following).
   if (!lavaClose) {
@@ -629,12 +711,13 @@ function firstTool(record, meleeOnly) {
 }
 
 /**
- * Which slot to use against this target, following the Fighter's style:
- * - Sword Combat: melee tools only (sprints in and keeps hitting).
- * - Archer: bow/crossbow while it has arrows (melee only when out of arrows).
- * - Archer then Combat: a few arrows first, then it charges in with a melee tool
- *   (also as soon as the target gets close).
- * Within a style it uses the first suitable slot, with an axe against a player's shield.
+ * Which slot to use against this target, following the Fighter's fighting style:
+ * - Sword Combat: melee tools only. It sprints in and keeps hitting.
+ * - Bow Only: bow/crossbow (melee only if it has no bow or arrows). Keeps its distance.
+ * - Bow and Sword: holds its bow while running in, fires one arrow from about 20 blocks, then
+ *   switches to its sword. No more opening arrows in the same fight unless a new target is
+ *   further than 20 blocks away.
+ * Also sets brain.wantRanged (keep distance) for Bow Only.
  * @param {import("./data.js").AiRecord} record
  * @param {Brain} brain
  * @param {import("@minecraft/server").Player | undefined} owner
@@ -648,21 +731,24 @@ function chooseSlot(record, brain, owner, target, dist) {
   const melee = usable.filter((i) => !isRanged(tools[i]?.id));
   const ranged = usable.filter((i) => isRanged(tools[i]?.id));
   const style = record.combat ?? "archer_sword";
+  brain.wantRanged = false;
 
   if (style === "archer") {
-    if (ranged.length) return ranged[0];
+    if (ranged.length) {
+      brain.wantRanged = true;
+      return ranged[0];
+    }
     if (target && Date.now() - brain.warnedAt > 30000) {
       brain.warnedAt = Date.now();
-      owner?.sendMessage(`§e${record.name} is an Archer but has no bow/crossbow with arrows, so it's using melee.`);
+      owner?.sendMessage(`§e${record.name} is set to Bow Only but has no bow/crossbow with arrows, so it's using melee.`);
     }
     return pickMelee(melee, tools, target);
   }
   if (style === "sword") return pickMelee(melee, tools, target);
 
-  // Archer then Combat
-  if (target && ranged.length && dist > RANGED_FROM && brain.shots < OPENING_SHOTS) return ranged[0];
-  if (melee.length) return pickMelee(melee, tools, target);
-  return ranged[0] ?? -1;
+  // Bow and Sword: the bow until the opening arrow is fired, then the sword.
+  if (target && ranged.length && !brain.openingDone && dist > 4) return ranged[0];
+  return melee.length ? pickMelee(melee, tools, target) : -1;
 }
 
 /**
@@ -691,7 +777,8 @@ function pickMelee(melee, tools, target) {
 function equip(ai, brain, record, slot) {
   const toolId = slotItem(record, slot)?.id;
   brain.activeSlot = toolId ? slot : -1;
-  const style = isRanged(toolId) ? "ranged" : "melee";
+  // Keep its distance only for Bow Only; "Bow and Sword" charges in with its bow out.
+  const style = isRanged(toolId) && brain.wantRanged ? "ranged" : "melee";
   if (style !== brain.style) {
     ai.triggerEvent(style === "ranged" ? "aip:use_ranged" : "aip:use_melee");
     brain.style = style;
@@ -706,8 +793,7 @@ function equip(ai, brain, record, slot) {
 }
 
 /**
- * Resource AI self-defense against players: only its bow/crossbow, and if it has none (or no arrows)
- * it runs away instead. It never fights mobs (they can't hurt it either).
+ * The Resource AI never fights. When a player attacks it, it runs away (mobs can't hurt it).
  * Returns the slot to hold while fighting, or undefined when it isn't fighting.
  * @param {import("@minecraft/server").Entity} ai
  * @param {Brain} brain
@@ -728,39 +814,36 @@ function resourceDefense(ai, brain, record, owner, now) {
       latest = time;
     }
   }
-  const byPlayer = attacker?.typeId === "minecraft:player";
-  const canShoot = !!inventoryOf(record).arms.bow && totalArrows(record) > 0;
-
-  const flee = byPlayer && !canShoot;
+  // It never fights back: it runs from the player instead.
+  const flee = !!attacker;
   if (flee && !brain.fleeing) {
     brain.fleeing = true;
     ai.triggerEvent("aip:retreat");
-    owner?.sendMessage(`§e${record.name} can only fight players with a bow or crossbow (and arrows), so it's running away.`);
+    owner?.sendMessage(`§e${record.name} doesn't fight, so it's running away from ${attacker?.nameTag}.`);
   } else if (!flee && brain.fleeing) {
     brain.fleeing = false;
     if (!brain.retreating) ai.triggerEvent("aip:recovered");
   }
-
-  if (!attacker) return undefined;
-  return canShoot ? BOW_SLOT : -1;
+  return flee ? -1 : undefined;
 }
 
 /**
- * Resource AI: lights up dark caves with its own torches (the torch slot refills itself).
+ * Resource AI: places one of its own torches about every 10 blocks underground, in caves and
+ * mines (the torch slot refills itself).
  * @param {import("@minecraft/server").Entity} ai
  * @param {string} ownerId
  * @param {import("./data.js").AiRecord} record
  * @param {Brain} brain
  * @param {number} now
  */
-function placeTorch(ai, ownerId, record, brain, now) {
+export function placeTorch(ai, ownerId, record, brain, now) {
   if (now < brain.torchReadyAt) return;
   brain.torchReadyAt = now + 1000;
   const dim = ai.dimension;
   const feet = { x: Math.floor(ai.location.x), y: Math.floor(ai.location.y), z: Math.floor(ai.location.z) };
   try {
-    // Dark and under cover (not just night time outside).
-    if (dim.getLightLevel(feet) >= 7 || dim.getSkyLightLevel(feet) >= 4) return;
+    // Underground (in a cave or a mine), not outside.
+    if (dim.getSkyLightLevel(feet) >= 4) return;
     const here = dim.getBlock(feet);
     const below = dim.getBlock({ ...feet, y: feet.y - 1 });
     if (!here?.isAir || !below || below.isAir || below.isLiquid) return;
@@ -886,6 +969,13 @@ function ensureBrain(ai, role) {
     fleeing: false,
     torchReadyAt: 0,
     shots: 0,
+    openingDone: false,
+    lastFightAt: 0,
+    nextShotAt: 0,
+    wantRanged: false,
+    upgraded: false,
+    modeEvent: undefined,
+    strip: createStripState(),
     warnedAt: 0,
     commandId: undefined,
     commandUntil: 0,

@@ -1,0 +1,20 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "aip:computer_chest",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/computer_chest"
+      },
+      "geometry": {
+        "default": "geometry.aip.computer_chest"
+      },
+      "render_controllers": [
+        "controller.render.aip.computer_chest"
+      ]
+    }
+  }
+}

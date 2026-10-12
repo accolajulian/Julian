@@ -928,7 +928,7 @@
         "minecraft:behavior.follow_owner": {
           "priority": 5,
           "speed_multiplier": 1.2,
-          "start_distance": 10,
+          "start_distance": 6,
           "stop_distance": 2
         }
       },
@@ -984,8 +984,19 @@
           "speed_multiplier": 1.0,
           "attack_interval_min": 1.0,
           "attack_interval_max": 2.0,
-          "attack_radius": 15.0
+          "attack_radius": 25.0
         }
+      },
+      "aip:resource_wander": {
+        "minecraft:behavior.random_stroll": {
+          "priority": 7,
+          "speed_multiplier": 0.9,
+          "xz_dist": 12,
+          "y_dist": 4
+        }
+      },
+      "aip:upgraded": {
+        "minecraft:fire_immune": {}
       }
     },
     "components": {
@@ -1469,6 +1480,11 @@
         }
       },
       "aip:resource_follow": {
+        "remove": {
+          "component_groups": [
+            "aip:resource_wander"
+          ]
+        },
         "add": {
           "component_groups": [
             "aip:resource_follow"
@@ -1510,6 +1526,33 @@
         "add": {
           "component_groups": [
             "aip:ranged"
+          ]
+        }
+      },
+      "aip:resource_wander": {
+        "remove": {
+          "component_groups": [
+            "aip:resource_follow"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "aip:resource_wander"
+          ]
+        }
+      },
+      "aip:upgrade": {
+        "add": {
+          "component_groups": [
+            "aip:upgraded"
+          ]
+        }
+      },
+      "aip:resource_stay": {
+        "remove": {
+          "component_groups": [
+            "aip:resource_follow",
+            "aip:resource_wander"
           ]
         }
       }

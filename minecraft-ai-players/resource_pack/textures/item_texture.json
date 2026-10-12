@@ -43,6 +43,9 @@
     },
     "aip_slot_info": {
       "textures": "textures/items/slot_info"
+    },
+    "aip_computer_chest": {
+      "textures": "textures/items/computer_chest"
     }
   }
 }

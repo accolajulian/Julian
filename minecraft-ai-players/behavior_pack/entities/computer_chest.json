@@ -1,0 +1,75 @@
+{
+  "format_version": "1.21.0",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "aip:computer_chest",
+      "is_spawnable": false,
+      "is_summonable": true,
+      "is_experimental": false
+    },
+    "component_groups": {
+      "aip:placed": {
+        "minecraft:is_tamed": {}
+      }
+    },
+    "components": {
+      "minecraft:type_family": {
+        "family": [
+          "aip_computer_chest",
+          "inanimate"
+        ]
+      },
+      "minecraft:collision_box": {
+        "width": 0.9,
+        "height": 1.0
+      },
+      "minecraft:physics": {
+        "has_gravity": false,
+        "has_collision": true
+      },
+      "minecraft:pushable": {
+        "is_pushable": false,
+        "is_pushable_by_piston": false
+      },
+      "minecraft:knockback_resistance": {
+        "value": 1.0
+      },
+      "minecraft:persistent": {},
+      "minecraft:health": {
+        "value": 20,
+        "max": 20
+      },
+      "minecraft:damage_sensor": {
+        "triggers": [
+          {
+            "cause": "all",
+            "deals_damage": "no"
+          }
+        ]
+      },
+      "minecraft:tameable": {
+        "probability": 1.0,
+        "tame_items": "minecraft:barrier",
+        "tame_event": {
+          "event": "aip:placed",
+          "target": "self"
+        }
+      },
+      "minecraft:inventory": {
+        "container_type": "container",
+        "inventory_size": 27,
+        "restrict_to_owner": true,
+        "private": true
+      }
+    },
+    "events": {
+      "aip:placed": {
+        "add": {
+          "component_groups": [
+            "aip:placed"
+          ]
+        }
+      }
+    }
+  }
+}

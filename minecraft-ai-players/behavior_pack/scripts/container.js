@@ -84,13 +84,17 @@ function layout(role) {
 
   if (role === "resource") {
     return [
-      // Row 1: tools 1-2-3, sword, bow, arrows, shield, torches
-      ...tools, { kind: "sword" }, { kind: "bow" }, ...arrows, { kind: "shield" },
+      // Row 1: tools 1-2-3, shield, torches, info
+      ...tools, { kind: "shield" },
       {
         kind: "info",
         text: (r) => `Torches: ${inventoryOf(r).torches}/${TORCH_STACK} (its own)`,
-        lore: ["§7It lights up caves with these.", "§7They refill and can't be taken."],
+        lore: ["§7It places one about every 10 blocks underground.", "§7They refill and can't be taken."],
       },
+      { kind: "info", text: (r) => `${r.name} (Resource AI)${r.upgraded ? " - Upgraded" : ""}`, lore: ["§7Tools are used in order 1, 2, 3."] },
+      { kind: "info", text: (r) => (r.mode === "wander" ? `Wandering: ${r.focus}` : "Following you"), lore: ["§7Left click it to change."] },
+      { kind: "info", text: () => "It never fights", lore: ["§7Mobs can't hurt it. It runs from players."] },
+      { kind: "info", text: () => "Mining/harvesting tools only", lore: ["§7Pickaxes, axes, shovels, hoes, shears."] },
       // Row 2: armor, blocks, food, first valuable
       ...armor, ...blocks, foodInfo, { kind: "food" }, valuables[0],
       // Row 3: valuables 2-10
@@ -227,15 +231,18 @@ function signature(item) {
 const snapshots = new Map();
 
 /**
- * @param {import("@minecraft/server").Entity} ai
+ * Syncs an inventory screen with an AI's record. Used for the AI itself and for Computer Chests
+ * showing an upgraded AI's inventory.
+ * @param {import("@minecraft/server").Entity} ai  the AI, or a Computer Chest
  * @param {string} ownerId
  * @param {import("./data.js").RoleId} role
  * @param {string} key
  */
-function sync(ai, ownerId, role, key) {
+export function sync(ai, ownerId, role, key) {
   const container = ai.getComponent("minecraft:inventory")?.container;
   let record = getAi(key);
   if (!container || !record) return;
+  if (role === "resource") returnOldWeapons(record, ownerId);
   const slots = layout(role).slice(0, container.size);
   const current = slots.map((_, i) => container.getItem(i));
   const snap = snapshots.get(ai.id);
@@ -271,6 +278,48 @@ function sync(ai, ownerId, role, key) {
     if (sig !== signature(container.getItem(i))) container.setItem(i, want[i]);
   });
   snapshots.set(ai.id, wantSig);
+}
+
+/**
+ * The Resource AI no longer has sword, bow or arrow slots: give anything left in them back.
+ * @param {import("./data.js").AiRecord} record
+ * @param {string} ownerId
+ */
+function returnOldWeapons(record, ownerId) {
+  const inv = inventoryOf(record);
+  const arrows = inv.arrows.reduce((a, b) => a + b, 0);
+  if (!inv.arms.sword && !inv.arms.bow && arrows === 0) return;
+  const owner = findPlayer(ownerId);
+  if (!owner) return;
+  for (const item of [inv.arms.sword, inv.arms.bow]) if (item) giveItem(owner, stackFromTool(item));
+  for (let n = arrows; n > 0; n -= 64) giveItem(owner, new ItemStack(ARROW_ITEM, Math.min(64, n)));
+  inv.arms = { sword: null, bow: null };
+  inv.arrows = [0, 0];
+  saveRecord(ownerId, "resource", record);
+  owner.sendMessage(`§e${record.name} doesn't fight anymore, so it gave you back its sword, bow and arrows.`);
+}
+
+/**
+ * A Computer Chest that isn't showing an AI: every slot is a label, and anything put in goes back.
+ * @param {import("@minecraft/server").Entity} chest
+ * @param {string} ownerId
+ * @param {string} message
+ */
+export function syncEmpty(chest, ownerId, message) {
+  const container = chest.getComponent("minecraft:inventory")?.container;
+  if (!container) return;
+  snapshots.delete(chest.id);
+  const owner = findPlayer(ownerId);
+  for (let i = 0; i < container.size; i++) {
+    const item = container.getItem(i);
+    if (item && !LABEL_ITEMS.has(item.typeId)) {
+      if (owner) giveItem(owner, item);
+      else chest.dimension.spawnItem(item, chest.location);
+    }
+    if (item?.typeId !== LABEL.info || item.nameTag !== `§r§7${message}`) {
+      container.setItem(i, label("info", message, ["§7Left click the chest to choose an upgraded AI."]));
+    }
+  }
 }
 
 /** @param {Slot} s @param {import("./data.js").RoleId} role */

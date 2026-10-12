@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.12.0)
+## What it does (v1.13.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -24,7 +24,7 @@ An original add-on with AI companions that look like players. It's kept separate
 - **Recall robot:** when you throw the egg, its hotbar slot gets a recall robot (**red** for the Fighter,
   **blue** for the Resource AI). Use it to teleport your AI to you. If the AI is too far away to be loaded,
   it rejoins next to you with everything it carries. Lost it? The Coder gives you a new one.
-- **If an AI dies, it respawns next to its owner** after 5 seconds (or when the owner next joins).
+- **If an AI dies, it respawns 60 seconds later near the player who bought it** (or its controller).
 
 ### Controllers (recall robots)
 - Whoever holds an AI's recall robot controls it. Drop it and let another player pick it up, and the AI
@@ -32,10 +32,19 @@ An original add-on with AI companions that look like players. It's kept separate
 - Handing over a controller never changes who bought it: the buyer still can't buy another of that kind,
   and the new controller can still buy their own if they haven't yet. A player can control several AIs.
 
-### Mobs
-- Mobs can't hurt either AI (hits, arrows and explosions do nothing).
-- The Resource AI never hurts mobs. It only fights players, with its bow or crossbow.
-- The Fighter AI kills mobs as before.
+### Mobs and explosions
+- Mobs can't hurt either AI, and no explosion can (creepers, ghast fireballs, TNT).
+- The Resource AI never fights (it runs from players who attack it). The Fighter kills mobs.
+
+### Upgrades (at the Coder)
+| AI | Cost | What it gets |
+|---|---|---|
+| Resource AI | 10 diamonds | Strip mining (digs a tunnel straight to diamonds, or netherite in the Nether), no lava/fire/fall damage (no potion bubbles), Computer Chest access |
+| Fighter AI | 10 netherite ingots | No lava/fire/fall damage, Computer Chest access |
+
+### Computer Chest (chest.js)
+Craft: chest + redstone + glass pane. Place it, **left click** it to choose one of your upgraded AIs (or pick
+the chest up), **right click** it to open that AI's inventory from anywhere. Only the player who placed it can use it.
 
 ### Controls
 | Action | What happens |
@@ -56,15 +65,15 @@ shown on info labels and can't be taken.
 | 2 | Helmet, Chestplate, Leggings, Boots, Blocks 1-2, Own chicken (info), Spare chicken, Valuables 1 | same |
 | 3 | Valuables 2-10 | Valuables 2-10 |
 
-**Fighter commands:** *Teleport to me*, *Attack a player*, *Follow and protect me*, *Guard this spot*, *Fighting style*, *Targets*, *Tombstones*, *Allies & enemies*, *Delete*.
+**Fighter commands:** *Teleport to me*, *Attack a player*, *Follow and protect me*, *Guard this spot*, *Fighting*, *Tombstones*, *Allies & enemies*, *Delete*.
 
-| Fighting style | What it does |
+| Fighting | What it does |
 |---|---|
-| Sword Combat | Sprints at the enemy and keeps hitting with its melee tool |
-| Archer | Shoots with a bow/crossbow from a distance (melee only if it runs out of arrows) |
-| Archer then Combat | Fires 5 arrows, then charges in (or right away if the enemy gets close) |
+| Sword Combat | Sprints at the enemy and keeps hitting with its sword |
+| Bow Only | Keeps its distance and shoots from up to 25 blocks, aiming ahead of moving targets |
+| Bow and Sword Combat | Runs in with its bow out, fires one arrow from about 20 blocks, then switches to its sword. No more opening arrows in that fight unless a new target is over 20 blocks away |
 
-All styles back off to heal at 30% health. Fighters can hold a bow and a crossbow in their tool slots.
+All styles back off to heal at 30% health. **Targets** (in the same Fighting section): mobs and players, or only players.
 
 **Tombstones (tombs.js):** when it isn't fighting, the Fighter breaks tombstones from a grave/tombstone
 add-on within 12 blocks and loots them, most valuable items first: valuables, better armor (swapping out
@@ -72,7 +81,7 @@ worse pieces), a shield, better tools, arrows, blocks. Anything it can't use sta
 "grave", "tomb", "headstone" or "corpse" are found automatically; others can be taught in its menu
 (*Tombstones > Teach*, standing next to one). Looting can be turned off. **Targets:** *Mob killing and player killing*, or *Only player
 killing* (it still defends against mobs that attack, and attacks whatever you attack).
-**Resource commands:** "Choose resource": *Teleport to me*, Wood, Stone, Ores, Everything, Nothing, *Allies & enemies*, *Delete*.
+**Resource commands:** "Choose resource": *Teleport to me*, *Follow me* (strictly) or *Wander and gather*, Wood, Stone, Ores, Everything (and *Strip mine* when upgraded), *Allies & enemies*, *Delete*.
 
 Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
 
@@ -148,6 +157,8 @@ AI when it dies; dismissing it gives you back the tools, arrows and spare chicke
 | `behavior_pack/scripts/gather.js` | Mining, chopping and lava safety |
 | `behavior_pack/scripts/movement.js` | Bridging and pillaring |
 | `behavior_pack/scripts/tombs.js` | Tombstone breaking and looting |
+| `behavior_pack/scripts/stripmine.js` | Upgraded Resource AI strip mining |
+| `behavior_pack/scripts/chest.js` | Computer Chest |
 | `behavior_pack/scripts/container.js` | The right-click inventory screen and its slot rules |
 | `behavior_pack/scripts/gather_data.js` | Generated list of gatherable blocks (don't edit by hand) |
 | `behavior_pack/blocks/coder.json` | The Coder block (shop) |

@@ -17,7 +17,9 @@ const MAX_ENEMIES = 40;
  * @property {"egg" | "thrown" | "alive" | "respawn"} state
  * @property {number} serial  Eggs with an older serial no longer work.
  * @property {string} [id]  Entity id while alive.
- * @property {"follow" | "guard"} mode
+ * @property {"follow" | "guard" | "wander"} mode  Fighter: follow/guard. Resource AI: follow (strictly) or wander (gather).
+ * @property {boolean} [upgraded]  Upgraded at the Coder.
+ * @property {number} [diedAt]  When it died (it respawns 60 seconds later).
  * @property {string} focus
  * @property {{ x: number, y: number, z: number, dim: string }} [post]  Guard spot.
  * @property {(import("./inventory.js").ToolData | null)[]} [tools]  3 tool slots, used in order.
