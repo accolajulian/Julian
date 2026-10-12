@@ -15,6 +15,11 @@ export const ARROW_SLOT_MAX = 64;
 export const BLOCK_SLOTS = 2;
 export const BLOCK_SLOT_MAX = 64;
 export const BAG_CAPACITY = 576; // 9 stacks
+export const TORCH_ITEM = "minecraft:torch";
+export const TORCH_STACK = 64;
+/** Slot numbers used by the brain: 0-2 are the tool slots, then the Resource AI's sword and bow slots. */
+export const SWORD_SLOT = 3;
+export const BOW_SLOT = 4;
 export const VALUABLE_SLOTS = 10;
 export const VALUABLE_SLOT_MAX = 64;
 
@@ -104,6 +109,10 @@ export const TOOL_DAMAGE = {
   "minecraft:netherite_pickaxe": 6,
 };
 
+/** Resource AI weapon slots: a sword slot and a bow slot (bow or crossbow). */
+export const SWORDS = new Set(kinds("sword"));
+export const RANGED = new Set(["minecraft:bow", "minecraft:crossbow"]);
+
 /** @param {string | undefined} id */
 export function isRanged(id) {
   return id === "minecraft:bow" || id === "minecraft:crossbow";
@@ -132,6 +141,8 @@ export function toolKind(role) {
  * @property {({ id: string, count: number } | null)[]} blocks
  * @property {Record<string, number>} bag
  * @property {({ id: string, count: number } | null)[]} valuables
+ * @property {{ sword: ToolData | null, bow: ToolData | null }} arms  Resource AI: sword and bow/crossbow slots.
+ * @property {number} torches  Resource AI: its own torches (refills itself; players can't take them).
  */
 
 /**
@@ -149,6 +160,8 @@ export function inventoryOf(record) {
   if (record.shield === undefined) record.shield = null;
   if (!Array.isArray(record.blocks) || record.blocks.length !== BLOCK_SLOTS) record.blocks = [null, null];
   if (!record.bag) record.bag = {};
+  if (!record.arms) record.arms = { sword: null, bow: null };
+  if (typeof record.torches !== "number") record.torches = TORCH_STACK;
   if (!Array.isArray(record.valuables) || record.valuables.length !== VALUABLE_SLOTS) {
     record.valuables = Array.from({ length: VALUABLE_SLOTS }, (_, i) => record.valuables?.[i] ?? null);
   }
@@ -256,6 +269,75 @@ export function wearTool(record, slot) {
   const result = wearItem(tool, 1);
   if (result === "broke") tools[slot] = null;
   return result;
+}
+
+/**
+ * The item in a slot number (0-2 tool slots, SWORD_SLOT, BOW_SLOT).
+ * @param {import("./data.js").AiRecord} record
+ * @param {number} slot
+ */
+export function slotItem(record, slot) {
+  const inv = inventoryOf(record);
+  if (slot === SWORD_SLOT) return inv.arms.sword;
+  if (slot === BOW_SLOT) return inv.arms.bow;
+  return slot >= 0 ? inv.tools[slot] ?? null : null;
+}
+
+/**
+ * Wears the item in a slot by one use; empties the slot if it breaks.
+ * @param {import("./data.js").AiRecord} record
+ * @param {number} slot
+ * @returns {"ok" | "broke" | "none"}
+ */
+export function wearSlot(record, slot) {
+  if (slot < SWORD_SLOT) return wearTool(record, slot);
+  const inv = inventoryOf(record);
+  const key = slot === SWORD_SLOT ? "sword" : "bow";
+  const item = inv.arms[key];
+  if (!item) return "none";
+  const result = wearItem(item, 1);
+  if (result === "broke") inv.arms[key] = null;
+  return result;
+}
+
+/**
+ * Uses one torch. When the last one is placed, the slot fills back up to a full stack.
+ * @param {import("./data.js").AiRecord} record
+ */
+export function useTorch(record) {
+  const inv = inventoryOf(record);
+  inv.torches -= 1;
+  if (inv.torches <= 0) inv.torches = TORCH_STACK;
+}
+
+// ---------------------------------------------------------------- loot value
+
+const MATERIAL_VALUE = { netherite: 90, diamond: 60, iron: 20, chainmail: 15, golden: 10, gold: 10, stone: 5, turtle: 25, leather: 3, wooden: 3 };
+/** @type {Record<string, number>} */
+const ITEM_VALUE = {
+  "minecraft:netherite_block": 900, "minecraft:diamond_block": 450, "minecraft:emerald_block": 270,
+  "minecraft:netherite_ingot": 100, "minecraft:netherite_scrap": 25, "minecraft:ancient_debris": 25,
+  "minecraft:diamond": 50, "minecraft:emerald": 30, "minecraft:gold_block": 90, "minecraft:iron_block": 54,
+  "minecraft:gold_ingot": 10, "minecraft:raw_gold": 8, "minecraft:iron_ingot": 6, "minecraft:raw_iron": 5,
+  "minecraft:lapis_block": 18, "minecraft:redstone_block": 9, "minecraft:coal_block": 9,
+  "minecraft:copper_ingot": 3, "minecraft:raw_copper": 2, "minecraft:lapis_lazuli": 2, "minecraft:redstone": 1,
+  "minecraft:coal": 1, "minecraft:charcoal": 1, "minecraft:quartz": 2, "minecraft:amethyst_shard": 2,
+  "minecraft:gold_nugget": 1, "minecraft:iron_nugget": 1, "minecraft:trident": 80, "minecraft:mace": 80,
+  "minecraft:bow": 8, "minecraft:crossbow": 10, "minecraft:shield": 8, "minecraft:arrow": 0.5,
+};
+
+/**
+ * How valuable one item is (used to loot the best things first).
+ * @param {string} id
+ * @param {number} [enchantments]
+ */
+export function itemValue(id, enchantments = 0) {
+  let value = ITEM_VALUE[id];
+  if (value === undefined) {
+    const material = /^minecraft:([a-z]+)_/.exec(id)?.[1] ?? "";
+    value = /** @type {Record<string, number>} */ (MATERIAL_VALUE)[material] ?? 0.1;
+  }
+  return value + enchantments * 10;
 }
 
 /**

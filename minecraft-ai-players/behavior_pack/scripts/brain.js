@@ -1,13 +1,14 @@
 // The AI players' brain: picks targets, protects the owner, backs off to heal,
 // uses its tool slots in order, wears armor, blocks with a shield, eats its chicken,
-// stays away from lava, gathers (Resource AI) and remembers enemies and allies (even after dying).
+// stays away from lava, gathers and lights caves (Resource AI), loots tombstones (Fighter)
+// and remembers enemies and allies (even after dying).
 //
 // The Script API can't set a mob's target directly, so the brain "points" each AI at its
 // target with tags (see tools/make_entity_targets.py):
 //   aip_s<k>  on the AI using brain slot k
 //   aip_h<k>  on the entity that AI should hunt
 //   aip_a<k>  on every entity that AI must never attack
-import { world, system, GameMode, EntityDamageCause, EquipmentSlot } from "@minecraft/server";
+import { world, system, GameMode, EntityDamageCause, EquipmentSlot, BlockVolume } from "@minecraft/server";
 import {
   AI_ENTITY,
   getRecord,
@@ -25,7 +26,6 @@ import {
   ARROW_ITEM,
   isRanged,
   inventoryOf,
-  wearTool,
   addTool,
   addArrows,
   totalArrows,
@@ -41,7 +41,14 @@ import {
   FOOD_HEALS,
   isValuable,
   addValuables,
+  slotItem,
+  wearSlot,
+  SWORD_SLOT,
+  BOW_SLOT,
+  useTorch,
+  TORCH_ITEM,
 } from "./inventory.js";
+import { handleTombs, createLootState } from "./tombs.js";
 import { bridgeTowards } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior } from "./gather.js";
 
@@ -58,6 +65,8 @@ const EAT_EVERY_MS = 2500; // how often it can eat a cooked chicken
 const SHIELD_COOLDOWN_MS = 1000; // time between shield blocks
 const AXE_DISABLES_SHIELD_MS = 5000; // an axe hit knocks its shield down for this long
 const OPENING_SHOTS = 5; // "Archer then Combat": arrows to fire before charging in with the sword
+const TORCH_EVERY_MS = 3000;
+const TORCH_SPACING = 5; // no torch within this many blocks: place one
 /** How dangerous each mob is. Higher = attacked first. Mobs not listed count as 20. */
 /** @type {Record<string, number>} */
 const DANGER = {
@@ -114,6 +123,10 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {number} shieldReadyAt
  * @property {number} eatReadyAt
  * @property {import("./gather.js").GatherState} gather
+ * @property {import("./data.js").RoleId} role
+ * @property {import("./tombs.js").LootState} loot
+ * @property {boolean} fleeing  Resource AI running from a player it can't shoot at.
+ * @property {number} torchReadyAt
  * @property {number} shots  Arrows fired at the current target.
  * @property {number} warnedAt  Last "Archer needs a bow and arrows" message.
  * @property {string | undefined} commandId
@@ -273,11 +286,17 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damage, damageSource }) =>
   if (changed) saveRecord(info.ownerId, info.role, record);
 });
 
-// AIs never hurt their friends, and melee tools add damage.
+// AIs never hurt their friends, the Resource AI only fights players with a bow or crossbow,
+// and melee tools add damage.
 world.beforeEvents.entityHurt.subscribe((event) => {
   const attacker = event.damageSource.damagingEntity;
   if (!attacker || attacker.typeId !== AI_ENTITY) return;
   const brain = brains.get(attacker.id);
+  if (brain?.role === "resource" && event.hurtEntity.typeId === "minecraft:player" &&
+      event.damageSource.cause === EntityDamageCause.entityAttack) {
+    event.cancel = true;
+    return;
+  }
   if (brain?.slot !== undefined && event.hurtEntity.hasTag(`aip_a${brain.slot}`)) {
     event.cancel = true;
     return;
@@ -323,15 +342,15 @@ function useTool(ai, brain) {
   const record = info ? getRecord(info.ownerId, info.role) : undefined;
   if (!info || !record) return;
   const slot = brain.activeSlot;
-  const toolId = inventoryOf(record).tools[slot]?.id;
-  const result = wearTool(record, slot);
+  const toolId = slotItem(record, slot)?.id;
+  const result = wearSlot(record, slot);
   if (result === "none") return;
   saveRecord(info.ownerId, info.role, record);
   if (result === "broke" && toolId) {
     ai.dimension.playSound("random.break", ai.location);
-    const next = inventoryOf(record).tools.findIndex((t, i) => t && i > slot);
+    const next = slot < SWORD_SLOT ? inventoryOf(record).tools.findIndex((t, i) => t && i > slot) : -1;
     findPlayer(info.ownerId)?.sendMessage(
-      `§c${record.name}'s ${itemName(toolId)} broke!§r ` + (next >= 0 ? `Switching to slot ${next + 1}.` : "No tools left.")
+      `§c${record.name}'s ${itemName(toolId)} broke!§r ` + (next >= 0 ? `Switching to slot ${next + 1}.` : "")
     );
     brain.equipped = "unknown";
   }
@@ -385,7 +404,7 @@ system.runInterval(() => {
   }
 
   forgetUnloaded(new Set(live.map((l) => l.ai.id)));
-  for (const { ai } of live) ensureBrain(ai);
+  for (const { ai, info } of live) ensureBrain(ai, info.role);
   syncFriendTags(live);
 
   for (const { ai, info, record } of live) {
@@ -442,7 +461,7 @@ function think(ai, ownerId, role, record, brain) {
     if (role === "resource") setGatherBehavior(ai, brain.gather, record.focus, false);
     if (health.currentValue / health.effectiveMax >= RECOVERED_AT) {
       brain.retreating = false;
-      ai.triggerEvent("aip:recovered");
+      if (!brain.fleeing) ai.triggerEvent("aip:recovered");
       owner?.sendMessage(`§a${record.name} has healed up and is back in action.`);
     }
     return;
@@ -453,11 +472,15 @@ function think(ai, ownerId, role, record, brain) {
 
   pickUpItems(ai, ownerId, role, record);
   if (role !== "fighter") {
+    // ---- Defend itself: sword against mobs, bow/crossbow only against players.
+    const fightSlot = resourceDefense(ai, brain, record, owner, now);
+
     // ---- Gather, unless it was just attacked or there's lava close by.
     const safe = !lavaClose && now - lastHit > RECENT_MS;
     setGatherBehavior(ai, brain.gather, record.focus, safe);
-    const slot = safe ? gather(ai, ownerId, record, brain.gather) : undefined;
+    const slot = fightSlot ?? (safe ? gather(ai, ownerId, record, brain.gather) : undefined);
     equip(ai, brain, record, slot ?? firstTool(record, false));
+    if (safe) placeTorch(ai, ownerId, record, brain, now);
     // Not mining and its owner is away: bridge/pillar to catch up.
     if (slot === undefined && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
       bridgeTowards(ai, ownerId, role, record, owner.location);
@@ -484,6 +507,12 @@ function think(ai, ownerId, role, record, brain) {
     // Switch only if the current target is gone or the new one is clearly more important
     // (stops it flip-flopping between two similar enemies).
     setHunt(brain, best.entity, best.score);
+  }
+
+  // ---- Nothing to fight: break and loot tombstones nearby.
+  if (!brain.huntId && now - lastHit > RECENT_MS && handleTombs(ai, ownerId, record, brain.loot)) {
+    equip(ai, brain, record, chooseSlot(record, brain, owner, undefined, 0));
+    return;
   }
 
   // ---- Pick the tool for this target (slot order, with a few smart switches).
@@ -650,7 +679,7 @@ function pickMelee(melee, tools, target) {
  * @param {number} slot
  */
 function equip(ai, brain, record, slot) {
-  const toolId = slot >= 0 ? inventoryOf(record).tools[slot]?.id : undefined;
+  const toolId = slotItem(record, slot)?.id;
   brain.activeSlot = toolId ? slot : -1;
   const style = isRanged(toolId) ? "ranged" : "melee";
   if (style !== brain.style) {
@@ -664,6 +693,77 @@ function equip(ai, brain, record, slot) {
     console.warn(`[AI Players] couldn't equip ${toolId}: ${error}`);
   }
   brain.equipped = toolId; // don't retry every tick if it failed
+}
+
+/**
+ * Resource AI self-defense. Against a mob that hit it: its sword (or a tool). Against a player:
+ * only its bow/crossbow, and if it has none (or no arrows) it runs away instead.
+ * Returns the slot to hold while fighting, or undefined when it isn't fighting.
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {Brain} brain
+ * @param {import("./data.js").AiRecord} record
+ * @param {import("@minecraft/server").Player | undefined} owner
+ * @param {number} now
+ */
+function resourceDefense(ai, brain, record, owner, now) {
+  /** @type {import("@minecraft/server").Entity | undefined} */
+  let attacker;
+  let latest = 0;
+  for (const [id, time] of recentHits.get(ai.id) ?? []) {
+    if (now - time > RECENT_MS || time < latest) continue;
+    const e = world.getEntity(id);
+    if (e?.isValid && id !== owner?.id) {
+      attacker = e;
+      latest = time;
+    }
+  }
+  const byPlayer = attacker?.typeId === "minecraft:player";
+  const canShoot = !!inventoryOf(record).arms.bow && totalArrows(record) > 0;
+
+  const flee = byPlayer && !canShoot;
+  if (flee && !brain.fleeing) {
+    brain.fleeing = true;
+    ai.triggerEvent("aip:retreat");
+    owner?.sendMessage(`§e${record.name} can only fight players with a bow or crossbow (and arrows), so it's running away.`);
+  } else if (!flee && brain.fleeing) {
+    brain.fleeing = false;
+    if (!brain.retreating) ai.triggerEvent("aip:recovered");
+  }
+
+  if (!attacker) return undefined;
+  if (byPlayer) return canShoot ? BOW_SLOT : -1;
+  return inventoryOf(record).arms.sword ? SWORD_SLOT : firstTool(record, true);
+}
+
+/**
+ * Resource AI: lights up dark caves with its own torches (the torch slot refills itself).
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {string} ownerId
+ * @param {import("./data.js").AiRecord} record
+ * @param {Brain} brain
+ * @param {number} now
+ */
+function placeTorch(ai, ownerId, record, brain, now) {
+  if (now < brain.torchReadyAt) return;
+  brain.torchReadyAt = now + 1000;
+  const dim = ai.dimension;
+  const feet = { x: Math.floor(ai.location.x), y: Math.floor(ai.location.y), z: Math.floor(ai.location.z) };
+  try {
+    // Dark and under cover (not just night time outside).
+    if (dim.getLightLevel(feet) >= 7 || dim.getSkyLightLevel(feet) >= 4) return;
+    const here = dim.getBlock(feet);
+    const below = dim.getBlock({ ...feet, y: feet.y - 1 });
+    if (!here?.isAir || !below || below.isAir || below.isLiquid) return;
+    const r = TORCH_SPACING;
+    const nearby = new BlockVolume({ x: feet.x - r, y: feet.y - 2, z: feet.z - r }, { x: feet.x + r, y: feet.y + 2, z: feet.z + r });
+    if (dim.containsBlock(nearby, { includeTypes: [TORCH_ITEM] })) return;
+    dim.setBlockType(feet, TORCH_ITEM);
+  } catch {
+    return; // unloaded area or a block a torch can't go on
+  }
+  useTorch(record);
+  saveRecord(ownerId, "resource", record);
+  brain.torchReadyAt = now + TORCH_EVERY_MS;
 }
 
 /**
@@ -691,7 +791,7 @@ function wearGear(ai, brain, record) {
 
 /**
  * Picks up allowed tools (into the first empty slot), valuables, building blocks (never sand,
- * gravel or other falling blocks) and, for Fighters, arrows lying next to it.
+ * gravel or other falling blocks) and arrows lying next to it.
  * @param {import("@minecraft/server").Entity} ai
  * @param {string} ownerId
  * @param {import("./data.js").RoleId} role
@@ -719,7 +819,7 @@ function pickUpItems(ai, ownerId, role, record) {
         ai.dimension.spawnItem(stack, location);
       }
       message = `picked up ${added} ${itemName(stack.typeId)}`;
-    } else if (role === "fighter" && stack.typeId === ARROW_ITEM) {
+    } else if (stack.typeId === ARROW_ITEM) {
       const added = addArrows(record, stack.amount);
       if (added === 0) continue;
       const location = item.location;
@@ -741,8 +841,8 @@ function pickUpItems(ai, ownerId, role, record) {
 
 // ================================================================ slots and tags
 
-/** @param {import("@minecraft/server").Entity} ai */
-function ensureBrain(ai) {
+/** @param {import("@minecraft/server").Entity} ai @param {import("./data.js").RoleId} role */
+function ensureBrain(ai, role) {
   if (brains.has(ai.id)) return;
   // A fresh brain: start calm (in case it was retreating when the world was saved), with melee on.
   ai.triggerEvent("aip:recovered");
@@ -771,6 +871,10 @@ function ensureBrain(ai) {
     shieldReadyAt: 0,
     eatReadyAt: 0,
     gather: createGatherState(),
+    role,
+    loot: createLootState(),
+    fleeing: false,
+    torchReadyAt: 0,
     shots: 0,
     warnedAt: 0,
     commandId: undefined,

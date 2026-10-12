@@ -388,40 +388,45 @@ def guide_textures():
     return side, top
 
 
-def skull_icon(base, seed):
-    """16x16 skull: rounded head, dark eye sockets with a glow, nose and teeth."""
+def robot_icon(base, seed):
+    """16x16 robot head: antenna, metal head in the given colour, dark visor with glowing eyes, grille."""
     rng = random.Random(seed)
     img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
     p = img.load()
-    dark = tuple(int(c * 0.35) for c in base)
+    dark = tuple(int(c * 0.3) for c in base)
+    glow = (120, 240, 255)
     shape = [
-        "....XXXXXXXX....",
+        ".......LL.......",
+        ".......AA.......",
+        ".......AA.......",
         "...XXXXXXXXXX...",
         "..XXXXXXXXXXXX..",
+        ".EXXXXXXXXXXXXE.",
+        ".EXVVVVVVVVVVXE.",
+        ".EXVGGVVVVGGVXE.",
+        ".EXVVVVVVVVVVXE.",
         "..XXXXXXXXXXXX..",
+        "..XXXGXGXGXXXX..",
         "..XXXXXXXXXXXX..",
-        "..XXEEEXXEEEXX..",
-        "..XXEGEXXEGEXX..",
-        "..XXEEEXXEEEXX..",
-        "..XXXXXXXXXXXX..",
-        "...XXXXNNXXXXX..",
         "...XXXXXXXXXX...",
-        "....XTXTXTXTX...",
-        "....XXXXXXXXX...",
-        ".....XXXXXXX....",
     ]
     for y, row in enumerate(shape):
         for x, ch in enumerate(row):
             if ch == ".":
                 continue
-            if ch in "ENT":
-                p[x, y + 1] = dark + (255,)
+            yy = y + 1
+            if ch == "L":
+                p[x, yy] = glow + (255,)
+            elif ch in "VA":
+                p[x, yy] = dark + (255,)
+            elif ch == "E":
+                p[x, yy] = tuple(int(c * 0.6) for c in base) + (255,)
             elif ch == "G":
-                p[x, y + 1] = (255, 255, 255, 255)
+                p[x, yy] = (glow if y < 9 else dark) + (255,)
             else:
-                light = 25 if x < 7 and y < 6 else (-20 if x > 11 or y > 10 else 0)
+                light = 30 if x < 7 and y < 6 else (-25 if x > 11 or y > 10 else 0)
                 c = tuple(max(0, min(255, v + light + rng.randint(-8, 8))) for v in base)
-                p[x, y + 1] = c + (255,)
+                p[x, yy] = c + (255,)
     return img
 
 
@@ -441,8 +446,8 @@ def main():
     egg_icon((200, 50, 50), (255, 210, 70), 1).save(RP / "textures/items/fighter_egg.png")
     egg_icon((70, 160, 70), (79, 224, 255), 2).save(RP / "textures/items/resource_egg.png")
     egg_icon((120, 200, 230), (255, 255, 255), 3).save(RP / "textures/items/ai_capsule.png")
-    skull_icon((205, 45, 45), 4).save(RP / "textures/items/fighter_skull.png")
-    skull_icon((55, 110, 230), 5).save(RP / "textures/items/resource_skull.png")
+    robot_icon((210, 50, 50), 4).save(RP / "textures/items/fighter_robot.png")
+    robot_icon((60, 115, 235), 5).save(RP / "textures/items/resource_robot.png")
 
     # Pack icon: four of the AI players' faces in a grid
     pack = Image.new("RGBA", (128, 128), (15, 20, 30, 255))

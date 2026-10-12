@@ -2,15 +2,15 @@
   "format_version": "1.21.0",
   "minecraft:item": {
     "description": {
-      "identifier": "aip:resource_skull",
+      "identifier": "aip:resource_robot",
       "menu_category": {
         "category": "none"
       }
     },
     "components": {
-      "minecraft:icon": "aip_resource_skull",
+      "minecraft:icon": "aip_resource_robot",
       "minecraft:display_name": {
-        "value": "Resource AI Recall Skull"
+        "value": "Resource AI Recall Robot"
       },
       "minecraft:max_stack_size": 1,
       "minecraft:glint": true

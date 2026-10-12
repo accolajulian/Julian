@@ -62,7 +62,11 @@ import {
   totalValuables,
   VALUABLE_SLOTS,
   VALUABLE_SLOT_MAX,
+  SWORDS,
+  RANGED,
+  TORCH_STACK,
 } from "./inventory.js";
+import { tombTypes, getTaught, setTaught, addOnThingsNear } from "./tombs.js";
 import { FOCUSES } from "./gather_data.js";
 
 /** @typedef {import("./data.js").RoleId} RoleId */
@@ -74,12 +78,12 @@ const MAX_NAME_LENGTH = 20;
 const RESPAWN_SECONDS = 5;
 const COMMAND_SECONDS = 20; // how long a selected Fighter AI waits for you to pick a target
 
-/** @type {Record<RoleId, { title: string, egg: string, skull: string, color: string, price: { item: string, amount: number, label: string }, icon: string, about: string }>} */
+/** @type {Record<RoleId, { title: string, egg: string, robot: string, color: string, price: { item: string, amount: number, label: string }, icon: string, about: string }>} */
 const ROLES = {
   resource: {
     title: "Resource AI",
     egg: "aip:resource_egg",
-    skull: "aip:resource_skull",
+    robot: "aip:resource_robot",
     color: "§9",
     price: { item: "minecraft:iron_ingot", amount: 30, label: "Iron Ingots" },
     icon: "textures/items/iron_ingot",
@@ -90,9 +94,12 @@ const ROLES = {
       "§a+§r Never mines next to lava: covers it with blocks or backs away\n" +
       "§a+§r Keeps what it gathers in a backpack for you to collect\n" +
       "§a+§r 3 tool slots for harvesting/mining tools, used in order 1, 2, 3\n" +
+      "§a+§r A sword slot and a bow slot (bow or crossbow) with 2 arrow slots: sword against mobs,\n" +
+      "   and it only fights players with its bow or crossbow (it runs if it has none)\n" +
+      "§a+§r Its own stack of torches to light up caves (refills itself)\n" +
       "§a+§r Armor slots, a shield slot and 2 block slots (bridges over ravines and lava, pillars up)\n" +
       "§a+§r 10 slots for valuables; ores it mines go straight in\n" +
-      "§a+§r A blue recall skull to call it to you from anywhere\n" +
+      "§a+§r A blue recall robot to call it to you from anywhere\n" +
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Fights back if something attacks it, backs off to heal when hurt\n" +
       "§a+§r Respawns next to you if it dies, and remembers who attacked it\n\n" +
@@ -101,7 +108,7 @@ const ROLES = {
   fighter: {
     title: "Fighter AI",
     egg: "aip:fighter_egg",
-    skull: "aip:fighter_skull",
+    robot: "aip:fighter_robot",
     color: "§c",
     price: { item: "minecraft:diamond", amount: 15, label: "Diamonds" },
     icon: "textures/items/diamond",
@@ -118,7 +125,8 @@ const ROLES = {
       "§a+§r Armor slots and a shield slot (it blocks hits from the front)\n" +
       "§a+§r 2 block slots: bridges over ravines and lava, pillars up, covers lava\n" +
       "§a+§r 10 slots for valuables (diamonds, gold, coal, netherite...)\n" +
-      "§a+§r A red recall skull to call it to you from anywhere\n" +
+      "§a+§r Breaks tombstones and takes the most valuable loot\n" +
+      "§a+§r A red recall robot to call it to you from anywhere\n" +
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
@@ -178,7 +186,7 @@ const GUIDE_TEXT =
   "You can own one of each. You choose its look and type its name.\n\n" +
   "§lStep 3: Throw the egg§r\n" +
   "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
-  "§crecall skull§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
+  "§crecall robot§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
   "§lControls§r\n" +
   "- §eHit§r your AI: open its menu\n" +
   "- §eInteract§r with your AI while holding food: heal it\n" +
@@ -190,7 +198,8 @@ const GUIDE_TEXT =
   "(no sand, gravel or other falling blocks; used to bridge, pillar and cover lava), 10 valuables slots, " +
   "arrows (Fighter) and a backpack (Resource AI).\n\n" +
   "§lFighter settings§r (hit it to change)\n" +
-  "Style: Sword Combat, Archer, or Archer then Combat. Targets: mobs and players, or only players.\n\n" +
+  "Style: Sword Combat, Archer, or Archer then Combat. Targets: mobs and players, or only players.\n" +
+  "Tombstones: it breaks tombstones near it and takes the most valuable loot (can be turned off).\n\n" +
   "§lFood§r\n" +
   `Each AI makes ${FOOD_RESERVED} cooked chicken every 10 minutes, up to ${FOOD_CAP}. ` +
   `The first ${FOOD_RESERVED} are its own (it eats them to heal); you and your allies can take the rest.\n\n` +
@@ -391,10 +400,10 @@ async function manageOwned(player, role) {
   if (record.state === "alive" || record.state === "respawn") {
     if (record.state === "alive") actions.push({ label: "Call it to me", run: () => recallAi(player, role) });
     actions.push({
-      label: "Get a new recall skull\n§8If you lost it",
+      label: "Get a new recall robot\n§8If you lost it",
       run: () => {
         const r = getRecord(player.id, role);
-        if (r) giveItem(player, makeSkull(player, role, r));
+        if (r) giveItem(player, makeRecallRobot(player, role, r));
       },
     });
   } else {
@@ -444,15 +453,15 @@ async function dismiss(player, role) {
 /** @type {Map<string, { ownerId: string, role: RoleId, thrownAt: number }>} */
 const flyingEggs = new Map();
 
-// Using a recall skull opens its options.
+// Using a recall robot opens its options.
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
-  const role = ROLE_IDS.find((r) => ROLES[r].skull === itemStack?.typeId);
+  const role = ROLE_IDS.find((r) => ROLES[r].robot === itemStack?.typeId);
   if (!role || !itemStack) return;
   if (itemStack.getDynamicProperty("aip:owner") !== player.id) {
-    player.sendMessage("§cThis skull doesn't belong to you.");
+    player.sendMessage("§cThis recall robot doesn't belong to you.");
     return;
   }
-  system.run(() => openMenu(player, (p) => showSkullMenu(p, role)));
+  system.run(() => openMenu(player, (p) => showRobotMenu(p, role)));
 });
 
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
@@ -471,12 +480,12 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
     return;
   }
 
-  // The egg leaves the player's hand and its slot gets the AI's recall skull.
+  // The egg leaves the player's hand and its slot gets the AI's recall robot.
   const container = player.getComponent("minecraft:inventory")?.container;
   if (container?.getItem(player.selectedSlotIndex)?.typeId === itemStack.typeId) {
-    container.setItem(player.selectedSlotIndex, makeSkull(player, role, record));
+    container.setItem(player.selectedSlotIndex, makeRecallRobot(player, role, record));
   } else {
-    giveItem(player, makeSkull(player, role, record));
+    giveItem(player, makeRecallRobot(player, role, record));
   }
 
   // Throw it.
@@ -533,22 +542,22 @@ function hatch(egg, location, dimension) {
   spawnAi(owner, info.role, location, dimension);
 }
 
-// ================================================================ recall skulls
+// ================================================================ recall robots
 
 /**
- * The recall skull that replaces the egg: red for the Fighter, blue for the Resource AI.
+ * The recall robot that replaces the egg: red for the Fighter, blue for the Resource AI.
  * @param {import("@minecraft/server").Player} player @param {RoleId} role @param {AiRecord} record
  */
-function makeSkull(player, role, record) {
-  const skull = new ItemStack(ROLES[role].skull, 1);
-  skull.nameTag = `§r${ROLES[role].color}${record.name}'s Recall Skull`;
-  skull.setLore([`§7Owner: ${player.name}`, "§7Use it to call your AI to you."]);
-  skull.setDynamicProperty("aip:owner", player.id);
-  return skull;
+function makeRecallRobot(player, role, record) {
+  const robot = new ItemStack(ROLES[role].robot, 1);
+  robot.nameTag = `§r${ROLES[role].color}${record.name}'s Recall Robot`;
+  robot.setLore([`§7Owner: ${player.name}`, "§7Use it to call your AI to you."]);
+  robot.setDynamicProperty("aip:owner", player.id);
+  return robot;
 }
 
 /** @param {import("@minecraft/server").Player} player @param {RoleId} role */
-async function showSkullMenu(player, role) {
+async function showRobotMenu(player, role) {
   const record = getRecord(player.id, role);
   if (!record) {
     player.sendMessage(`§eYou don't have a ${ROLES[role].title} anymore.`);
@@ -719,6 +728,8 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target, itemStac
     const heal = itemStack ? FOODS[itemStack.typeId] : undefined;
     if (heal) {
       feed(player, target, heal);
+    } else if (itemStack && info.role === "resource" && (SWORDS.has(itemStack.typeId) || RANGED.has(itemStack.typeId))) {
+      quickAddArm(player, target);
     } else if (itemStack && ALLOWED_TOOLS[info.role].has(itemStack.typeId)) {
       quickAddTool(player, info.role, target);
     } else if (itemStack && (armorSlotFor(itemStack.typeId) || itemStack.typeId === SHIELD_ITEM)) {
@@ -727,8 +738,8 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target, itemStac
       quickAddValuables(player, info.role, target);
     } else if (itemStack && isPlaceableBlock(itemStack.typeId)) {
       quickAddBlocks(player, info.role, target);
-    } else if (itemStack && info.role === "fighter" && itemStack.typeId === ARROW_ITEM) {
-      quickAddArrows(player, target);
+    } else if (itemStack && itemStack.typeId === ARROW_ITEM) {
+      quickAddArrows(player, info.role, target);
     } else if (itemStack && (ALLOWED_TOOLS.fighter.has(itemStack.typeId) || ALLOWED_TOOLS.resource.has(itemStack.typeId))) {
       player.sendMessage(`§c${target.nameTag} can only use a ${toolKind(info.role)}.`);
     } else if (info.role === "fighter") {
@@ -808,6 +819,7 @@ async function showAiMenu(player, ai, role) {
     body += `\nStyle: §e${style.label}§r   Targets: §e${targets.label}§r`;
     actions.push({ label: `Fighting style\n§8${style.label}`, run: () => chooseCombat(player) });
     actions.push({ label: `Targets\n§8${targets.label}`, run: () => chooseTargets(player) });
+    actions.push({ label: `Tombstones\n§8Looting ${record.loot === false ? "off" : "on"}`, run: () => showTombs(player) });
     actions.push({ label: "Follow and protect me", run: () => setFighterMode(player, ai, "follow") });
     actions.push({
       label: "Guard this spot\n§8Attacks any other player who comes near",
@@ -838,6 +850,51 @@ async function showAiMenu(player, ai, role) {
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined || !ai.isValid) return;
   await actions[response.selection].run();
+}
+
+/**
+ * Fighter tombstone settings: looting on/off, and teaching it tombstones from another add-on.
+ * @param {import("@minecraft/server").Player} player
+ */
+async function showTombs(player) {
+  const record = getRecord(player.id, "fighter");
+  if (!record) return;
+  const types = tombTypes();
+  const known = [...types.blocks, ...types.entities];
+  const response = await new ActionFormData()
+    .title("Tombstones")
+    .body(
+      `Looting: §e${record.loot === false ? "off" : "on"}§r\n\n` +
+        `When it isn't fighting, ${record.name} breaks tombstones near it and takes the most valuable ` +
+        "items first (valuables, better armor and tools, arrows, blocks). The rest stays on the ground.\n\n" +
+        `Tombstones it knows: ${known.length ? known.join(", ") : "§cnone yet§r"}\n\n` +
+        "§7If it doesn't recognize your tombstones, stand next to one and tap Teach."
+    )
+    .button(record.loot === false ? "Turn looting on" : "Turn looting off")
+    .button("Teach: a tombstone next to me")
+    .button("Forget taught tombstones")
+    .show(player);
+  if (response.canceled) return;
+  if (response.selection === 0) {
+    record.loot = record.loot === false;
+    saveRecord(player.id, "fighter", record);
+    player.sendMessage(`§e${record.name}: tombstone looting ${record.loot ? "on" : "off"}.`);
+  } else if (response.selection === 1) {
+    const things = addOnThingsNear(player);
+    if (things.length === 0) {
+      player.sendMessage("§eNo add-on blocks or entities right next to you. Stand next to a tombstone and try again.");
+      return;
+    }
+    const pick = new ActionFormData().title("Which one is the tombstone?");
+    things.forEach((id) => pick.button(id));
+    const choice = await pick.show(player);
+    if (choice.canceled || choice.selection === undefined) return;
+    setTaught([...getTaught(), things[choice.selection]]);
+    player.sendMessage(`§aYour Fighter AIs will now break and loot: ${things[choice.selection]}`);
+  } else if (response.selection === 2) {
+    setTaught([]);
+    player.sendMessage("§eForgot all taught tombstones (ones with grave/tomb in their name still count).");
+  }
 }
 
 /** @param {import("@minecraft/server").Player} player */
@@ -915,7 +972,12 @@ async function showInventory(player, role) {
     `\n§lShield§r: ${describeTool(inv.shield)}` +
     `\n§lBlocks§r: ${inv.blocks.map((b, i) => `slot ${i + 1}: ${b ? `${b.count} ${itemName(b.id)}` : "empty"}`).join(", ")}` +
     `\n§lValuables§r: ${inv.valuables.filter((v) => v).length} / ${VALUABLE_SLOTS} slots used`;
-  if (role === "fighter") body += `\n§lArrows§r: ${inv.arrows.map((n, i) => `slot ${i + 1}: ${n}`).join(", ")}`;
+  if (role === "resource") {
+    body +=
+      `\n§lSword§r: ${describeTool(inv.arms.sword)}   §lBow§r: ${describeTool(inv.arms.bow)}` +
+      `\n§lTorches§r: ${inv.torches} / ${TORCH_STACK} §7(its own: refills itself, can't be taken)§r`;
+  }
+  body += `\n§lArrows§r: ${inv.arrows.map((n, i) => `slot ${i + 1}: ${n}`).join(", ")}`;
   if (role === "resource") body += `\n§lBackpack§r: ${bagCount(record)} / ${BAG_CAPACITY} items`;
 
   /** @type {{ label: string, run: () => unknown }[]} */
@@ -929,9 +991,10 @@ async function showInventory(player, role) {
   actions.push({ label: `Shield\n§8${describeTool(inv.shield)}`, run: () => showGear(player, role) });
   actions.push({ label: `Blocks\n§8${totalBlocks(record)} / ${BLOCK_SLOT_MAX * BLOCK_SLOTS}`, run: () => showBlocks(player, role) });
   actions.push({ label: `Valuables\n§8${totalValuables(record)} items in ${inv.valuables.filter((v) => v).length} / ${VALUABLE_SLOTS} slots`, run: () => showValuables(player, role) });
-  if (role === "fighter") {
-    actions.push({ label: `Arrows\n§8${totalArrows(record)} / ${ARROW_SLOT_MAX * ARROW_SLOTS}`, run: () => showArrows(player) });
+  if (role === "resource") {
+    actions.push({ label: `Sword & bow\n§8${describeTool(inv.arms.sword)}, ${describeTool(inv.arms.bow)}`, run: () => showArms(player) });
   }
+  actions.push({ label: `Arrows\n§8${totalArrows(record)} / ${ARROW_SLOT_MAX * ARROW_SLOTS}`, run: () => showArrows(player, role) });
   if (role === "resource") {
     actions.push({ label: `Backpack\n§8${bagCount(record)} / ${BAG_CAPACITY}`, run: () => collectBag(player) });
   }
@@ -1048,9 +1111,9 @@ function moveTool(player, role, from, to) {
   return showToolSlot(player, role, to);
 }
 
-/** @param {import("@minecraft/server").Player} player */
-async function showArrows(player) {
-  const record = getRecord(player.id, "fighter");
+/** @param {import("@minecraft/server").Player} player @param {RoleId} role */
+async function showArrows(player, role) {
+  const record = getRecord(player.id, role);
   if (!record) return;
   const inv = inventoryOf(record);
   const have = countItem(player, ARROW_ITEM);
@@ -1065,17 +1128,17 @@ async function showArrows(player) {
   if (response.selection === 0) {
     const added = addArrows(record, have);
     if (added > 0) takeItem(player, ARROW_ITEM, added);
-    saveRecord(player.id, "fighter", record);
+    saveRecord(player.id, role, record);
     toolsChanged(record.id);
     player.sendMessage(added > 0 ? `§aAdded ${added} arrows.` : "§eNo room for more arrows (or you have none).");
   } else if (response.selection === 1) {
     const total = totalArrows(record);
     inv.arrows = [0, 0];
-    saveRecord(player.id, "fighter", record);
+    saveRecord(player.id, role, record);
     toolsChanged(record.id);
     if (total > 0) giveArrows(player, total);
   } else {
-    return showInventory(player, "fighter");
+    return showInventory(player, role);
   }
 }
 
@@ -1328,6 +1391,70 @@ function giveStacks(player, id, total) {
   }
 }
 
+/**
+ * Resource AI: its sword slot and bow slot (bow or crossbow).
+ * @param {import("@minecraft/server").Player} player
+ */
+async function showArms(player) {
+  const record = getRecord(player.id, "resource");
+  if (!record) return;
+  const arms = inventoryOf(record).arms;
+  const held = player.getComponent("minecraft:inventory")?.container?.getItem(player.selectedSlotIndex);
+  const heldOk = held && (SWORDS.has(held.typeId) || RANGED.has(held.typeId));
+
+  /** @type {{ label: string, run: () => unknown }[]} */
+  const actions = [];
+  if (heldOk) actions.push({ label: `Put in your ${itemName(held.typeId)}`, run: () => quickAddArm(player, undefined) });
+  if (arms.sword) actions.push({ label: `Take back ${describeTool(arms.sword)}`, run: () => takeArm(player, "sword") });
+  if (arms.bow) actions.push({ label: `Take back ${describeTool(arms.bow)}`, run: () => takeArm(player, "bow") });
+
+  const form = new ActionFormData()
+    .title("Sword & bow")
+    .body(
+      `Sword: ${describeTool(arms.sword)}\nBow: ${describeTool(arms.bow)}\n\n` +
+        `§7${record.name} uses the sword against mobs that attack it. It only fights players with the bow ` +
+        "or crossbow (it needs arrows in its arrow slots); without one it runs away. To add one, hold it and open this again."
+    );
+  actions.forEach((a) => form.button(a.label));
+  form.button("Back");
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  if (response.selection >= actions.length) return showInventory(player, "resource");
+  await actions[response.selection].run();
+}
+
+/**
+ * Puts the held sword or bow/crossbow in the Resource AI's matching slot (swapping out the old one).
+ * @param {import("@minecraft/server").Player} player
+ * @param {import("@minecraft/server").Entity | undefined} ai
+ */
+function quickAddArm(player, ai) {
+  const record = getRecord(player.id, "resource");
+  const container = player.getComponent("minecraft:inventory")?.container;
+  const held = container?.getItem(player.selectedSlotIndex);
+  if (!record || !container || !held) return;
+  const key = SWORDS.has(held.typeId) ? "sword" : RANGED.has(held.typeId) ? "bow" : undefined;
+  if (!key) return;
+  const arms = inventoryOf(record).arms;
+  const old = arms[key];
+  arms[key] = toolFromStack(held);
+  container.setItem(player.selectedSlotIndex, old ? stackFromTool(old) : undefined);
+  saveRecord(player.id, "resource", record);
+  toolsChanged(ai?.id ?? record.id);
+  player.sendMessage(`§a${record.name} has the ${itemName(held.typeId)} in its ${key} slot.`);
+}
+
+/** @param {import("@minecraft/server").Player} player @param {"sword" | "bow"} key */
+function takeArm(player, key) {
+  const record = getRecord(player.id, "resource");
+  const item = record ? inventoryOf(record).arms[key] : undefined;
+  if (!record || !item) return;
+  inventoryOf(record).arms[key] = null;
+  saveRecord(player.id, "resource", record);
+  toolsChanged(record.id);
+  giveItem(player, stackFromTool(item));
+}
+
 /** @param {import("@minecraft/server").Player} player @param {RoleId} role @param {import("@minecraft/server").Entity} ai */
 function quickAddTool(player, role, ai) {
   const record = getRecord(player.id, role);
@@ -1345,9 +1472,9 @@ function quickAddTool(player, role, ai) {
   player.sendMessage(`§a${record.name} put the ${itemName(held.typeId)} in slot ${slot + 1}.`);
 }
 
-/** @param {import("@minecraft/server").Player} player @param {import("@minecraft/server").Entity} ai */
-function quickAddArrows(player, ai) {
-  const record = getRecord(player.id, "fighter");
+/** @param {import("@minecraft/server").Player} player @param {RoleId} role @param {import("@minecraft/server").Entity} ai */
+function quickAddArrows(player, role, ai) {
+  const record = getRecord(player.id, role);
   if (!record) return;
   const added = addArrows(record, countItem(player, ARROW_ITEM));
   if (added === 0) {
@@ -1355,7 +1482,7 @@ function quickAddArrows(player, ai) {
     return;
   }
   takeItem(player, ARROW_ITEM, added);
-  saveRecord(player.id, "fighter", record);
+  saveRecord(player.id, role, record);
   toolsChanged(ai.id);
   player.sendMessage(`§a${record.name} took ${added} arrows (${totalArrows(record)} total).`);
 }
@@ -1369,7 +1496,7 @@ function giveArrows(player, total) {
   }
 }
 
-/** When an AI is dismissed: everything it carries (except its own 10 chicken) goes back to the owner. */
+/** When an AI is dismissed: everything it carries goes back to the owner (except its own 10 chicken and its torches). */
 /** @param {import("@minecraft/server").Player} player @param {AiRecord} record */
 function returnEverything(player, record) {
   const inv = inventoryOf(record);
@@ -1377,6 +1504,7 @@ function returnEverything(player, record) {
   for (const piece of [...ARMOR_SLOTS.map((slot) => inv.armor[slot]), inv.shield]) if (piece) giveItem(player, stackFromTool(piece));
   for (const b of inv.blocks) if (b) giveStacks(player, b.id, b.count);
   for (const v of inv.valuables) if (v) giveStacks(player, v.id, v.count);
+  for (const arm of [inv.arms.sword, inv.arms.bow]) if (arm) giveItem(player, stackFromTool(arm));
   for (const [id, n] of Object.entries(inv.bag)) if (n > 0) giveStacks(player, id, n);
   giveArrows(player, totalArrows(record));
   const food = takeableFood(record);

@@ -27,6 +27,10 @@ const MAX_ENEMIES = 40;
  * @property {({ id: string, count: number } | null)[]} [valuables]  10 slots for diamonds, gold, coal...
  * @property {"sword" | "archer" | "archer_sword"} [combat]  Fighter: Sword Combat, Archer, Archer then Combat.
  * @property {"all" | "players"} [targets]  Fighter: mobs and players, or only players.
+ * @property {{ sword: import("./inventory.js").ToolData | null, bow: import("./inventory.js").ToolData | null }} [arms]
+ *   Resource AI: sword slot and bow slot (bow or crossbow).
+ * @property {number} [torches]  Resource AI: torches (refill to a stack when the last is placed).
+ * @property {boolean} [loot]  Fighter: break tombstones and take the loot (default on).
  */
 /**
  * @typedef {Object} Memory  Saved per owner, shared by both of their AIs. Survives death.

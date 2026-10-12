@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.7.0)
+## What it does (v1.8.0)
 - **AI Guide** block: every player gets one the first time they join. Tap it to read how everything works.
   Craft another with a book + crafting table.
 - **Coder** block: the shop. Tap it, pick an AI to read what it does and its price, then buy it.
@@ -19,7 +19,7 @@ An original add-on with AI companions that look like players. It's kept separate
 - Buying: choose a look (10 options) and type a name (required). You get an **AI Egg**; use it to throw it,
   and your AI appears where it lands.
 - Lost the egg? Open the Coder and pick your AI to get a new one (the old egg stops working).
-- **Recall skull:** when you throw the egg, its hotbar slot gets a recall skull (**red** for the Fighter,
+- **Recall robot:** when you throw the egg, its hotbar slot gets a recall robot (**red** for the Fighter,
   **blue** for the Resource AI). Use it to teleport your AI to you. If the AI is too far away to be loaded,
   it rejoins next to you with everything it carries. Lost it? The Coder gives you a new one.
 - **If an AI dies, it respawns next to its owner** after 5 seconds (or when the owner next joins).
@@ -44,7 +44,13 @@ An original add-on with AI companions that look like players. It's kept separate
 | Archer | Shoots with a bow/crossbow from a distance (melee only if it runs out of arrows) |
 | Archer then Combat | Fires 5 arrows, then charges in (or right away if the enemy gets close) |
 
-All styles back off to heal at 30% health. **Targets:** *Mob killing and player killing*, or *Only player
+All styles back off to heal at 30% health. Fighters can hold a bow and a crossbow in their tool slots.
+
+**Tombstones (tombs.js):** when it isn't fighting, the Fighter breaks tombstones from a grave/tombstone
+add-on within 12 blocks and loots them, most valuable items first: valuables, better armor (swapping out
+worse pieces), a shield, better tools, arrows, blocks. Anything it can't use stays on the ground. IDs with
+"grave", "tomb", "headstone" or "corpse" are found automatically; others can be taught in its menu
+(*Tombstones > Teach*, standing next to one). Looting can be turned off. **Targets:** *Mob killing and player killing*, or *Only player
 killing* (it still defends against mobs that attack, and attacks whatever you attack).
 **Resource AI menu:** *Inventory*, choose a focus (Wood, Stone, Ores, Everything, Nothing), *Allies & enemies*.
 
@@ -71,11 +77,13 @@ from its block slots and tells you when it runs out.
 |---|---|
 | **Food** | Makes 10 cooked chicken every 10 minutes of game time, up to 30. The first 10 are the AI's own and can never be taken (it eats them to heal); players (owner and allies) can take anything above 10. The timer starts when the AI first joins the world. |
 | **Tools 1, 2, 3** | Used in order. When a tool breaks, it moves on to the next slot. Tools wear like a player's (Unbreaking counts) and keep their enchantments and names. Fighter: swords, axes, trident, mace, bow, crossbow. Resource AI: pickaxes, axes, shovels, hoes, shears. No TNT or explosives. |
-| **Arrows 1, 2** | Fighter only. 64 each. Used for a bow/crossbow; one arrow per shot. |
+| **Arrows 1, 2** | Both AIs. 64 each. Used for a bow/crossbow; one arrow per shot. |
 | **Armor** | Helmet, chestplate, leggings, boots (any armor material). Shown on the AI, protects it, wears down when it gets hurt. |
 | **Shield** | Blocks hits and arrows from the front, with a short pause between blocks. An axe hit knocks it down for 5 seconds. |
 | **Blocks 1, 2** | 64 each, solid building blocks only: no sand, gravel, concrete powder, anvils or anything else that falls, no explosives. Used to bridge, pillar and cover lava. |
 | **Valuables 1-10** | 64 each: diamonds, emeralds, netherite, gold, iron, copper, coal, redstone, lapis, quartz, amethyst (raw, ingots, blocks). Ores the Resource AI mines go here first. |
+| **Sword, Bow** | Resource AI only. Sword against mobs. It only fights players with the bow or crossbow (needs arrows); without one it runs away. |
+| **Torches** | Resource AI only. Starts with 64, places them in dark caves, refills to 64 when the last one is placed. Players can't take them. |
 | **Backpack** | Resource AI only. What it gathers (576 items). Take everything from the Inventory menu. |
 
 Smart switches for the Fighter: bow/crossbow (if it has arrows) when the target is more than 6 blocks away,
@@ -118,6 +126,7 @@ AI when it dies; dismissing it gives you back the tools, arrows and spare chicke
 | `behavior_pack/scripts/inventory.js` | All slots (food, tools, armor, shield, blocks, arrows, backpack) and their rules |
 | `behavior_pack/scripts/gather.js` | Mining, chopping and lava safety |
 | `behavior_pack/scripts/movement.js` | Bridging and pillaring |
+| `behavior_pack/scripts/tombs.js` | Tombstone breaking and looting |
 | `behavior_pack/scripts/gather_data.js` | Generated list of gatherable blocks (don't edit by hand) |
 | `behavior_pack/blocks/coder.json` | The Coder block (shop) |
 | `behavior_pack/blocks/ai_guide.json` | The AI Guide block |

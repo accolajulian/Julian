@@ -8,11 +8,11 @@
     "aip_resource_egg": {
       "textures": "textures/items/resource_egg"
     },
-    "aip_fighter_skull": {
-      "textures": "textures/items/fighter_skull"
+    "aip_fighter_robot": {
+      "textures": "textures/items/fighter_robot"
     },
-    "aip_resource_skull": {
-      "textures": "textures/items/resource_skull"
+    "aip_resource_robot": {
+      "textures": "textures/items/resource_robot"
     }
   }
 }
