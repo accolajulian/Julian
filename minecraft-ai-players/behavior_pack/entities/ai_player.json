@@ -967,6 +967,25 @@
             }
           ]
         }
+      },
+      "aip:melee": {
+        "minecraft:behavior.melee_attack": {
+          "priority": 3,
+          "speed_multiplier": 1.25,
+          "track_target": true
+        }
+      },
+      "aip:ranged": {
+        "minecraft:shooter": {
+          "def": "minecraft:arrow"
+        },
+        "minecraft:behavior.ranged_attack": {
+          "priority": 3,
+          "speed_multiplier": 1.0,
+          "attack_interval_min": 1.0,
+          "attack_interval_max": 2.0,
+          "attack_radius": 15.0
+        }
       }
     },
     "components": {
@@ -1021,11 +1040,6 @@
       },
       "minecraft:behavior.float": {
         "priority": 0
-      },
-      "minecraft:behavior.melee_attack": {
-        "priority": 3,
-        "speed_multiplier": 1.25,
-        "track_target": true
       },
       "minecraft:behavior.hurt_by_target": {
         "priority": 4,
@@ -1339,7 +1353,8 @@
       "minecraft:entity_spawned": {
         "add": {
           "component_groups": [
-            "aip:wild"
+            "aip:wild",
+            "aip:melee"
           ]
         }
       },
@@ -1482,6 +1497,30 @@
         "remove": {
           "component_groups": [
             "aip:retreating"
+          ]
+        }
+      },
+      "aip:use_melee": {
+        "remove": {
+          "component_groups": [
+            "aip:ranged"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "aip:melee"
+          ]
+        }
+      },
+      "aip:use_ranged": {
+        "remove": {
+          "component_groups": [
+            "aip:melee"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "aip:ranged"
           ]
         }
       }

@@ -66,6 +66,22 @@ def main():
     ev["aip:recovered"] = {"remove": {"component_groups": ["aip:retreating"]}}
 
     c["minecraft:behavior.hurt_by_target"] = {"priority": 4, "entity_types": safe}
+
+    # Fighting style, switched by the script: melee (sword, axe, fists) or ranged (bow/crossbow + arrows).
+    c.pop("minecraft:behavior.melee_attack", None)
+    g["aip:melee"] = {"minecraft:behavior.melee_attack": {"priority": 3, "speed_multiplier": 1.25, "track_target": True}}
+    g["aip:ranged"] = {
+        "minecraft:shooter": {"def": "minecraft:arrow"},
+        "minecraft:behavior.ranged_attack": {
+            "priority": 3, "speed_multiplier": 1.0, "attack_interval_min": 1.0,
+            "attack_interval_max": 2.0, "attack_radius": 15.0,
+        },
+    }
+    ev["aip:use_melee"] = {"remove": {"component_groups": ["aip:ranged"]}, "add": {"component_groups": ["aip:melee"]}}
+    ev["aip:use_ranged"] = {"remove": {"component_groups": ["aip:melee"]}, "add": {"component_groups": ["aip:ranged"]}}
+    spawn = ev["minecraft:entity_spawned"]["add"]["component_groups"]
+    if "aip:melee" not in spawn:
+        spawn.append("aip:melee")
     PATH.write_text(json.dumps(e, indent=2) + "\n")
     print("wrote targeting for", SLOTS, "slots")
 

@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.4.0)
+## What it does (v1.5.0)
 - **AI Guide** block: every player gets one the first time they join. Tap it to read how everything works.
   Craft another with a book + crafting table.
 - **Coder** block: the shop. Tap it, pick an AI to read what it does and its price, then buy it.
@@ -26,11 +26,24 @@ An original add-on with AI companions that look like players. It's kept separate
 |---|---|
 | Hit (left click) your AI | Opens its menu. Your hits never hurt it. |
 | Interact (right click) holding food | Heals it (bread, cooked meat, golden apple) |
-| Interact with your Fighter AI holding a sword/axe/trident/mace | Gives it the weapon |
+| Interact with your AI holding an allowed tool | Puts it in the first empty tool slot |
+| Interact with your Fighter AI holding arrows | Puts them in its arrow slots |
+| An ally interacts with your AI | They can take spare cooked chicken |
 | Interact with your Fighter AI (empty hand), then hit a player | The Fighter goes after that player |
 
-**Fighter AI menu:** *Follow and protect me*, *Guard this spot*, *Give my weapons back*, *Allies & enemies*.
-**Resource AI menu:** choose a focus (Wood, Stone, Ores, Everything), *Allies & enemies*. Gathering comes later.
+**Fighter AI menu:** *Inventory*, *Follow and protect me*, *Guard this spot*, *Allies & enemies*.
+**Resource AI menu:** *Inventory*, choose a focus (Wood, Stone, Ores, Everything), *Allies & enemies*. Gathering comes later.
+
+### Inventory (inventory.js)
+| Slot | Rules |
+|---|---|
+| **Food** | Makes 10 cooked chicken every 10 minutes of game time, up to 30. The first 10 are the AI's own and can never be taken; players (owner and allies) can take anything above 10. The timer starts when the AI first joins the world. |
+| **Tools 1, 2, 3** | Used in order. When a tool breaks, it moves on to the next slot. Tools wear like a player's (Unbreaking counts) and keep their enchantments and names. Fighter: swords, axes, trident, mace, bow, crossbow. Resource AI: pickaxes, axes, shovels, hoes, shears. No TNT or explosives. |
+| **Arrows 1, 2** | Fighter only. 64 each. Used for a bow/crossbow; one arrow per shot. |
+
+Smart switches for the Fighter: bow/crossbow (if it has arrows) when the target is more than 6 blocks away,
+an axe against a shield, a melee tool up close. Otherwise, slot order. Tools, arrows and food stay with the
+AI when it dies; dismissing it gives you back the tools, arrows and spare chicken.
 
 ### Smart fighting (brain.js)
 - **Most dangerous enemy first:** every nearby enemy gets a score (commanded target > whoever is hurting
@@ -39,8 +52,7 @@ An original add-on with AI companions that look like players. It's kept separate
   more important.
 - **Protects a hurt owner first:** attackers of the owner rank higher still when the owner is under half health.
 - **Backs off to heal** under 30% health (runs from danger, heals faster next to its owner) and returns at 70%.
-- **Best weapon:** carries up to 6 weapons (given by you or picked up) and holds the strongest. Uses an axe
-  against a player holding a shield.
+- **Tools:** uses its 3 tool slots in order (see Inventory), picks up allowed tools and arrows next to it.
 
 ### Memory (saved in the world, shared by both of your AIs, kept after death)
 - **Enemies:** players who attack you or your AIs. Fighters go after them on sight. Forgive them in the menu.
@@ -66,6 +78,7 @@ An original add-on with AI companions that look like players. It's kept separate
 | `behavior_pack/scripts/main.js` | Guide, shop, eggs, AI menus, commands, respawning (Script API 2.9.0) |
 | `behavior_pack/scripts/brain.js` | Smart fighting: target choice, retreat, weapons, enemy memory |
 | `behavior_pack/scripts/data.js` | Saved records and memory, shared helpers |
+| `behavior_pack/scripts/inventory.js` | Food, tool and arrow slots and their rules |
 | `behavior_pack/blocks/coder.json` | The Coder block (shop) |
 | `behavior_pack/blocks/ai_guide.json` | The AI Guide block |
 | `behavior_pack/items/*_egg.json` | The eggs you get after buying |

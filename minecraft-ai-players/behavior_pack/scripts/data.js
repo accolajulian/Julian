@@ -16,7 +16,10 @@ const MAX_ENEMIES = 40;
  * @property {"follow" | "guard"} mode
  * @property {string} focus
  * @property {{ x: number, y: number, z: number, dim: string }} [post]  Guard spot.
- * @property {string[]} [weapons]  Weapons the AI carries (item ids).
+ * @property {(import("./inventory.js").ToolData | null)[]} [tools]  3 tool slots, used in order.
+ * @property {number[]} [arrows]  2 arrow slots.
+ * @property {number} [food]  Cooked chicken it has (the first 10 are its own).
+ * @property {number} [foodAt]  Game time of the last food batch.
  */
 /**
  * @typedef {Object} Memory  Saved per owner, shared by both of their AIs. Survives death.

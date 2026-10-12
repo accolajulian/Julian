@@ -1,12 +1,12 @@
 // The AI players' brain: picks targets, protects the owner, backs off to heal,
-// uses the best weapon and remembers enemies and allies (even after dying).
+// uses its tool slots in order and remembers enemies and allies (even after dying).
 //
 // The Script API can't set a mob's target directly, so the brain "points" each AI at its
 // target with tags (see tools/make_entity_targets.py):
 //   aip_s<k>  on the AI using brain slot k
 //   aip_h<k>  on the entity that AI should hunt
 //   aip_a<k>  on every entity that AI must never attack
-import { world, system, ItemStack, GameMode, EntityDamageCause, EquipmentSlot } from "@minecraft/server";
+import { world, system, GameMode, EntityDamageCause, EquipmentSlot } from "@minecraft/server";
 import {
   AI_ENTITY,
   getRecord,
@@ -17,8 +17,21 @@ import {
   findPlayer,
   ownerInfo,
   knownAis,
-  giveItem,
 } from "./data.js";
+import {
+  ALLOWED_TOOLS,
+  TOOL_DAMAGE,
+  ARROW_ITEM,
+  isRanged,
+  inventoryOf,
+  wearTool,
+  addTool,
+  addArrows,
+  totalArrows,
+  useArrow,
+  toolFromStack,
+  itemName,
+} from "./inventory.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
 const THINK_TICKS = 10; // the brain thinks twice a second
@@ -28,27 +41,7 @@ const RETREAT_BELOW = 0.3; // back off under 30% health...
 const RECOVERED_AT = 0.7; // ...until back to 70%
 const GUARD_LEASH = 14;
 const COMMAND_MS = 30000;
-const MAX_WEAPONS = 6;
-
-/** Weapon damage. The AI always holds its best one. */
-/** @type {Record<string, number>} */
-export const WEAPONS = {
-  "minecraft:wooden_sword": 4,
-  "minecraft:golden_sword": 4,
-  "minecraft:stone_sword": 5,
-  "minecraft:iron_sword": 6,
-  "minecraft:diamond_sword": 7,
-  "minecraft:netherite_sword": 8,
-  "minecraft:wooden_axe": 3,
-  "minecraft:golden_axe": 3,
-  "minecraft:stone_axe": 4,
-  "minecraft:iron_axe": 5,
-  "minecraft:diamond_axe": 6,
-  "minecraft:netherite_axe": 7,
-  "minecraft:trident": 8,
-  "minecraft:mace": 6,
-};
-
+const RANGED_FROM = 6; // use a bow/crossbow when the target is further than this
 /** How dangerous each mob is. Higher = attacked first. Mobs not listed count as 20. */
 /** @type {Record<string, number>} */
 const DANGER = {
@@ -97,7 +90,9 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {string | undefined} huntId
  * @property {number} huntScore
  * @property {boolean} retreating
- * @property {string | undefined} equipped
+ * @property {string | undefined} equipped  Item id in its hand.
+ * @property {number} activeSlot  Tool slot in use (0-2), or -1 for fists.
+ * @property {"melee" | "ranged"} style
  * @property {string | undefined} commandId
  * @property {number} commandUntil
  */
@@ -134,54 +129,12 @@ export function commandAttack(owner, ai, target) {
 }
 
 /**
- * Hand your Fighter AI the weapon you're holding.
- * @param {import("@minecraft/server").Player} owner
- * @param {import("@minecraft/server").Entity} ai
- * @param {string} weaponId
- * @returns {boolean} true if the AI took it
+ * Call after changing an AI's slots so it picks up the change right away.
+ * @param {string | undefined} aiId
  */
-export function giveWeapon(owner, ai, weaponId) {
-  const record = getRecord(owner.id, "fighter");
-  if (!record) return false;
-  const weapons = record.weapons ?? [];
-  if (weapons.length >= MAX_WEAPONS) {
-    owner.sendMessage(`§e${record.name} can't carry more than ${MAX_WEAPONS} weapons.`);
-    return false;
-  }
-  weapons.push(weaponId);
-  record.weapons = weapons;
-  saveRecord(owner.id, "fighter", record);
-  const brain = brains.get(ai.id);
-  if (brain) brain.equipped = undefined; // re-pick the best weapon
-  owner.sendMessage(`§a${record.name} took the ${itemName(weaponId)}. It always uses its best weapon.`);
-  return true;
-}
-
-/**
- * Gives all of the Fighter AI's weapons back to its owner.
- * @param {import("@minecraft/server").Player} owner
- */
-export function returnWeapons(owner) {
-  const record = getRecord(owner.id, "fighter");
-  if (!record?.weapons?.length) return;
-  for (const id of record.weapons) giveItem(owner, new ItemStack(id, 1));
-  record.weapons = [];
-  saveRecord(owner.id, "fighter", record);
-  const ai = record.id ? world.getEntity(record.id) : undefined;
-  const brain = ai ? brains.get(ai.id) : undefined;
-  if (ai && brain) equip(ai, brain, undefined);
-}
-
-/** @param {string} id */
-export function itemName(id) {
-  return id.replace("minecraft:", "").replace(/_/g, " ");
-}
-
-/** @param {string[] | undefined} weapons */
-export function bestWeapon(weapons) {
-  let best;
-  for (const id of weapons ?? []) if (!best || WEAPONS[id] > WEAPONS[best]) best = id;
-  return best;
+export function toolsChanged(aiId) {
+  const brain = aiId ? brains.get(aiId) : undefined;
+  if (brain) brain.equipped = "unknown";
 }
 
 // ================================================================ memory
@@ -216,7 +169,7 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity, damageSource }) => {
   }
 });
 
-// AIs never hurt their friends, and weapons add damage.
+// AIs never hurt their friends, and melee tools add damage.
 world.beforeEvents.entityHurt.subscribe((event) => {
   const attacker = event.damageSource.damagingEntity;
   if (!attacker || attacker.typeId !== AI_ENTITY) return;
@@ -226,11 +179,60 @@ world.beforeEvents.entityHurt.subscribe((event) => {
     return;
   }
   if (brain?.equipped && event.damageSource.cause === EntityDamageCause.entityAttack) {
-    event.damage += Math.max(0, WEAPONS[brain.equipped] - 3);
+    event.damage += Math.max(0, (TOOL_DAMAGE[brain.equipped] ?? 0) - 3);
   }
 });
 
-// A held weapon may drop when the AI dies. It keeps its weapons, so remove the copy.
+// Melee hits wear down the tool in use. When it breaks, the AI moves on to the next slot.
+world.afterEvents.entityHurt.subscribe(({ damageSource }) => {
+  const ai = damageSource.damagingEntity;
+  if (!ai || ai.typeId !== AI_ENTITY || damageSource.cause !== EntityDamageCause.entityAttack) return;
+  const brain = brains.get(ai.id);
+  if (!brain || brain.activeSlot < 0 || brain.style !== "melee") return;
+  useTool(ai, brain);
+});
+
+// Each arrow the AI shoots uses one arrow from its slots and wears the bow.
+world.afterEvents.entitySpawn.subscribe(({ entity }) => {
+  if (entity.typeId !== "minecraft:arrow") return;
+  system.run(() => {
+    if (!entity.isValid) return;
+    const shooter = entity.getComponent("minecraft:projectile")?.owner;
+    if (!shooter || shooter.typeId !== AI_ENTITY) return;
+    const brain = brains.get(shooter.id);
+    const info = ownerInfo(shooter);
+    const record = info ? getRecord(info.ownerId, info.role) : undefined;
+    if (!brain || !info || !record) return;
+    useArrow(record);
+    saveRecord(info.ownerId, info.role, record);
+    if (brain.activeSlot >= 0) useTool(shooter, brain);
+  });
+});
+
+/**
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {Brain} brain
+ */
+function useTool(ai, brain) {
+  const info = ownerInfo(ai);
+  const record = info ? getRecord(info.ownerId, info.role) : undefined;
+  if (!info || !record) return;
+  const slot = brain.activeSlot;
+  const toolId = inventoryOf(record).tools[slot]?.id;
+  const result = wearTool(record, slot);
+  if (result === "none") return;
+  saveRecord(info.ownerId, info.role, record);
+  if (result === "broke" && toolId) {
+    ai.dimension.playSound("random.break", ai.location);
+    const next = inventoryOf(record).tools.findIndex((t, i) => t && i > slot);
+    findPlayer(info.ownerId)?.sendMessage(
+      `§c${record.name}'s ${itemName(toolId)} broke!§r ` + (next >= 0 ? `Switching to slot ${next + 1}.` : "No tools left.")
+    );
+    brain.equipped = "unknown";
+  }
+}
+
+// A held tool may drop when the AI dies. It keeps its tools, so remove the copy.
 world.afterEvents.entityDie.subscribe(
   ({ deadEntity }) => {
     let brain, location, dimension;
@@ -328,7 +330,11 @@ function think(ai, ownerId, role, record, brain) {
   const lastHit = Math.max(0, ...(recentHits.get(ai.id)?.values() ?? []));
   if (now - lastHit > 10000 && system.currentTick % 80 < THINK_TICKS) heal(health, 1);
 
-  if (role !== "fighter") return;
+  pickUpItems(ai, ownerId, role, record);
+  if (role !== "fighter") {
+    equip(ai, brain, record, firstTool(record, false));
+    return;
+  }
 
   // ---- Guarding: go back to the guard spot if it chased something too far.
   if (record.mode === "guard" && record.post && record.post.dim === ai.dimension.id) {
@@ -337,8 +343,6 @@ function think(ai, ownerId, role, record, brain) {
       setHunt(brain, undefined);
     }
   }
-
-  pickUpWeapons(ai, ownerId, record);
 
   // ---- Pick the most dangerous enemy.
   const memory = getMemory(ownerId);
@@ -353,9 +357,9 @@ function think(ai, ownerId, role, record, brain) {
     setHunt(brain, best.entity, best.score);
   }
 
-  // ---- Switch to the best weapon (an axe against a player with a shield).
+  // ---- Pick the tool for this target (slot order, with a few smart switches).
   const target = brain.huntId ? world.getEntity(brain.huntId) : undefined;
-  equip(ai, brain, weaponFor(record.weapons, target));
+  equip(ai, brain, record, chooseSlot(record, target, target ? distance(target.location, ai.location) : 0));
 }
 
 /**
@@ -424,7 +428,7 @@ function chooseTarget(ai, ownerId, owner, record, memory, brain, now) {
     // Danger from weapons, closeness, and finishing off weak enemies.
     if (isPlayer) {
       const held = e.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Mainhand)?.typeId;
-      if (held && WEAPONS[held] !== undefined) score += 20;
+      if (held && ALLOWED_TOOLS.fighter.has(held)) score += 20;
     }
     score += (SCAN_RADIUS - distance(e.location, ai.location)) * 2;
     if (eHealth.currentValue / eHealth.effectiveMax < 0.3) score += 10;
@@ -435,58 +439,106 @@ function chooseTarget(ai, ownerId, owner, record, memory, brain, now) {
   return { best, currentScore };
 }
 
-// ================================================================ weapons
+// ================================================================ tools
 
 /**
- * Best weapon for this target: an axe against a shield (axes knock shields out), otherwise the strongest.
- * @param {string[] | undefined} weapons
- * @param {import("@minecraft/server").Entity | undefined} target
+ * First usable tool slot (1, then 2, then 3). A bow or crossbow only counts if it has arrows.
+ * @param {import("./data.js").AiRecord} record
+ * @param {boolean} meleeOnly
  */
-function weaponFor(weapons, target) {
-  if (!weapons?.length) return undefined;
-  if (target?.typeId === "minecraft:player") {
-    const offhand = target.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Offhand);
-    if (offhand?.typeId === "minecraft:shield") {
-      const axe = bestWeapon(weapons.filter((w) => w.endsWith("_axe")));
-      if (axe) return axe;
+function firstTool(record, meleeOnly) {
+  const tools = inventoryOf(record).tools;
+  const arrows = totalArrows(record) > 0;
+  return tools.findIndex((t) => t && (!isRanged(t.id) || (arrows && !meleeOnly)));
+}
+
+/**
+ * Which slot to use against this target. Normally the first usable slot, but:
+ * a bow/crossbow when the target is far away, an axe against a shield, and a melee tool up close.
+ * @param {import("./data.js").AiRecord} record
+ * @param {import("@minecraft/server").Entity | undefined} target
+ * @param {number} dist
+ */
+function chooseSlot(record, target, dist) {
+  const tools = inventoryOf(record).tools;
+  const arrows = totalArrows(record) > 0;
+  const usable = [0, 1, 2].filter((i) => tools[i] && (!isRanged(tools[i]?.id) || arrows));
+  if (usable.length === 0) return -1;
+  if (target) {
+    if (dist > RANGED_FROM) {
+      const ranged = usable.find((i) => isRanged(tools[i]?.id));
+      if (ranged !== undefined) return ranged;
+    }
+    if (target.typeId === "minecraft:player") {
+      const offhand = target.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Offhand);
+      const axe = usable.find((i) => tools[i]?.id.endsWith("_axe"));
+      if (offhand?.typeId === "minecraft:shield" && axe !== undefined) return axe;
+    }
+    if (dist <= RANGED_FROM) {
+      const melee = usable.find((i) => !isRanged(tools[i]?.id));
+      if (melee !== undefined) return melee;
     }
   }
-  return bestWeapon(weapons);
+  return usable[0];
 }
 
 /**
+ * Holds the tool from a slot (or nothing) and switches between melee and ranged fighting.
  * @param {import("@minecraft/server").Entity} ai
  * @param {Brain} brain
- * @param {string | undefined} weaponId
+ * @param {import("./data.js").AiRecord} record
+ * @param {number} slot
  */
-function equip(ai, brain, weaponId) {
-  if (brain.equipped === weaponId) return;
-  try {
-    ai.runCommand(`replaceitem entity @s slot.weapon.mainhand 0 ${weaponId ?? "air"}`);
-    brain.equipped = weaponId;
-  } catch (error) {
-    console.warn(`[AI Players] couldn't equip ${weaponId}: ${error}`);
-    brain.equipped = weaponId; // don't retry every tick
+function equip(ai, brain, record, slot) {
+  const toolId = slot >= 0 ? inventoryOf(record).tools[slot]?.id : undefined;
+  brain.activeSlot = toolId ? slot : -1;
+  const style = isRanged(toolId) ? "ranged" : "melee";
+  if (style !== brain.style) {
+    ai.triggerEvent(style === "ranged" ? "aip:use_ranged" : "aip:use_melee");
+    brain.style = style;
   }
+  if (brain.equipped === toolId) return;
+  try {
+    ai.runCommand(`replaceitem entity @s slot.weapon.mainhand 0 ${toolId ?? "air"}`);
+  } catch (error) {
+    console.warn(`[AI Players] couldn't equip ${toolId}: ${error}`);
+  }
+  brain.equipped = toolId; // don't retry every tick if it failed
 }
 
 /**
- * Fighter AIs pick up weapons lying right next to them.
+ * Picks up allowed tools (into the first empty slot) and, for Fighters, arrows lying next to it.
  * @param {import("@minecraft/server").Entity} ai
  * @param {string} ownerId
+ * @param {import("./data.js").RoleId} role
  * @param {import("./data.js").AiRecord} record
  */
-function pickUpWeapons(ai, ownerId, record) {
-  const weapons = record.weapons ?? [];
-  if (weapons.length >= MAX_WEAPONS) return;
+function pickUpItems(ai, ownerId, role, record) {
   for (const item of ai.dimension.getEntities({ location: ai.location, maxDistance: 2.5, type: "minecraft:item" })) {
     const stack = item.getComponent("minecraft:item")?.itemStack;
-    if (!stack || WEAPONS[stack.typeId] === undefined || stack.amount !== 1) continue;
-    item.remove();
-    weapons.push(stack.typeId);
-    record.weapons = weapons;
-    saveRecord(ownerId, "fighter", record);
-    findPlayer(ownerId)?.sendMessage(`§a${record.name} picked up a ${itemName(stack.typeId)}.`);
+    if (!stack) continue;
+    let message;
+    if (ALLOWED_TOOLS[role].has(stack.typeId) && stack.amount === 1) {
+      const slot = addTool(record, toolFromStack(stack));
+      if (slot === -1) continue;
+      item.remove();
+      message = `picked up a ${itemName(stack.typeId)} (slot ${slot + 1})`;
+    } else if (role === "fighter" && stack.typeId === ARROW_ITEM) {
+      const added = addArrows(record, stack.amount);
+      if (added === 0) continue;
+      const location = item.location;
+      item.remove();
+      if (added < stack.amount) {
+        stack.amount -= added;
+        ai.dimension.spawnItem(stack, location);
+      }
+      message = `picked up ${added} arrows`;
+    } else {
+      continue;
+    }
+    saveRecord(ownerId, role, record);
+    toolsChanged(ai.id);
+    findPlayer(ownerId)?.sendMessage(`§a${record.name} ${message}.`);
     return; // one per think
   }
 }
@@ -496,8 +548,9 @@ function pickUpWeapons(ai, ownerId, record) {
 /** @param {import("@minecraft/server").Entity} ai */
 function ensureBrain(ai) {
   if (brains.has(ai.id)) return;
-  // A fresh brain: start calm (in case it was retreating when the world was saved).
+  // A fresh brain: start calm (in case it was retreating when the world was saved), with melee on.
   ai.triggerEvent("aip:recovered");
+  ai.triggerEvent("aip:use_melee");
 
   // Keep the slot it had before if that slot is free, otherwise take a free one.
   const saved = ai.getTags().find((t) => /^aip_s\d+$/.test(t));
@@ -515,6 +568,8 @@ function ensureBrain(ai) {
     huntScore: 0,
     retreating: false,
     equipped: "unknown", // forces the first equip
+    activeSlot: -1,
+    style: /** @type {"melee" | "ranged"} */ ("melee"),
     commandId: undefined,
     commandUntil: 0,
   });
