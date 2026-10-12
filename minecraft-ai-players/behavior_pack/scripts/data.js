@@ -24,6 +24,9 @@ const MAX_ENEMIES = 40;
  * @property {import("./inventory.js").ToolData | null} [shield]
  * @property {({ id: string, count: number } | null)[]} [blocks]  2 block slots.
  * @property {Record<string, number>} [bag]  Gathered items waiting to be collected.
+ * @property {({ id: string, count: number } | null)[]} [valuables]  10 slots for diamonds, gold, coal...
+ * @property {"sword" | "archer" | "archer_sword"} [combat]  Fighter: Sword Combat, Archer, Archer then Combat.
+ * @property {"all" | "players"} [targets]  Fighter: mobs and players, or only players.
  */
 /**
  * @typedef {Object} Memory  Saved per owner, shared by both of their AIs. Survives death.

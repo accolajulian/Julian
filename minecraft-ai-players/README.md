@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.6.0)
+## What it does (v1.7.0)
 - **AI Guide** block: every player gets one the first time they join. Tap it to read how everything works.
   Craft another with a book + crafting table.
 - **Coder** block: the shop. Tap it, pick an AI to read what it does and its price, then buy it.
@@ -19,6 +19,9 @@ An original add-on with AI companions that look like players. It's kept separate
 - Buying: choose a look (10 options) and type a name (required). You get an **AI Egg**; use it to throw it,
   and your AI appears where it lands.
 - Lost the egg? Open the Coder and pick your AI to get a new one (the old egg stops working).
+- **Recall skull:** when you throw the egg, its hotbar slot gets a recall skull (**red** for the Fighter,
+  **blue** for the Resource AI). Use it to teleport your AI to you. If the AI is too far away to be loaded,
+  it rejoins next to you with everything it carries. Lost it? The Coder gives you a new one.
 - **If an AI dies, it respawns next to its owner** after 5 seconds (or when the owner next joins).
 
 ### Controls
@@ -33,10 +36,25 @@ An original add-on with AI companions that look like players. It's kept separate
 | An ally interacts with your AI | They can take spare cooked chicken |
 | Interact with your Fighter AI (empty hand), then hit a player | The Fighter goes after that player |
 
-**Fighter AI menu:** *Inventory*, *Follow and protect me*, *Guard this spot*, *Allies & enemies*.
+**Fighter AI menu:** *Inventory*, *Fighting style*, *Targets*, *Follow and protect me*, *Guard this spot*, *Allies & enemies*.
+
+| Fighting style | What it does |
+|---|---|
+| Sword Combat | Sprints at the enemy and keeps hitting with its melee tool |
+| Archer | Shoots with a bow/crossbow from a distance (melee only if it runs out of arrows) |
+| Archer then Combat | Fires 5 arrows, then charges in (or right away if the enemy gets close) |
+
+All styles back off to heal at 30% health. **Targets:** *Mob killing and player killing*, or *Only player
+killing* (it still defends against mobs that attack, and attacks whatever you attack).
 **Resource AI menu:** *Inventory*, choose a focus (Wood, Stone, Ores, Everything, Nothing), *Allies & enemies*.
 
 Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
+
+### Bridging and pillaring (movement.js, both AIs)
+When a deep gap (3+ blocks of air) or lava is between the AI and where it's going (its target, or you when
+it's following), it crouches and places a block in front of it, one every half second, and walks across.
+When its target is 2+ blocks above it and close, it jumps and places a block under itself. It uses blocks
+from its block slots and tells you when it runs out.
 
 ### Gathering (gather.js, Resource AI)
 - Walks to the nearest block of its focus (Minecraft's own pathfinding) and mines it when in reach.
@@ -56,7 +74,8 @@ Both AIs have **20 health, the same as a player**, and eat their own cooked chic
 | **Arrows 1, 2** | Fighter only. 64 each. Used for a bow/crossbow; one arrow per shot. |
 | **Armor** | Helmet, chestplate, leggings, boots (any armor material). Shown on the AI, protects it, wears down when it gets hurt. |
 | **Shield** | Blocks hits and arrows from the front, with a short pause between blocks. An axe hit knocks it down for 5 seconds. |
-| **Blocks 1, 2** | 64 each, solid building blocks only: no sand, gravel, concrete powder, anvils or anything else that falls, no explosives. Used to cover lava. |
+| **Blocks 1, 2** | 64 each, solid building blocks only: no sand, gravel, concrete powder, anvils or anything else that falls, no explosives. Used to bridge, pillar and cover lava. |
+| **Valuables 1-10** | 64 each: diamonds, emeralds, netherite, gold, iron, copper, coal, redstone, lapis, quartz, amethyst (raw, ingots, blocks). Ores the Resource AI mines go here first. |
 | **Backpack** | Resource AI only. What it gathers (576 items). Take everything from the Inventory menu. |
 
 Smart switches for the Fighter: bow/crossbow (if it has arrows) when the target is more than 6 blocks away,
@@ -98,6 +117,7 @@ AI when it dies; dismissing it gives you back the tools, arrows and spare chicke
 | `behavior_pack/scripts/data.js` | Saved records and memory, shared helpers |
 | `behavior_pack/scripts/inventory.js` | All slots (food, tools, armor, shield, blocks, arrows, backpack) and their rules |
 | `behavior_pack/scripts/gather.js` | Mining, chopping and lava safety |
+| `behavior_pack/scripts/movement.js` | Bridging and pillaring |
 | `behavior_pack/scripts/gather_data.js` | Generated list of gatherable blocks (don't edit by hand) |
 | `behavior_pack/blocks/coder.json` | The Coder block (shop) |
 | `behavior_pack/blocks/ai_guide.json` | The AI Guide block |

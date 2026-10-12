@@ -971,7 +971,7 @@
       "aip:melee": {
         "minecraft:behavior.melee_attack": {
           "priority": 3,
-          "speed_multiplier": 1.25,
+          "speed_multiplier": 1.45,
           "track_target": true
         }
       },

@@ -128,7 +128,8 @@ def main():
 
     # Fighting style, switched by the script: melee (sword, axe, fists) or ranged (bow/crossbow + arrows).
     c.pop("minecraft:behavior.melee_attack", None)
-    g["aip:melee"] = {"minecraft:behavior.melee_attack": {"priority": 3, "speed_multiplier": 1.25, "track_target": True}}
+    # Melee sprints at the target (1.45x speed) and keeps hitting.
+    g["aip:melee"] = {"minecraft:behavior.melee_attack": {"priority": 3, "speed_multiplier": 1.45, "track_target": True}}
     g["aip:ranged"] = {
         "minecraft:shooter": {"def": "minecraft:arrow"},
         "minecraft:behavior.ranged_attack": {

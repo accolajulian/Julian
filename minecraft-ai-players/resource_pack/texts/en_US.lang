@@ -5,3 +5,5 @@ tile.aip:ai_guide.name=AI Guide
 item.aip:fighter_egg=Fighter AI Egg
 item.aip:resource_egg=Resource AI Egg
 action.interact.aip_command=Command
+item.aip:fighter_skull=Fighter AI Recall Skull
+item.aip:resource_skull=Resource AI Recall Skull

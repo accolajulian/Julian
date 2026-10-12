@@ -57,6 +57,11 @@ import {
   totalBlocks,
   isPlaceableBlock,
   bagCount,
+  isValuable,
+  addValuables,
+  totalValuables,
+  VALUABLE_SLOTS,
+  VALUABLE_SLOT_MAX,
 } from "./inventory.js";
 import { FOCUSES } from "./gather_data.js";
 
@@ -69,11 +74,13 @@ const MAX_NAME_LENGTH = 20;
 const RESPAWN_SECONDS = 5;
 const COMMAND_SECONDS = 20; // how long a selected Fighter AI waits for you to pick a target
 
-/** @type {Record<RoleId, { title: string, egg: string, price: { item: string, amount: number, label: string }, icon: string, about: string }>} */
+/** @type {Record<RoleId, { title: string, egg: string, skull: string, color: string, price: { item: string, amount: number, label: string }, icon: string, about: string }>} */
 const ROLES = {
   resource: {
     title: "Resource AI",
     egg: "aip:resource_egg",
+    skull: "aip:resource_skull",
+    color: "§9",
     price: { item: "minecraft:iron_ingot", amount: 30, label: "Iron Ingots" },
     icon: "textures/items/iron_ingot",
     about:
@@ -83,7 +90,9 @@ const ROLES = {
       "§a+§r Never mines next to lava: covers it with blocks or backs away\n" +
       "§a+§r Keeps what it gathers in a backpack for you to collect\n" +
       "§a+§r 3 tool slots for harvesting/mining tools, used in order 1, 2, 3\n" +
-      "§a+§r Armor slots, a shield slot and 2 block slots\n" +
+      "§a+§r Armor slots, a shield slot and 2 block slots (bridges over ravines and lava, pillars up)\n" +
+      "§a+§r 10 slots for valuables; ores it mines go straight in\n" +
+      "§a+§r A blue recall skull to call it to you from anywhere\n" +
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Fights back if something attacks it, backs off to heal when hurt\n" +
       "§a+§r Respawns next to you if it dies, and remembers who attacked it\n\n" +
@@ -92,6 +101,8 @@ const ROLES = {
   fighter: {
     title: "Fighter AI",
     egg: "aip:fighter_egg",
+    skull: "aip:fighter_skull",
+    color: "§c",
     price: { item: "minecraft:diamond", amount: 15, label: "Diamonds" },
     icon: "textures/items/diamond",
     about:
@@ -100,10 +111,14 @@ const ROLES = {
       "§a+§r Goes after the most dangerous enemy first, and protects you first when you're hurt\n" +
       "§a+§r Attacks whatever you attack\n" +
       "§a+§r Backs off to heal when badly hurt\n" +
+      "§a+§r Fighting styles: Sword Combat, Archer, or Archer then Combat\n" +
+      "§a+§r Can hunt mobs and players, or only players\n" +
       "§a+§r 3 tool slots for fighting tools, used in order 1, 2, 3 (next one when a tool breaks)\n" +
       "§a+§r 2 arrow slots, so it can fight with a bow or crossbow\n" +
       "§a+§r Armor slots and a shield slot (it blocks hits from the front)\n" +
-      "§a+§r 2 block slots: covers lava near it so it never walks into it\n" +
+      "§a+§r 2 block slots: bridges over ravines and lava, pillars up, covers lava\n" +
+      "§a+§r 10 slots for valuables (diamonds, gold, coal, netherite...)\n" +
+      "§a+§r A red recall skull to call it to you from anywhere\n" +
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
@@ -113,6 +128,18 @@ const ROLES = {
   },
 };
 const RESOURCE_FOCUS = FOCUSES; // Wood, Stone, Ores, Everything, Nothing
+
+/** Fighter fighting styles. */
+const COMBAT_STYLES = /** @type {const} */ ([
+  { id: "sword", label: "Sword Combat", about: "Sprints at the enemy and keeps hitting with its melee tool" },
+  { id: "archer", label: "Archer", about: "Shoots with a bow or crossbow from a distance (needs arrows)" },
+  { id: "archer_sword", label: "Archer then Combat", about: "Fires a few arrows, then charges in with its melee tool" },
+]);
+/** Fighter target modes. */
+const TARGET_MODES = /** @type {const} */ ([
+  { id: "all", label: "Mob killing and player killing", about: "Hunts monsters and enemy players" },
+  { id: "players", label: "Only player killing", about: "Ignores monsters unless they attack" },
+]);
 
 /** Food you can give your AI (interact while holding it) and how much it heals. */
 /** @type {Record<string, number>} */
@@ -150,7 +177,8 @@ const GUIDE_TEXT =
   `- Fighter AI: §b${ROLES.fighter.price.amount} ${ROLES.fighter.price.label}§r\n` +
   "You can own one of each. You choose its look and type its name.\n\n" +
   "§lStep 3: Throw the egg§r\n" +
-  "You get an AI Egg. Use it to throw it, and your AI appears where it lands.\n\n" +
+  "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
+  "§crecall skull§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
   "§lControls§r\n" +
   "- §eHit§r your AI: open its menu\n" +
   "- §eInteract§r with your AI while holding food: heal it\n" +
@@ -159,7 +187,10 @@ const GUIDE_TEXT =
   "- Your AI's menu has §eInventory§r and §eAllies & enemies§r\n\n" +
   "§lInventory§r\n" +
   "Food, tools 1-2-3 (used in order; next one when a tool breaks), armor, shield, 2 block slots " +
-  "(no sand, gravel or other falling blocks), arrows (Fighter) and a backpack (Resource AI).\n\n" +
+  "(no sand, gravel or other falling blocks; used to bridge, pillar and cover lava), 10 valuables slots, " +
+  "arrows (Fighter) and a backpack (Resource AI).\n\n" +
+  "§lFighter settings§r (hit it to change)\n" +
+  "Style: Sword Combat, Archer, or Archer then Combat. Targets: mobs and players, or only players.\n\n" +
   "§lFood§r\n" +
   `Each AI makes ${FOOD_RESERVED} cooked chicken every 10 minutes, up to ${FOOD_CAP}. ` +
   `The first ${FOOD_RESERVED} are its own (it eats them to heal); you and your allies can take the rest.\n\n` +
@@ -301,7 +332,7 @@ async function buy(player, role) {
 
   takeItem(player, info.price.item, info.price.amount);
   /** @type {AiRecord} */
-  const record = { name, look, state: "egg", serial: Date.now(), mode: "follow", focus: "Everything" };
+  const record = { name, look, state: "egg", serial: Date.now(), mode: "follow", focus: "Everything", combat: "archer_sword", targets: "all" };
   inventoryOf(record);
   saveRecord(player.id, role, record);
   giveEgg(player, role, record);
@@ -357,8 +388,15 @@ async function manageOwned(player, role) {
 
   /** @type {{ label: string, run: () => unknown }[]} */
   const actions = [];
-  if (record.state === "alive") {
-    actions.push({ label: "Call it to me", run: () => callToPlayer(player, role) });
+  if (record.state === "alive" || record.state === "respawn") {
+    if (record.state === "alive") actions.push({ label: "Call it to me", run: () => recallAi(player, role) });
+    actions.push({
+      label: "Get a new recall skull\n§8If you lost it",
+      run: () => {
+        const r = getRecord(player.id, role);
+        if (r) giveItem(player, makeSkull(player, role, r));
+      },
+    });
   } else {
     actions.push({ label: "Get a new egg (if you lost it)", run: () => replaceEgg(player, role) });
   }
@@ -369,17 +407,6 @@ async function manageOwned(player, role) {
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
   await actions[response.selection].run();
-}
-
-/** @param {import("@minecraft/server").Player} player @param {RoleId} role */
-function callToPlayer(player, role) {
-  const record = getRecord(player.id, role);
-  const ai = record?.id ? world.getEntity(record.id) : undefined;
-  if (!record || !ai) {
-    player.sendMessage("§eYour AI is too far away to call. Go closer and try again.");
-    return;
-  }
-  ai.teleport(player.location, { dimension: player.dimension });
 }
 
 /** @param {import("@minecraft/server").Player} player @param {RoleId} role */
@@ -417,6 +444,17 @@ async function dismiss(player, role) {
 /** @type {Map<string, { ownerId: string, role: RoleId, thrownAt: number }>} */
 const flyingEggs = new Map();
 
+// Using a recall skull opens its options.
+world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
+  const role = ROLE_IDS.find((r) => ROLES[r].skull === itemStack?.typeId);
+  if (!role || !itemStack) return;
+  if (itemStack.getDynamicProperty("aip:owner") !== player.id) {
+    player.sendMessage("§cThis skull doesn't belong to you.");
+    return;
+  }
+  system.run(() => openMenu(player, (p) => showSkullMenu(p, role)));
+});
+
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   const role = ROLE_IDS.find((r) => ROLES[r].egg === itemStack?.typeId);
   if (!role || !itemStack) return;
@@ -433,10 +471,12 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
     return;
   }
 
-  // Take the egg out of the player's hand.
+  // The egg leaves the player's hand and its slot gets the AI's recall skull.
   const container = player.getComponent("minecraft:inventory")?.container;
   if (container?.getItem(player.selectedSlotIndex)?.typeId === itemStack.typeId) {
-    container.setItem(player.selectedSlotIndex, undefined);
+    container.setItem(player.selectedSlotIndex, makeSkull(player, role, record));
+  } else {
+    giveItem(player, makeSkull(player, role, record));
   }
 
   // Throw it.
@@ -493,6 +533,67 @@ function hatch(egg, location, dimension) {
   spawnAi(owner, info.role, location, dimension);
 }
 
+// ================================================================ recall skulls
+
+/**
+ * The recall skull that replaces the egg: red for the Fighter, blue for the Resource AI.
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role @param {AiRecord} record
+ */
+function makeSkull(player, role, record) {
+  const skull = new ItemStack(ROLES[role].skull, 1);
+  skull.nameTag = `§r${ROLES[role].color}${record.name}'s Recall Skull`;
+  skull.setLore([`§7Owner: ${player.name}`, "§7Use it to call your AI to you."]);
+  skull.setDynamicProperty("aip:owner", player.id);
+  return skull;
+}
+
+/** @param {import("@minecraft/server").Player} player @param {RoleId} role */
+async function showSkullMenu(player, role) {
+  const record = getRecord(player.id, role);
+  if (!record) {
+    player.sendMessage(`§eYou don't have a ${ROLES[role].title} anymore.`);
+    return;
+  }
+  const ai = record.id ? world.getEntity(record.id) : undefined;
+  const health = ai?.getComponent("minecraft:health");
+  const where = ai
+    ? `At ${Math.floor(ai.location.x)}, ${Math.floor(ai.location.y)}, ${Math.floor(ai.location.z)}` +
+      (health ? `  Health: ${Math.round(health.currentValue)}/${health.effectiveMax}` : "")
+    : record.state === "alive" ? "Far away (not loaded)." : "Not in the world right now.";
+  const response = await new ActionFormData()
+    .title(`${ROLES[role].color}${record.name}`)
+    .body(where)
+    .button("Teleport to me")
+    .button("Close")
+    .show(player);
+  if (response.selection === 0) recallAi(player, role);
+}
+
+/**
+ * Brings the AI to the player. If it's too far away to be loaded, it rejoins next to the player
+ * (with everything it carries), and the old copy disappears when its area loads.
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ */
+function recallAi(player, role) {
+  const record = getRecord(player.id, role);
+  if (!record) return;
+  if (record.state === "egg" || record.state === "thrown") {
+    player.sendMessage("§eThrow its egg first.");
+    return;
+  }
+  if (record.state === "respawn") {
+    player.sendMessage(`§e${record.name} is respawning and will appear next to you.`);
+    return;
+  }
+  const ai = record.id ? world.getEntity(record.id) : undefined;
+  if (ai) {
+    ai.teleport(player.location, { dimension: player.dimension });
+  } else if (!spawnAi(player, role, player.location, player.dimension, true)) {
+    return;
+  }
+  player.sendMessage(`§a${record.name} teleported to you.`);
+}
+
 // ================================================================ spawning & respawning
 
 /**
@@ -500,8 +601,9 @@ function hatch(egg, location, dimension) {
  * @param {RoleId} role
  * @param {import("@minecraft/server").Vector3} location
  * @param {import("@minecraft/server").Dimension} dimension
+ * @param {boolean} [quiet]  true for a recall (no "joined the game")
  */
-function spawnAi(owner, role, location, dimension) {
+function spawnAi(owner, role, location, dimension, quiet = false) {
   const record = getRecord(owner.id, role);
   if (!record) return false;
 
@@ -532,7 +634,7 @@ function spawnAi(owner, role, location, dimension) {
   record.mode = "follow";
   delete record.post;
   saveRecord(owner.id, role, record);
-  world.sendMessage(`§e${record.name} joined the game`);
+  if (!quiet) world.sendMessage(`§e${record.name} joined the game`);
   return true;
 }
 
@@ -621,6 +723,8 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target, itemStac
       quickAddTool(player, info.role, target);
     } else if (itemStack && (armorSlotFor(itemStack.typeId) || itemStack.typeId === SHIELD_ITEM)) {
       quickAddGear(player, info.role, target);
+    } else if (itemStack && isValuable(itemStack.typeId)) {
+      quickAddValuables(player, info.role, target);
     } else if (itemStack && isPlaceableBlock(itemStack.typeId)) {
       quickAddBlocks(player, info.role, target);
     } else if (itemStack && info.role === "fighter" && itemStack.typeId === ARROW_ITEM) {
@@ -699,6 +803,11 @@ async function showAiMenu(player, ai, role) {
     body =
       `Health: ${hp}\nRight now: §e${mode}§r\n` +
       `First tool: §e${tool ? describeTool(tool) : "fists"}§r   Arrows: ${totalArrows(record)}\n${memoryLine}`;
+    const style = COMBAT_STYLES.find((c) => c.id === (record.combat ?? "archer_sword")) ?? COMBAT_STYLES[2];
+    const targets = TARGET_MODES.find((t) => t.id === (record.targets ?? "all")) ?? TARGET_MODES[0];
+    body += `\nStyle: §e${style.label}§r   Targets: §e${targets.label}§r`;
+    actions.push({ label: `Fighting style\n§8${style.label}`, run: () => chooseCombat(player) });
+    actions.push({ label: `Targets\n§8${targets.label}`, run: () => chooseTargets(player) });
     actions.push({ label: "Follow and protect me", run: () => setFighterMode(player, ai, "follow") });
     actions.push({
       label: "Guard this spot\n§8Attacks any other player who comes near",
@@ -729,6 +838,39 @@ async function showAiMenu(player, ai, role) {
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined || !ai.isValid) return;
   await actions[response.selection].run();
+}
+
+/** @param {import("@minecraft/server").Player} player */
+async function chooseCombat(player) {
+  const record = getRecord(player.id, "fighter");
+  if (!record) return;
+  const form = new ActionFormData()
+    .title("Fighting style")
+    .body("All styles back off to heal at 30% health.");
+  COMBAT_STYLES.forEach((c) => form.button(`${c.id === record.combat ? "§2" : ""}${c.label}\n§8${c.about}`));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  const choice = COMBAT_STYLES[response.selection];
+  record.combat = choice.id;
+  saveRecord(player.id, "fighter", record);
+  toolsChanged(record.id);
+  player.sendMessage(`§e${record.name}: ${choice.label}.`);
+}
+
+/** @param {import("@minecraft/server").Player} player */
+async function chooseTargets(player) {
+  const record = getRecord(player.id, "fighter");
+  if (!record) return;
+  const form = new ActionFormData()
+    .title("Targets")
+    .body("Either way it protects you, attacks whatever you attack, and goes after remembered enemies.");
+  TARGET_MODES.forEach((t) => form.button(`${t.id === record.targets ? "§2" : ""}${t.label}\n§8${t.about}`));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  const choice = TARGET_MODES[response.selection];
+  record.targets = choice.id;
+  saveRecord(player.id, "fighter", record);
+  player.sendMessage(`§e${record.name}: ${choice.label}.`);
 }
 
 /**
@@ -771,7 +913,8 @@ async function showInventory(player, role) {
   body +=
     `\n\n§lArmor§r: ${ARMOR_SLOTS.map((slot) => describeTool(inv.armor[slot])).join(", ")}` +
     `\n§lShield§r: ${describeTool(inv.shield)}` +
-    `\n§lBlocks§r: ${inv.blocks.map((b, i) => `slot ${i + 1}: ${b ? `${b.count} ${itemName(b.id)}` : "empty"}`).join(", ")}`;
+    `\n§lBlocks§r: ${inv.blocks.map((b, i) => `slot ${i + 1}: ${b ? `${b.count} ${itemName(b.id)}` : "empty"}`).join(", ")}` +
+    `\n§lValuables§r: ${inv.valuables.filter((v) => v).length} / ${VALUABLE_SLOTS} slots used`;
   if (role === "fighter") body += `\n§lArrows§r: ${inv.arrows.map((n, i) => `slot ${i + 1}: ${n}`).join(", ")}`;
   if (role === "resource") body += `\n§lBackpack§r: ${bagCount(record)} / ${BAG_CAPACITY} items`;
 
@@ -785,6 +928,7 @@ async function showInventory(player, role) {
   actions.push({ label: `Armor\n§8${worn} / 4 pieces`, run: () => showGear(player, role) });
   actions.push({ label: `Shield\n§8${describeTool(inv.shield)}`, run: () => showGear(player, role) });
   actions.push({ label: `Blocks\n§8${totalBlocks(record)} / ${BLOCK_SLOT_MAX * BLOCK_SLOTS}`, run: () => showBlocks(player, role) });
+  actions.push({ label: `Valuables\n§8${totalValuables(record)} items in ${inv.valuables.filter((v) => v).length} / ${VALUABLE_SLOTS} slots`, run: () => showValuables(player, role) });
   if (role === "fighter") {
     actions.push({ label: `Arrows\n§8${totalArrows(record)} / ${ARROW_SLOT_MAX * ARROW_SLOTS}`, run: () => showArrows(player) });
   }
@@ -1075,6 +1219,82 @@ function quickAddBlocks(player, role, ai) {
   player.sendMessage(`§a${record.name} took ${added} ${itemName(held.typeId)} (${totalBlocks(record)} blocks).`);
 }
 
+/**
+ * 10 slots for higher-value items (diamonds, gold, coal, netherite...).
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ */
+async function showValuables(player, role) {
+  const record = getRecord(player.id, role);
+  if (!record) return;
+  const inv = inventoryOf(record);
+  const held = player.getComponent("minecraft:inventory")?.container?.getItem(player.selectedSlotIndex);
+  const heldOk = held && isValuable(held.typeId);
+
+  /** @type {{ label: string, run: () => unknown }[]} */
+  const actions = [];
+  actions.push({
+    label: heldOk ? `Add your ${itemName(held.typeId)}` : "Add valuables\n§8Hold them first",
+    run: () => (heldOk ? quickAddValuables(player, role, undefined) : player.sendMessage("§eHold diamonds, gold, coal, netherite... and try again.")),
+  });
+  inv.valuables.forEach((v, i) => {
+    if (v) actions.push({ label: `Take slot ${i + 1}\n§8${v.count} ${itemName(v.id)}`, run: () => takeValuables(player, role, i) });
+  });
+  if (inv.valuables.some((v) => v)) actions.push({ label: "Take everything", run: () => takeValuables(player, role, -1) });
+
+  const body =
+    inv.valuables.map((v, i) => `${i + 1}: ${v ? `${v.count} ${itemName(v.id)}` : "§7empty§r"}`).join("\n") +
+    `\n\n§7Up to ${VALUABLE_SLOT_MAX} per slot. Diamonds, emeralds, netherite, gold, iron, copper, coal, redstone, lapis, quartz and amethyst.`;
+  const form = new ActionFormData().title("Valuables").body(body);
+  actions.forEach((a) => form.button(a.label));
+  form.button("Back");
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  if (response.selection >= actions.length) return showInventory(player, role);
+  await actions[response.selection].run();
+}
+
+/**
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ * @param {number} slot  -1 for all slots
+ */
+function takeValuables(player, role, slot) {
+  const record = getRecord(player.id, role);
+  if (!record) return;
+  const valuables = inventoryOf(record).valuables;
+  for (let i = 0; i < valuables.length; i++) {
+    const v = valuables[i];
+    if (!v || (slot !== -1 && i !== slot)) continue;
+    giveStacks(player, v.id, v.count);
+    valuables[i] = null;
+  }
+  saveRecord(player.id, role, record);
+}
+
+/**
+ * @param {import("@minecraft/server").Player} player @param {RoleId} role
+ * @param {import("@minecraft/server").Entity | undefined} ai
+ */
+function quickAddValuables(player, role, ai) {
+  const record = getRecord(player.id, role);
+  const container = player.getComponent("minecraft:inventory")?.container;
+  const held = container?.getItem(player.selectedSlotIndex);
+  if (!record || !container || !held || !isValuable(held.typeId)) return;
+  const added = addValuables(record, held.typeId, held.amount);
+  if (added === 0) {
+    player.sendMessage(`§e${record.name}'s valuables slots are full.`);
+    return;
+  }
+  if (added >= held.amount) {
+    container.setItem(player.selectedSlotIndex, undefined);
+  } else {
+    held.amount -= added;
+    container.setItem(player.selectedSlotIndex, held);
+  }
+  saveRecord(player.id, role, record);
+  toolsChanged(ai?.id ?? record.id);
+  player.sendMessage(`§a${record.name} is keeping ${added} ${itemName(held.typeId)}.`);
+}
+
 /** The Resource AI's backpack: everything it gathered. */
 /** @param {import("@minecraft/server").Player} player */
 async function collectBag(player) {
@@ -1156,6 +1376,7 @@ function returnEverything(player, record) {
   for (const tool of inv.tools) if (tool) giveItem(player, stackFromTool(tool));
   for (const piece of [...ARMOR_SLOTS.map((slot) => inv.armor[slot]), inv.shield]) if (piece) giveItem(player, stackFromTool(piece));
   for (const b of inv.blocks) if (b) giveStacks(player, b.id, b.count);
+  for (const v of inv.valuables) if (v) giveStacks(player, v.id, v.count);
   for (const [id, n] of Object.entries(inv.bag)) if (n > 0) giveStacks(player, id, n);
   giveArrows(player, totalArrows(record));
   const food = takeableFood(record);

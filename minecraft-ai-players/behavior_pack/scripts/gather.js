@@ -2,7 +2,7 @@
 //
 // Walking to blocks is done by the AI's own "move_to_block" behavior (see make_entity_targets.py).
 // This file does the mining once the AI is close: it picks a suitable tool from slots 1-2-3,
-// takes as long as a player would, puts the drops in its block slots / backpack, and never mines
+// takes as long as a player would, puts the drops in its valuables / block slots / backpack, and never mines
 // next to lava. Lava near any AI gets covered with blocks from its block slots, or the AI backs away.
 import { system, BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER } from "./gather_data.js";
@@ -18,6 +18,8 @@ import {
   enchantLevel,
   itemName,
   isPlaceableBlock,
+  isValuable,
+  addValuables,
 } from "./inventory.js";
 
 const LAVA = ["minecraft:lava", "minecraft:flowing_lava"];
@@ -296,6 +298,7 @@ function finishMining(ai, ownerId, record, state, m) {
     ? info.min + Math.floor(Math.random() * (info.max - info.min + 1))
     : 1;
   let left = amount;
+  if (isValuable(info.drop)) left -= addValuables(record, info.drop, left);
   if (isPlaceableBlock(info.drop)) left -= addBlocks(record, info.drop, left);
   left -= addToBag(record, info.drop, left);
   if (left > 0) dim.spawnItem(new ItemStack(info.drop, left), center(m)); // no room: drop it

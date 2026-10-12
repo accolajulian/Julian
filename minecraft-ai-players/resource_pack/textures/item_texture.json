@@ -7,6 +7,12 @@
     },
     "aip_resource_egg": {
       "textures": "textures/items/resource_egg"
+    },
+    "aip_fighter_skull": {
+      "textures": "textures/items/fighter_skull"
+    },
+    "aip_resource_skull": {
+      "textures": "textures/items/resource_skull"
     }
   }
 }

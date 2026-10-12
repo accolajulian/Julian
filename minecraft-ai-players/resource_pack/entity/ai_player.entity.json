@@ -25,7 +25,8 @@
         "look": "animation.aip.ai_player.look",
         "walk": "animation.aip.ai_player.walk",
         "swing": "animation.aip.ai_player.swing",
-        "mine": "animation.aip.ai_player.mine"
+        "mine": "animation.aip.ai_player.mine",
+        "crouch": "animation.aip.ai_player.crouch"
       },
       "scripts": {
         "animate": [

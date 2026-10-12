@@ -39,7 +39,10 @@ import {
   addBlocks,
   isPlaceableBlock,
   FOOD_HEALS,
+  isValuable,
+  addValuables,
 } from "./inventory.js";
+import { bridgeTowards } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior } from "./gather.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
@@ -54,6 +57,7 @@ const RANGED_FROM = 6; // use a bow/crossbow when the target is further than thi
 const EAT_EVERY_MS = 2500; // how often it can eat a cooked chicken
 const SHIELD_COOLDOWN_MS = 1000; // time between shield blocks
 const AXE_DISABLES_SHIELD_MS = 5000; // an axe hit knocks its shield down for this long
+const OPENING_SHOTS = 5; // "Archer then Combat": arrows to fire before charging in with the sword
 /** How dangerous each mob is. Higher = attacked first. Mobs not listed count as 20. */
 /** @type {Record<string, number>} */
 const DANGER = {
@@ -110,6 +114,8 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {number} shieldReadyAt
  * @property {number} eatReadyAt
  * @property {import("./gather.js").GatherState} gather
+ * @property {number} shots  Arrows fired at the current target.
+ * @property {number} warnedAt  Last "Archer needs a bow and arrows" message.
  * @property {string | undefined} commandId
  * @property {number} commandUntil
  */
@@ -303,6 +309,7 @@ world.afterEvents.entitySpawn.subscribe(({ entity }) => {
     if (!brain || !info || !record) return;
     useArrow(record);
     saveRecord(info.ownerId, info.role, record);
+    brain.shots += 1;
     if (brain.activeSlot >= 0) useTool(shooter, brain);
   });
 });
@@ -451,6 +458,10 @@ function think(ai, ownerId, role, record, brain) {
     setGatherBehavior(ai, brain.gather, record.focus, safe);
     const slot = safe ? gather(ai, ownerId, record, brain.gather) : undefined;
     equip(ai, brain, record, slot ?? firstTool(record, false));
+    // Not mining and its owner is away: bridge/pillar to catch up.
+    if (slot === undefined && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
+      bridgeTowards(ai, ownerId, role, record, owner.location);
+    }
     return;
   }
 
@@ -477,7 +488,13 @@ function think(ai, ownerId, role, record, brain) {
 
   // ---- Pick the tool for this target (slot order, with a few smart switches).
   const target = brain.huntId ? world.getEntity(brain.huntId) : undefined;
-  equip(ai, brain, record, chooseSlot(record, target, target ? distance(target.location, ai.location) : 0));
+  equip(ai, brain, record, chooseSlot(record, brain, owner, target, target ? distance(target.location, ai.location) : 0));
+
+  // ---- Bridge or pillar towards the target (or the owner it's following).
+  if (!lavaClose) {
+    const followOwner = record.mode !== "guard" && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4;
+    bridgeTowards(ai, ownerId, role, record, target?.location ?? (followOwner ? owner.location : undefined));
+  }
 }
 
 /**
@@ -496,6 +513,8 @@ function chooseTarget(ai, ownerId, owner, record, memory, brain, now) {
   const hitOwner = recentHits.get(ownerId);
   const hitAi = recentHits.get(ai.id);
   const guarding = record.mode === "guard";
+  // "Only players": it still defends against mobs that attack, but doesn't go looking for them.
+  const huntMobs = record.targets !== "players";
   const sameDimOwner = owner && owner.dimension.id === ai.dimension.id ? owner : undefined;
 
   const candidates = ai.dimension.getEntities({
@@ -537,7 +556,7 @@ function chooseTarget(ai, ownerId, owner, record, memory, brain, now) {
       if (theirOwner && memory.enemies[theirOwner]) score = Math.max(score, 120);
     }
     // Monsters near the owner (or near the guard spot).
-    if (score === 0 && !LEAVE_ALONE.has(e.typeId) && e.matches({ families: ["monster"] })) {
+    if (score === 0 && huntMobs && !LEAVE_ALONE.has(e.typeId) && e.matches({ families: ["monster"] })) {
       const anchor = guarding ? record.post : sameDimOwner?.location;
       if (!anchor || distance(e.location, anchor) <= 20) score = 30 + (DANGER[e.typeId] ?? 20);
     }
@@ -571,33 +590,56 @@ function firstTool(record, meleeOnly) {
 }
 
 /**
- * Which slot to use against this target. Normally the first usable slot, but:
- * a bow/crossbow when the target is far away, an axe against a shield, and a melee tool up close.
+ * Which slot to use against this target, following the Fighter's style:
+ * - Sword Combat: melee tools only (sprints in and keeps hitting).
+ * - Archer: bow/crossbow while it has arrows (melee only when out of arrows).
+ * - Archer then Combat: a few arrows first, then it charges in with a melee tool
+ *   (also as soon as the target gets close).
+ * Within a style it uses the first suitable slot, with an axe against a player's shield.
  * @param {import("./data.js").AiRecord} record
+ * @param {Brain} brain
+ * @param {import("@minecraft/server").Player | undefined} owner
  * @param {import("@minecraft/server").Entity | undefined} target
  * @param {number} dist
  */
-function chooseSlot(record, target, dist) {
+function chooseSlot(record, brain, owner, target, dist) {
   const tools = inventoryOf(record).tools;
   const arrows = totalArrows(record) > 0;
   const usable = [0, 1, 2].filter((i) => tools[i] && (!isRanged(tools[i]?.id) || arrows));
-  if (usable.length === 0) return -1;
-  if (target) {
-    if (dist > RANGED_FROM) {
-      const ranged = usable.find((i) => isRanged(tools[i]?.id));
-      if (ranged !== undefined) return ranged;
+  const melee = usable.filter((i) => !isRanged(tools[i]?.id));
+  const ranged = usable.filter((i) => isRanged(tools[i]?.id));
+  const style = record.combat ?? "archer_sword";
+
+  if (style === "archer") {
+    if (ranged.length) return ranged[0];
+    if (target && Date.now() - brain.warnedAt > 30000) {
+      brain.warnedAt = Date.now();
+      owner?.sendMessage(`§e${record.name} is an Archer but has no bow/crossbow with arrows, so it's using melee.`);
     }
-    if (target.typeId === "minecraft:player") {
-      const offhand = target.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Offhand);
-      const axe = usable.find((i) => tools[i]?.id.endsWith("_axe"));
-      if (offhand?.typeId === "minecraft:shield" && axe !== undefined) return axe;
-    }
-    if (dist <= RANGED_FROM) {
-      const melee = usable.find((i) => !isRanged(tools[i]?.id));
-      if (melee !== undefined) return melee;
-    }
+    return pickMelee(melee, tools, target);
   }
-  return usable[0];
+  if (style === "sword") return pickMelee(melee, tools, target);
+
+  // Archer then Combat
+  if (target && ranged.length && dist > RANGED_FROM && brain.shots < OPENING_SHOTS) return ranged[0];
+  if (melee.length) return pickMelee(melee, tools, target);
+  return ranged[0] ?? -1;
+}
+
+/**
+ * First melee slot, or an axe against a player holding a shield.
+ * @param {number[]} melee
+ * @param {(import("./inventory.js").ToolData | null)[]} tools
+ * @param {import("@minecraft/server").Entity | undefined} target
+ */
+function pickMelee(melee, tools, target) {
+  if (melee.length === 0) return -1;
+  if (target?.typeId === "minecraft:player") {
+    const offhand = target.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Offhand);
+    const axe = melee.find((i) => tools[i]?.id.endsWith("_axe"));
+    if (offhand?.typeId === "minecraft:shield" && axe !== undefined) return axe;
+  }
+  return melee[0];
 }
 
 /**
@@ -648,8 +690,8 @@ function wearGear(ai, brain, record) {
 }
 
 /**
- * Picks up allowed tools (into the first empty slot), building blocks (never sand, gravel or other
- * falling blocks) and, for Fighters, arrows lying next to it.
+ * Picks up allowed tools (into the first empty slot), valuables, building blocks (never sand,
+ * gravel or other falling blocks) and, for Fighters, arrows lying next to it.
  * @param {import("@minecraft/server").Entity} ai
  * @param {string} ownerId
  * @param {import("./data.js").RoleId} role
@@ -665,8 +707,10 @@ function pickUpItems(ai, ownerId, role, record) {
       if (slot === -1) continue;
       item.remove();
       message = `picked up a ${itemName(stack.typeId)} (slot ${slot + 1})`;
-    } else if (isPlaceableBlock(stack.typeId)) {
-      const added = addBlocks(record, stack.typeId, stack.amount);
+    } else if (isValuable(stack.typeId) || isPlaceableBlock(stack.typeId)) {
+      const added = isValuable(stack.typeId)
+        ? addValuables(record, stack.typeId, stack.amount)
+        : addBlocks(record, stack.typeId, stack.amount);
       if (added === 0) continue;
       const location = item.location;
       item.remove();
@@ -727,6 +771,8 @@ function ensureBrain(ai) {
     shieldReadyAt: 0,
     eatReadyAt: 0,
     gather: createGatherState(),
+    shots: 0,
+    warnedAt: 0,
     commandId: undefined,
     commandUntil: 0,
   });
@@ -755,6 +801,7 @@ function setHunt(brain, target, score = 0) {
     const old = world.getEntity(brain.huntId);
     if (old?.isValid) old.removeTag(tag);
   }
+  if (brain.huntId !== target?.id) brain.shots = 0;
   brain.huntId = target?.id;
   brain.huntScore = score;
   if (target?.isValid && !target.hasTag(tag)) target.addTag(tag);

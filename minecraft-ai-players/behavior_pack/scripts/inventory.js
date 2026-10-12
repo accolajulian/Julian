@@ -15,6 +15,22 @@ export const ARROW_SLOT_MAX = 64;
 export const BLOCK_SLOTS = 2;
 export const BLOCK_SLOT_MAX = 64;
 export const BAG_CAPACITY = 576; // 9 stacks
+export const VALUABLE_SLOTS = 10;
+export const VALUABLE_SLOT_MAX = 64;
+
+/** Higher-value items for the 10 valuables slots. */
+export const VALUABLES = new Set(
+  [
+    "diamond", "diamond_block", "emerald", "emerald_block",
+    "netherite_ingot", "netherite_scrap", "netherite_block", "ancient_debris",
+    "gold_ingot", "gold_nugget", "raw_gold", "gold_block", "raw_gold_block",
+    "iron_ingot", "iron_nugget", "raw_iron", "iron_block", "raw_iron_block",
+    "copper_ingot", "raw_copper", "copper_block", "raw_copper_block",
+    "coal", "charcoal", "coal_block",
+    "redstone", "redstone_block", "lapis_lazuli", "lapis_block",
+    "quartz", "quartz_block", "amethyst_shard",
+  ].map((id) => `minecraft:${id}`)
+);
 export const SHIELD_ITEM = "minecraft:shield";
 export const FOOD_HEALS = 4; // health a cooked chicken gives the AI when it eats one
 
@@ -115,6 +131,7 @@ export function toolKind(role) {
  * @property {ToolData | null} shield
  * @property {({ id: string, count: number } | null)[]} blocks
  * @property {Record<string, number>} bag
+ * @property {({ id: string, count: number } | null)[]} valuables
  */
 
 /**
@@ -132,6 +149,9 @@ export function inventoryOf(record) {
   if (record.shield === undefined) record.shield = null;
   if (!Array.isArray(record.blocks) || record.blocks.length !== BLOCK_SLOTS) record.blocks = [null, null];
   if (!record.bag) record.bag = {};
+  if (!Array.isArray(record.valuables) || record.valuables.length !== VALUABLE_SLOTS) {
+    record.valuables = Array.from({ length: VALUABLE_SLOTS }, (_, i) => record.valuables?.[i] ?? null);
+  }
   return /** @type {Inventory} */ (record);
 }
 
@@ -354,22 +374,56 @@ export function totalBlocks(record) {
  */
 export function addBlocks(record, id, amount) {
   if (!isPlaceableBlock(id)) return 0;
-  const blocks = inventoryOf(record).blocks;
+  return addStacked(inventoryOf(record).blocks, id, amount, BLOCK_SLOT_MAX);
+}
+
+/**
+ * Adds items to a row of stack slots: first to slots already holding that item, then to empty ones.
+ * @param {({ id: string, count: number } | null)[]} slots
+ * @param {string} id
+ * @param {number} amount
+ * @param {number} max  per slot
+ * @returns {number} how many fit
+ */
+function addStacked(slots, id, amount, max) {
   let added = 0;
   for (const pass of ["same", "empty"]) {
-    for (let i = 0; i < BLOCK_SLOTS && amount > 0; i++) {
-      const slot = blocks[i];
+    for (let i = 0; i < slots.length && amount > 0; i++) {
+      const slot = slots[i];
       if (pass === "same" && slot?.id !== id) continue;
       if (pass === "empty" && slot) continue;
       const current = slot?.count ?? 0;
-      const fit = Math.min(amount, BLOCK_SLOT_MAX - current);
+      const fit = Math.min(amount, max - current);
       if (fit <= 0) continue;
-      blocks[i] = { id, count: current + fit };
+      slots[i] = { id, count: current + fit };
       amount -= fit;
       added += fit;
     }
   }
   return added;
+}
+
+// ---------------------------------------------------------------- valuables (10 slots)
+
+/** @param {string} id */
+export function isValuable(id) {
+  return VALUABLES.has(id);
+}
+
+/**
+ * @param {import("./data.js").AiRecord} record
+ * @param {string} id
+ * @param {number} amount
+ * @returns {number} how many fit
+ */
+export function addValuables(record, id, amount) {
+  if (!isValuable(id)) return 0;
+  return addStacked(inventoryOf(record).valuables, id, amount, VALUABLE_SLOT_MAX);
+}
+
+/** @param {import("./data.js").AiRecord} record */
+export function totalValuables(record) {
+  return inventoryOf(record).valuables.reduce((sum, v) => sum + (v?.count ?? 0), 0);
 }
 
 /**
