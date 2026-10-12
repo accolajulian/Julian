@@ -1,5 +1,5 @@
 """Draws the 10 original AI Player skins (64x64, player-style UV layout), their
-menu icons, the AI Player Menu item icon and the pack icons.
+menu icons, the AI Recruitment Station block textures and the pack icons.
 Run: python3 tools/make_skins.py"""
 import random
 from pathlib import Path
@@ -294,23 +294,47 @@ def head_icon(skin_img, size):
     return face.resize((size, size), Image.NEAREST)
 
 
-def menu_item_icon():
-    """16x16 tablet with a little face on the screen."""
-    icon = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
-    p = icon.load()
+def station_textures():
+    """16x16 sides, top and bottom of the AI Recruitment Station block."""
+    rng = random.Random(99)
+    metal, rim, dark = (150, 160, 175), (95, 105, 120), (40, 44, 56)
+    screen, face = (79, 224, 255), (24, 30, 44)
+
+    def plate(base):
+        img = Image.new("RGBA", (16, 16))
+        p = img.load()
+        for x in range(16):
+            for y in range(16):
+                d = rng.randint(-6, 6)
+                p[x, y] = tuple(max(0, min(255, c + d)) for c in base) + (255,)
+            p[x, 0] = p[x, 15] = rim + (255,)
+        for y in range(16):
+            p[0, y] = p[15, y] = rim + (255,)
+        return img, p
+
+    side, p = plate(metal)
+    for x in range(2, 14):                            # screen frame + screen
+        for y in range(2, 11):
+            p[x, y] = dark + (255,)
     for x in range(3, 13):
-        for y in range(1, 15):
-            p[x, y] = (40, 44, 56, 255)               # frame
-    for x in range(4, 12):
-        for y in range(2, 12):
-            p[x, y] = (79, 224, 255, 255)             # screen
-    for x, y in ((6, 5), (9, 5), (6, 6), (9, 6)):
-        p[x, y] = (24, 30, 44, 255)                   # eyes
-    for x in range(6, 10):
-        p[x, 9] = (24, 30, 44, 255)                   # smile
-    p[5, 8] = p[10, 8] = (24, 30, 44, 255)
-    p[7, 13] = p[8, 13] = (120, 130, 145, 255)        # button
-    return icon
+        for y in range(3, 10):
+            p[x, y] = screen + (255,)
+    for x, y in ((5, 5), (10, 5), (5, 6), (10, 6), (6, 8), (7, 8), (8, 8), (9, 8)):
+        p[x, y] = face + (255,)                       # smiling face
+    for x in (4, 6, 8, 10):                           # coloured buttons
+        p[x + 1, 13] = ((255, 90, 90), (90, 255, 120), (255, 210, 70), (90, 170, 255))[(x - 4) // 2] + (255,)
+
+    top, p = plate(metal)
+    for x in range(4, 12):                            # glowing ring
+        for y in range(4, 12):
+            if x in (4, 11) or y in (4, 11):
+                p[x, y] = screen + (255,)
+    for y in (2, 13):                                 # vents
+        for x in range(3, 13):
+            p[x, y] = dark + (255,)
+
+    bottom, _ = plate(rim)
+    return side, top, bottom
 
 
 def main():
@@ -322,7 +346,8 @@ def main():
         s.img.save(RP / f"textures/entity/ai_player/skin_{i}.png")
         head_icon(s.img, 64).save(RP / f"textures/aip/icons/{i}.png")
 
-    menu_item_icon().save(RP / "textures/items/ai_menu.png")
+    for name, img in zip(("side", "top", "bottom"), station_textures()):
+        img.save(RP / f"textures/blocks/ai_station_{name}.png")
 
     # Pack icon: four of the AI players' faces in a grid
     pack = Image.new("RGBA", (128, 128), (15, 20, 30, 255))

@@ -6,32 +6,42 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.1.0)
-- **AI Player Menu** item: you get one the first time you join a world. It's also in the Creative inventory, or use `/give @s aip:ai_menu`.
-- Use the menu → pick 1 of 10 AI players → type any gamer tag → it spawns next to you, already yours.
-- Its gamer tag always shows above its head, and "joined the game" / "left the game" messages appear in chat.
-- It follows you, attacks what you hit, defends you from mobs and players, and fights nearby monsters (not creepers).
-- Feed it bread, cooked beef or golden apples to heal it.
+## What it does (v1.2.0)
+- **AI Recruitment Station** block: tap it to open the shop. Find it in the Creative inventory
+  (Construction tab), use `/give @s aip:ai_station`, or craft it:
+  ```
+  Glass  Glass     Glass
+  Iron   Redstone  Iron
+  Iron   Iron      Iron
+  ```
+- Each player can own **one Resource AI** (costs 30 iron ingots) and **one Fighter AI** (costs 15 diamonds).
+- Buying: pick the kind → pick 1 of 10 looks → type a name (required) → pay → it spawns next to you, already yours.
+- Already own one? Its shop button lets you **call it to you** or **dismiss it** (no refund), which frees the slot.
+- **Fighter AI:** 60 health, 7 damage. Attacks what you hit, defends you from mobs and players, fights nearby monsters (not creepers).
+- **Resource AI:** 30 health, 3 damage. Follows you and only fights back when attacked. Gathering (chopping/mining) comes next.
+- Name tags always show; "joined the game" / "left the game" messages appear in chat.
+- Feed any AI bread, cooked beef or golden apples to heal it.
 
-| # | Default tag | Look |
-|---|---|---|
-| 0 | Bolt | Robot with a glowing visor |
-| 1 | Maple | Red hair, green hoodie |
-| 2 | Rook | Knight in iron armor |
-| 3 | Ember | Orange hair, leather jacket |
-| 4 | Frost | White hair, ice-blue parka |
-| 5 | Moss | Explorer with a safari hat |
-| 6 | Nova | Purple-haired astronaut |
-| 7 | Dash | Sporty runner with a headband |
-| 8 | Juniper | Braids and a teal top |
-| 9 | Pixel | Gamer with headphones |
+| # | Look |
+|---|---|
+| 0 | Robot with a glowing visor |
+| 1 | Red hair, green hoodie |
+| 2 | Knight in iron armor |
+| 3 | Orange hair, leather jacket |
+| 4 | White hair, ice-blue parka |
+| 5 | Explorer with a safari hat |
+| 6 | Purple-haired astronaut |
+| 7 | Sporty runner with a headband |
+| 8 | Braids and a teal top |
+| 9 | Gamer with headphones |
 
 ## Folder map
 | Path | What it is |
 |---|---|
-| `behavior_pack/entities/ai_player.json` | The brain: health, AI goals, taming, skin choice |
-| `behavior_pack/scripts/main.js` | The menu, naming, spawning and chat messages (Script API 2.9.0) |
-| `behavior_pack/items/ai_menu.json` | The AI Player Menu item |
+| `behavior_pack/entities/ai_player.json` | The brain: health, AI goals, taming, roles, skin choice |
+| `behavior_pack/scripts/main.js` | The shop, payment, naming, spawning and chat messages (Script API 2.9.0) |
+| `behavior_pack/blocks/ai_station.json` | The AI Recruitment Station block |
+| `behavior_pack/recipes/ai_station.json` | Crafting recipe for the station |
 | `resource_pack/entity/ai_player.entity.json` | Links the model, skins and animations |
 | `resource_pack/models/entity/ai_player.geo.json` | Player-shaped 3D model |
 | `resource_pack/animations/ai_player.animation.json` | Walking, head look and arm swing |

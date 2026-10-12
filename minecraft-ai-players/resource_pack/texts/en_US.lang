@@ -1,2 +1,2 @@
 entity.aip:ai_player.name=AI Player
-item.aip:ai_menu=AI Player Menu
+tile.aip:ai_station.name=AI Recruitment Station
