@@ -1,0 +1,28 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "aip:ai_player",
+      "materials": { "default": "entity_alphatest" },
+      "textures": { "default": "textures/entity/ai_player/ai_player" },
+      "geometry": { "default": "geometry.aip.ai_player" },
+      "animations": {
+        "look": "animation.aip.ai_player.look",
+        "walk": "animation.aip.ai_player.walk",
+        "swing": "animation.aip.ai_player.swing"
+      },
+      "scripts": {
+        "animate": [
+          "look",
+          "walk",
+          { "swing": "variable.attack_time > 0.0" }
+        ]
+      },
+      "render_controllers": ["controller.render.aip.ai_player"],
+      "spawn_egg": {
+        "base_color": "#1f3b5c",
+        "overlay_color": "#4fe0ff"
+      }
+    }
+  }
+}

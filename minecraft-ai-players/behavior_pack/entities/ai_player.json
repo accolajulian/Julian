@@ -1,0 +1,156 @@
+{
+  "format_version": "1.21.0",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "aip:ai_player",
+      "is_spawnable": true,
+      "is_summonable": true,
+      "is_experimental": false
+    },
+
+    "component_groups": {
+      "aip:wild": {
+        "minecraft:tameable": {
+          "probability": 1.0,
+          "tame_items": "minecraft:emerald",
+          "tame_event": {
+            "event": "aip:on_tame",
+            "target": "self"
+          }
+        },
+        "minecraft:behavior.random_stroll": {
+          "priority": 7,
+          "speed_multiplier": 0.8
+        }
+      },
+
+      "aip:tamed": {
+        "minecraft:is_tamed": {},
+        "minecraft:behavior.owner_hurt_by_target": {
+          "priority": 1
+        },
+        "minecraft:behavior.owner_hurt_target": {
+          "priority": 2
+        },
+        "minecraft:behavior.nearest_attackable_target": {
+          "priority": 4,
+          "must_see": true,
+          "reselect_targets": true,
+          "within_radius": 12.0,
+          "entity_types": [
+            {
+              "filters": {
+                "all_of": [
+                  { "test": "is_family", "subject": "other", "value": "monster" },
+                  { "test": "is_family", "subject": "other", "operator": "!=", "value": "creeper" }
+                ]
+              },
+              "max_dist": 12
+            }
+          ]
+        },
+        "minecraft:behavior.follow_owner": {
+          "priority": 5,
+          "speed_multiplier": 1.2,
+          "start_distance": 6,
+          "stop_distance": 2
+        }
+      }
+    },
+
+    "components": {
+      "minecraft:type_family": {
+        "family": ["aip_companion", "mob"]
+      },
+      "minecraft:nameable": {},
+      "minecraft:persistent": {},
+      "minecraft:health": {
+        "value": 40,
+        "max": 40
+      },
+      "minecraft:healable": {
+        "items": [
+          { "item": "minecraft:bread", "heal_amount": 10 },
+          { "item": "minecraft:cooked_beef", "heal_amount": 16 },
+          { "item": "minecraft:golden_apple", "heal_amount": 40 }
+        ]
+      },
+      "minecraft:attack": {
+        "damage": 5
+      },
+      "minecraft:follow_range": {
+        "value": 32,
+        "max": 32
+      },
+      "minecraft:collision_box": {
+        "width": 0.6,
+        "height": 1.8
+      },
+      "minecraft:movement": {
+        "value": 0.3
+      },
+      "minecraft:movement.basic": {},
+      "minecraft:jump.static": {},
+      "minecraft:can_climb": {},
+      "minecraft:navigation.walk": {
+        "can_path_over_water": true,
+        "can_pass_doors": true,
+        "can_open_doors": true,
+        "avoid_water": true,
+        "avoid_damage_blocks": true
+      },
+      "minecraft:annotation.open_door": {},
+      "minecraft:physics": {},
+      "minecraft:pushable": {
+        "is_pushable": true,
+        "is_pushable_by_piston": true
+      },
+      "minecraft:breathable": {
+        "total_supply": 15,
+        "suffocate_time": 0
+      },
+
+      "minecraft:behavior.float": {
+        "priority": 0
+      },
+      "minecraft:behavior.melee_attack": {
+        "priority": 3,
+        "speed_multiplier": 1.25,
+        "track_target": true
+      },
+      "minecraft:behavior.hurt_by_target": {
+        "priority": 3,
+        "entity_types": {
+          "filters": {
+            "test": "is_family",
+            "subject": "other",
+            "operator": "!=",
+            "value": "player"
+          }
+        }
+      },
+      "minecraft:behavior.open_door": {
+        "priority": 6,
+        "close_door_after": true
+      },
+      "minecraft:behavior.look_at_player": {
+        "priority": 8,
+        "look_distance": 8,
+        "probability": 0.05
+      },
+      "minecraft:behavior.random_look_around": {
+        "priority": 9
+      }
+    },
+
+    "events": {
+      "minecraft:entity_spawned": {
+        "add": { "component_groups": ["aip:wild"] }
+      },
+      "aip:on_tame": {
+        "remove": { "component_groups": ["aip:wild"] },
+        "add": { "component_groups": ["aip:tamed"] }
+      }
+    }
+  }
+}
