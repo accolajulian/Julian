@@ -3,9 +3,24 @@
   "minecraft:client_entity": {
     "description": {
       "identifier": "aip:ai_player",
-      "materials": { "default": "entity_alphatest" },
-      "textures": { "default": "textures/entity/ai_player/ai_player" },
-      "geometry": { "default": "geometry.aip.ai_player" },
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "s0": "textures/entity/ai_player/skin_0",
+        "s1": "textures/entity/ai_player/skin_1",
+        "s2": "textures/entity/ai_player/skin_2",
+        "s3": "textures/entity/ai_player/skin_3",
+        "s4": "textures/entity/ai_player/skin_4",
+        "s5": "textures/entity/ai_player/skin_5",
+        "s6": "textures/entity/ai_player/skin_6",
+        "s7": "textures/entity/ai_player/skin_7",
+        "s8": "textures/entity/ai_player/skin_8",
+        "s9": "textures/entity/ai_player/skin_9"
+      },
+      "geometry": {
+        "default": "geometry.aip.ai_player"
+      },
       "animations": {
         "look": "animation.aip.ai_player.look",
         "walk": "animation.aip.ai_player.walk",
@@ -15,14 +30,14 @@
         "animate": [
           "look",
           "walk",
-          { "swing": "variable.attack_time > 0.0" }
+          {
+            "swing": "variable.attack_time > 0.0"
+          }
         ]
       },
-      "render_controllers": ["controller.render.aip.ai_player"],
-      "spawn_egg": {
-        "base_color": "#1f3b5c",
-        "overlay_color": "#4fe0ff"
-      }
+      "render_controllers": [
+        "controller.render.aip.ai_player"
+      ]
     }
   }
 }

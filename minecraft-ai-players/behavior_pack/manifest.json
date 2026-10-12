@@ -2,22 +2,57 @@
   "format_version": 2,
   "header": {
     "name": "AI Players (Behavior)",
-    "description": "AI companions that follow you and fight for you. Stage 1.",
+    "description": "AI players that follow you and fight for you.",
     "uuid": "5d947b8e-fdb9-4ceb-a411-304de32db015",
-    "version": [1, 0, 0],
-    "min_engine_version": [1, 21, 0]
+    "version": [
+      1,
+      1,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      21,
+      0
+    ]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "5da8a4fe-41c8-4ea4-97d3-62b374959930",
-      "version": [1, 0, 0]
+      "version": [
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "type": "script",
+      "language": "javascript",
+      "entry": "scripts/main.js",
+      "uuid": "72f57ecb-0c3c-4a1e-b146-181fa6cdc203",
+      "version": [
+        1,
+        1,
+        0
+      ]
     }
   ],
   "dependencies": [
     {
       "uuid": "40a27797-dca3-436f-a415-2cb01ae9d04f",
-      "version": [1, 0, 0]
+      "version": [
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.9.0"
+    },
+    {
+      "module_name": "@minecraft/server-ui",
+      "version": "2.1.0"
     }
   ]
 }

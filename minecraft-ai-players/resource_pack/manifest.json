@@ -2,16 +2,28 @@
   "format_version": 2,
   "header": {
     "name": "AI Players (Resources)",
-    "description": "Model, texture and animations for AI Players. Stage 1.",
+    "description": "Models, skins and animations for AI Players.",
     "uuid": "40a27797-dca3-436f-a415-2cb01ae9d04f",
-    "version": [1, 0, 0],
-    "min_engine_version": [1, 21, 0]
+    "version": [
+      1,
+      1,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      21,
+      0
+    ]
   },
   "modules": [
     {
       "type": "resources",
       "uuid": "2ce920ca-bcfa-49f4-bc85-5539e4c9f3e1",
-      "version": [1, 0, 0]
+      "version": [
+        1,
+        1,
+        0
+      ]
     }
   ]
 }

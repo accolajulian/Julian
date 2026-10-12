@@ -2,9 +2,31 @@
   "format_version": "1.8.0",
   "render_controllers": {
     "controller.render.aip.ai_player": {
+      "arrays": {
+        "textures": {
+          "Array.skins": [
+            "Texture.s0",
+            "Texture.s1",
+            "Texture.s2",
+            "Texture.s3",
+            "Texture.s4",
+            "Texture.s5",
+            "Texture.s6",
+            "Texture.s7",
+            "Texture.s8",
+            "Texture.s9"
+          ]
+        }
+      },
       "geometry": "Geometry.default",
-      "materials": [{ "*": "Material.default" }],
-      "textures": ["Texture.default"]
+      "materials": [
+        {
+          "*": "Material.default"
+        }
+      ],
+      "textures": [
+        "Array.skins[query.variant]"
+      ]
     }
   }
 }
