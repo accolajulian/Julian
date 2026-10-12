@@ -1,33 +1,38 @@
-// AI Players
+// AI Players: guide, shop, eggs, menus and respawning.
+// The fighting brain and memory live in brain.js; saved data in data.js.
 // - AI Guide block: explains everything.
 // - Coder block: the shop. Buying an AI gives you an egg; throw it to spawn your AI.
-// - Hit (left click) your AI to open its menu. Interact (right click) to feed it, or
-//   with a Fighter AI: interact with it, then hit/interact with a player to send it after them.
-// - If an AI dies it respawns next to the player who bought it.
+// - Hit (left click) your AI to open its menu. Interact (right click) to feed it, give it a
+//   weapon, or (Fighter AI) select it and then hit a player to send it after them.
+// - If an AI dies it respawns next to the player who bought it, and keeps its memory.
 import { world, system, ItemStack, EntityDamageCause } from "@minecraft/server";
 import { ActionFormData, MessageFormData, ModalFormData } from "@minecraft/server-ui";
+import {
+  AI_ENTITY,
+  CAPSULE_ENTITY,
+  ROLE_IDS,
+  getRecord,
+  saveRecord,
+  getMemory,
+  saveMemory,
+  findPlayer,
+  ownerInfo,
+  knownAis,
+  countItem,
+  takeItem,
+  takeOneFromHand,
+  giveItem,
+} from "./data.js";
+import { WEAPONS, commandAttack, giveWeapon, returnWeapons, bestWeapon, itemName } from "./brain.js";
 
-const AI_ENTITY = "aip:ai_player";
-const CAPSULE_ENTITY = "aip:ai_capsule";
+/** @typedef {import("./data.js").RoleId} RoleId */
+/** @typedef {import("./data.js").AiRecord} AiRecord */
+
 const GUIDE_BLOCK = "aip:ai_guide";
 const GOT_GUIDE_TAG = "aip_got_guide";
 const MAX_NAME_LENGTH = 20;
 const RESPAWN_SECONDS = 5;
-const GUARD_LEASH = 14; // a guarding Fighter AI goes back to its spot if it gets further than this
 const COMMAND_SECONDS = 20; // how long a selected Fighter AI waits for you to pick a target
-
-/** @typedef {"resource" | "fighter"} RoleId */
-/**
- * @typedef {Object} AiRecord  Saved per player per role.
- * @property {string} name
- * @property {number} look
- * @property {"egg" | "thrown" | "alive" | "respawn"} state
- * @property {number} serial  Eggs with an older serial no longer work.
- * @property {string} [id]  Entity id while alive.
- * @property {"follow" | "guard"} mode
- * @property {string} focus
- * @property {{ x: number, y: number, z: number, dim: string }} [post]  Guard spot.
- */
 
 /** @type {Record<RoleId, { title: string, egg: string, price: { item: string, amount: number, label: string }, icon: string, about: string }>} */
 const ROLES = {
@@ -40,8 +45,8 @@ const ROLES = {
       "A helper that gathers resources for you.\n\n" +
       "§a+§r Follows you around\n" +
       "§a+§r Hit it to choose what it should focus on getting\n" +
-      "§a+§r Fights back if something attacks it\n" +
-      "§a+§r Respawns next to you if it dies\n\n" +
+      "§a+§r Fights back if something attacks it, backs off to heal when hurt\n" +
+      "§a+§r Respawns next to you if it dies, and remembers who attacked it\n\n" +
       "§7Health: 30   Damage: 3\n" +
       "§7Gathering is being added in a later update.",
   },
@@ -53,16 +58,17 @@ const ROLES = {
     about:
       "A bodyguard that fights for you.\n\n" +
       "§a+§r Follows you and protects you from mobs and players\n" +
+      "§a+§r Goes after the most dangerous enemy first, and protects you first when you're hurt\n" +
       "§a+§r Attacks whatever you attack\n" +
+      "§a+§r Backs off to heal when badly hurt\n" +
+      "§a+§r Uses the best weapon you give it (or picks up)\n" +
+      "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
-      "§a+§r Interact with it, then a player, to send it after them\n" +
-      "§a+§r Respawns next to you if it dies\n\n" +
-      "§7Health: 60   Damage: 7",
+      "§a+§r Interact with it, then hit a player, to send it after them\n" +
+      "§a+§r Respawns next to you if it dies, and keeps its memory\n\n" +
+      "§7Health: 60   Damage: 6 + weapon",
   },
 };
-/** @type {RoleId[]} */
-const ROLE_IDS = ["resource", "fighter"];
-
 const RESOURCE_FOCUS = ["Wood", "Stone", "Ores", "Everything"];
 
 /** Food you can give your AI (interact while holding it) and how much it heals. */
@@ -105,93 +111,12 @@ const GUIDE_TEXT =
   "§lControls§r\n" +
   "- §eHit§r your AI: open its menu\n" +
   "- §eInteract§r with your AI while holding food: heal it\n" +
-  "- §eInteract§r with your Fighter AI, then §ehit or interact§r with a player: it attacks them\n\n" +
+  "- §eInteract§r with your Fighter AI while holding a sword or axe: give it the weapon\n" +
+  "- §eInteract§r with your Fighter AI (empty hand), then §ehit§r a player: it attacks them\n" +
+  "- Your AI's menu has §eAllies & enemies§r: add friends it must never attack\n\n" +
   "§lIf your AI dies§r\n" +
-  `It respawns next to you after ${RESPAWN_SECONDS} seconds.\n\n` +
+  `It respawns next to you after ${RESPAWN_SECONDS} seconds, and still remembers its enemies and allies.\n\n` +
   "§7Lost your egg? Open the Coder and pick your AI to get a new one.";
-
-// ================================================================ saved data
-
-/** @param {string} playerId @param {RoleId} role */
-function recordKey(playerId, role) {
-  return `aip:ai:${playerId}:${role}`;
-}
-
-/** @param {string} playerId @param {RoleId} role @returns {AiRecord | undefined} */
-function getRecord(playerId, role) {
-  const raw = world.getDynamicProperty(recordKey(playerId, role));
-  if (typeof raw !== "string") return undefined;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-}
-
-/** @param {string} playerId @param {RoleId} role @param {AiRecord | undefined} record */
-function saveRecord(playerId, role, record) {
-  world.setDynamicProperty(recordKey(playerId, role), record ? JSON.stringify(record) : undefined);
-}
-
-/** @param {string} playerId */
-function findPlayer(playerId) {
-  return world.getPlayers().find((p) => p.id === playerId);
-}
-
-/** @param {unknown} value @returns {value is RoleId} */
-function isRole(value) {
-  return value === "resource" || value === "fighter";
-}
-
-/**
- * Owner id and role saved on an AI player or a flying egg.
- * @param {import("@minecraft/server").Entity} entity
- */
-function ownerInfo(entity) {
-  const ownerId = entity.getDynamicProperty("aip:owner");
-  const role = entity.getDynamicProperty("aip:role");
-  if (typeof ownerId !== "string" || !isRole(role)) return undefined;
-  return { ownerId, role };
-}
-
-// ================================================================ inventory
-
-/** @param {import("@minecraft/server").Player} player @param {string} itemId */
-function countItem(player, itemId) {
-  const container = player.getComponent("minecraft:inventory")?.container;
-  if (!container) return 0;
-  let total = 0;
-  for (let i = 0; i < container.size; i++) {
-    const stack = container.getItem(i);
-    if (stack?.typeId === itemId) total += stack.amount;
-  }
-  return total;
-}
-
-/** @param {import("@minecraft/server").Player} player @param {string} itemId @param {number} amount */
-function takeItem(player, itemId, amount) {
-  const container = player.getComponent("minecraft:inventory")?.container;
-  if (!container) return;
-  for (let i = 0; i < container.size && amount > 0; i++) {
-    const stack = container.getItem(i);
-    if (stack?.typeId !== itemId) continue;
-    const take = Math.min(stack.amount, amount);
-    amount -= take;
-    if (take === stack.amount) {
-      container.setItem(i, undefined);
-    } else {
-      stack.amount -= take;
-      container.setItem(i, stack);
-    }
-  }
-}
-
-/** Puts an item in the inventory, or drops it at the player's feet if full. */
-/** @param {import("@minecraft/server").Player} player @param {ItemStack} item */
-function giveItem(player, item) {
-  const leftover = player.getComponent("minecraft:inventory")?.container?.addItem(item);
-  if (leftover) player.dimension.spawnItem(leftover, player.location);
-}
 
 /** @param {import("@minecraft/server").Player} player @param {RoleId} role @param {AiRecord} record */
 function giveEgg(player, role, record) {
@@ -430,6 +355,7 @@ async function dismiss(player, role) {
     .show(player);
   if (confirm.selection !== 0) return;
 
+  if (role === "fighter") returnWeapons(player);
   saveRecord(player.id, role, undefined);
   const ai = record.id ? world.getEntity(record.id) : undefined;
   if (ai) ai.remove();
@@ -437,10 +363,6 @@ async function dismiss(player, role) {
 }
 
 // ================================================================ throwing the egg
-
-/** Which player and role each AI belongs to, in case a dead AI's saved data can't be read. */
-/** @type {Map<string, { ownerId: string, role: RoleId }>} */
-const knownAis = new Map();
 
 /** @type {Map<string, { ownerId: string, role: RoleId, thrownAt: number }>} */
 const flyingEggs = new Map();
@@ -645,9 +567,11 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target, itemStac
     const heal = itemStack ? FOODS[itemStack.typeId] : undefined;
     if (heal) {
       feed(player, target, heal);
+    } else if (info.role === "fighter" && itemStack && WEAPONS[itemStack.typeId] !== undefined) {
+      if (giveWeapon(player, target, itemStack.typeId)) takeOneFromHand(player);
     } else if (info.role === "fighter") {
       commandSelections.set(player.id, { aiId: target.id, until: Date.now() + COMMAND_SECONDS * 1000 });
-      player.sendMessage(`§e${target.nameTag} is ready! §fNow hit or interact with the player it should attack.`);
+      player.sendMessage(`§e${target.nameTag} is ready! §fNow hit the player it should attack.`);
     } else {
       player.sendMessage(`§7Hit ${target.nameTag} to open its menu. Interact while holding food to heal it.`);
     }
@@ -666,13 +590,8 @@ function sendFighterAfter(player, target) {
   if (!selection) return;
   commandSelections.delete(player.id);
   if (Date.now() > selection.until || target.id === player.id) return;
-
   const ai = world.getEntity(selection.aiId);
-  if (!ai || ai.id === target.id) return;
-  // Making the target "hit" the AI for 1 damage makes it switch to attacking the target.
-  ai.applyDamage(1, { cause: EntityDamageCause.entityAttack, damagingEntity: target });
-  const targetName = target.typeId === "minecraft:player" ? target.nameTag : "that";
-  player.sendMessage(`§e${ai.nameTag} is going after ${targetName}!`);
+  if (ai && ai.id !== target.id) commandAttack(player, ai, target);
 }
 
 /**
@@ -688,16 +607,7 @@ function feed(player, ai, amount) {
     return;
   }
   health.setCurrentValue(Math.min(health.effectiveMax, health.currentValue + amount));
-  const container = player.getComponent("minecraft:inventory")?.container;
-  const held = container?.getItem(player.selectedSlotIndex);
-  if (container && held) {
-    if (held.amount > 1) {
-      held.amount -= 1;
-      container.setItem(player.selectedSlotIndex, held);
-    } else {
-      container.setItem(player.selectedSlotIndex, undefined);
-    }
-  }
+  takeOneFromHand(player);
   player.sendMessage(`§a${ai.nameTag} healed (${Math.round(health.currentValue)}/${health.effectiveMax}).`);
 }
 
@@ -713,41 +623,148 @@ async function showAiMenu(player, ai, role) {
   if (!record || !ai.isValid) return;
   const health = ai.getComponent("minecraft:health");
   const hp = health ? `${Math.round(health.currentValue)}/${health.effectiveMax}` : "?";
+  const memory = getMemory(player.id);
+  const memoryLine = `Remembers ${Object.keys(memory.enemies).length} enemies, ${Object.keys(memory.allies).length} allies`;
+
+  /** @type {{ label: string, run: () => unknown }[]} */
+  const actions = [];
+  let body;
 
   if (role === "fighter") {
     const mode = record.mode === "guard" ? "Guarding a spot" : "Following and protecting you";
-    const response = await new ActionFormData()
-      .title(`${record.name} (Fighter AI)`)
-      .body(`Health: ${hp}\nRight now: §e${mode}`)
-      .button("Follow and protect me")
-      .button("Guard this spot\n§8Attacks any other player who comes near")
-      .show(player);
-    if (response.canceled || !ai.isValid) return;
-
-    if (response.selection === 0) {
-      record.mode = "follow";
-      delete record.post;
-      ai.triggerEvent("aip:fighter_follow");
-      player.sendMessage(`§e${record.name} will follow and protect you.`);
-    } else {
-      record.mode = "guard";
-      record.post = { x: ai.location.x, y: ai.location.y, z: ai.location.z, dim: ai.dimension.id };
-      ai.triggerEvent("aip:fighter_guard");
-      player.sendMessage(`§e${record.name} is guarding this spot.`);
+    const weapon = bestWeapon(record.weapons);
+    body =
+      `Health: ${hp}\nRight now: §e${mode}§r\n` +
+      `Weapon: §e${weapon ? itemName(weapon) : "fists"}§r (carrying ${record.weapons?.length ?? 0})\n${memoryLine}`;
+    actions.push({ label: "Follow and protect me", run: () => setFighterMode(player, ai, "follow") });
+    actions.push({
+      label: "Guard this spot\n§8Attacks any other player who comes near",
+      run: () => setFighterMode(player, ai, "guard"),
+    });
+    if (record.weapons?.length) actions.push({ label: "Give my weapons back", run: () => returnWeapons(player) });
+  } else {
+    body =
+      `Health: ${hp}\nFocus: §e${record.focus}§r\n${memoryLine}\n\n` +
+      "§7Choose what it should focus on getting. (Gathering is coming in a later update.)";
+    for (const focus of RESOURCE_FOCUS) {
+      actions.push({
+        label: focus === record.focus ? `§2${focus} (current)` : focus,
+        run: () => {
+          record.focus = focus;
+          saveRecord(player.id, role, record);
+          player.sendMessage(`§e${record.name} will focus on: ${focus}`);
+        },
+      });
     }
-    saveRecord(player.id, role, record);
-    return;
   }
+  actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
+
+  const form = new ActionFormData().title(`${record.name} (${role === "fighter" ? "Fighter" : "Resource"} AI)`).body(body);
+  actions.forEach((a) => form.button(a.label));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined || !ai.isValid) return;
+  await actions[response.selection].run();
+}
+
+/**
+ * @param {import("@minecraft/server").Player} player
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {"follow" | "guard"} mode
+ */
+function setFighterMode(player, ai, mode) {
+  const record = getRecord(player.id, "fighter");
+  if (!record) return;
+  record.mode = mode;
+  if (mode === "guard") {
+    record.post = { x: ai.location.x, y: ai.location.y, z: ai.location.z, dim: ai.dimension.id };
+    ai.triggerEvent("aip:fighter_guard");
+    player.sendMessage(`§e${record.name} is guarding this spot.`);
+  } else {
+    delete record.post;
+    ai.triggerEvent("aip:fighter_follow");
+    player.sendMessage(`§e${record.name} will follow and protect you.`);
+  }
+  saveRecord(player.id, "fighter", record);
+}
+
+// ================================================================ allies & enemies
+
+/** Both of a player's AIs share one memory, kept even when they die. */
+/** @param {import("@minecraft/server").Player} player */
+async function showMemory(player) {
+  const memory = getMemory(player.id);
+  const enemies = Object.entries(memory.enemies);
+  const allies = Object.entries(memory.allies);
+  const list = (/** @type {string[]} */ names) => (names.length ? names.join(", ") : "§7none§r");
+
+  /** @type {{ label: string, run: () => unknown }[]} */
+  const actions = [{ label: "Add an ally", run: () => addAlly(player) }];
+  if (allies.length) actions.push({ label: "Remove an ally", run: () => removeAlly(player) });
+  if (enemies.length) actions.push({ label: "Forgive an enemy", run: () => forgiveEnemy(player) });
 
   const form = new ActionFormData()
-    .title(`${record.name} (Resource AI)`)
-    .body(`Health: ${hp}\nFocus: §e${record.focus}\n\n§7Choose what it should focus on getting. (Gathering is coming in a later update.)`);
-  RESOURCE_FOCUS.forEach((focus) => form.button(focus === record.focus ? `§2${focus} (current)` : focus));
+    .title("Allies & enemies")
+    .body(
+      `§cEnemies§r (attacked you or your AIs, so your Fighter goes after them):\n${list(
+        enemies.map(([, e]) => `${e.name} (x${e.times})`)
+      )}\n\n§aAllies§r (your AIs never attack them or their AIs):\n${list(allies.map(([, name]) => name))}`
+    );
+  actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
-  record.focus = RESOURCE_FOCUS[response.selection];
-  saveRecord(player.id, role, record);
-  player.sendMessage(`§e${record.name} will focus on: ${record.focus}`);
+  await actions[response.selection].run();
+}
+
+/** @param {import("@minecraft/server").Player} player */
+async function addAlly(player) {
+  const memory = getMemory(player.id);
+  const choices = world.getPlayers().filter((p) => p.id !== player.id && !memory.allies[p.id]);
+  if (choices.length === 0) {
+    player.sendMessage("§7There's nobody online to add as an ally right now.");
+    return;
+  }
+  const form = new ActionFormData().title("Add an ally").body("Your AIs will never attack this player.");
+  choices.forEach((p) => form.button(p.name));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  const ally = choices[response.selection];
+  memory.allies[ally.id] = ally.name;
+  delete memory.enemies[ally.id];
+  saveMemory(player.id, memory);
+  player.sendMessage(`§a${ally.name} is now your ally. Your AIs will never attack them.`);
+}
+
+/** @param {import("@minecraft/server").Player} player */
+async function removeAlly(player) {
+  const memory = getMemory(player.id);
+  const allies = Object.entries(memory.allies);
+  const form = new ActionFormData().title("Remove an ally");
+  allies.forEach(([, name]) => form.button(name));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  const [id, name] = allies[response.selection];
+  delete memory.allies[id];
+  saveMemory(player.id, memory);
+  player.sendMessage(`§e${name} is no longer your ally.`);
+}
+
+/** @param {import("@minecraft/server").Player} player */
+async function forgiveEnemy(player) {
+  const memory = getMemory(player.id);
+  const enemies = Object.entries(memory.enemies);
+  const form = new ActionFormData().title("Forgive an enemy").button("§cForgive everyone");
+  enemies.forEach(([, e]) => form.button(`${e.name} (attacked x${e.times})`));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  if (response.selection === 0) {
+    memory.enemies = {};
+    player.sendMessage("§eYour AIs forgave everyone.");
+  } else {
+    const [id, e] = enemies[response.selection - 1];
+    delete memory.enemies[id];
+    player.sendMessage(`§eYour AIs forgave ${e.name}.`);
+  }
+  saveMemory(player.id, memory);
 }
 
 // ================================================================ every second
@@ -769,28 +786,6 @@ system.runInterval(() => {
       } else {
         record.state = "respawn";
         saveRecord(egg.ownerId, egg.role, record);
-      }
-    }
-  }
-
-  for (const dimensionId of ["minecraft:overworld", "minecraft:nether", "minecraft:the_end"]) {
-    for (const ai of world.getDimension(dimensionId).getEntities({ type: AI_ENTITY })) {
-      const info = ownerInfo(ai);
-      const record = info ? getRecord(info.ownerId, info.role) : undefined;
-      if (info) knownAis.set(ai.id, info);
-
-      // Remove leftover AIs that were dismissed or replaced (one of each per player).
-      if (!record || record.id !== ai.id) {
-        ai.remove();
-        continue;
-      }
-
-      // A guarding Fighter AI goes back to its spot if it chased something too far.
-      const post = record.mode === "guard" ? record.post : undefined;
-      if (post && post.dim === dimensionId) {
-        const dx = ai.location.x - post.x;
-        const dz = ai.location.z - post.z;
-        if (dx * dx + dz * dz > GUARD_LEASH * GUARD_LEASH) ai.teleport({ x: post.x, y: post.y, z: post.z });
       }
     }
   }

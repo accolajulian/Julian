@@ -68,18 +68,835 @@
         }
       },
       "aip:role_fighter": {
+        "minecraft:behavior.nearest_attackable_target": {
+          "priority": 1,
+          "must_see": false,
+          "reselect_targets": true,
+          "within_radius": 24.0,
+          "scan_interval": 5,
+          "entity_types": [
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s0"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h0"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s1"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h1"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s2"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h2"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s3"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h3"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s4"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h4"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s5"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h5"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s6"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h6"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s7"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h7"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s8"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h8"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s9"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h9"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s10"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h10"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s11"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h11"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s12"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h12"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s13"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h13"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s14"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h14"
+                  }
+                ]
+              },
+              "max_dist": 24
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "value": "aip_s15"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "value": "aip_h15"
+                  }
+                ]
+              },
+              "max_dist": 24
+            }
+          ]
+        },
         "minecraft:behavior.owner_hurt_by_target": {
-          "priority": 1
+          "priority": 2,
+          "entity_types": {
+            "filters": {
+              "all_of": [
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s0"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a0"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s1"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a1"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s2"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a2"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s3"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a3"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s4"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a4"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s5"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a5"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s6"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a6"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s7"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a7"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s8"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a8"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s9"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a9"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s10"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a10"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s11"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a11"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s12"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a12"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s13"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a13"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s14"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a14"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s15"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a15"
+                    }
+                  ]
+                },
+                {
+                  "test": "is_owner",
+                  "subject": "other",
+                  "operator": "!=",
+                  "value": true
+                }
+              ]
+            }
+          }
         },
         "minecraft:behavior.owner_hurt_target": {
-          "priority": 2
+          "priority": 3,
+          "entity_types": {
+            "filters": {
+              "all_of": [
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s0"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a0"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s1"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a1"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s2"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a2"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s3"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a3"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s4"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a4"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s5"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a5"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s6"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a6"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s7"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a7"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s8"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a8"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s9"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a9"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s10"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a10"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s11"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a11"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s12"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a12"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s13"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a13"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s14"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a14"
+                    }
+                  ]
+                },
+                {
+                  "any_of": [
+                    {
+                      "test": "has_tag",
+                      "subject": "self",
+                      "operator": "!=",
+                      "value": "aip_s15"
+                    },
+                    {
+                      "test": "has_tag",
+                      "subject": "other",
+                      "operator": "!=",
+                      "value": "aip_a15"
+                    }
+                  ]
+                },
+                {
+                  "test": "is_owner",
+                  "subject": "other",
+                  "operator": "!=",
+                  "value": true
+                }
+              ]
+            }
+          }
         },
         "minecraft:health": {
           "value": 60,
           "max": 60
         },
         "minecraft:attack": {
-          "damage": 7
+          "damage": 6
         }
       },
       "aip:role_resource": {
@@ -98,77 +915,13 @@
           "start_distance": 6,
           "stop_distance": 2
         },
-        "minecraft:behavior.nearest_attackable_target": {
-          "priority": 4,
-          "must_see": true,
-          "reselect_targets": true,
-          "within_radius": 12.0,
-          "entity_types": [
-            {
-              "filters": {
-                "all_of": [
-                  {
-                    "test": "is_family",
-                    "subject": "other",
-                    "value": "monster"
-                  },
-                  {
-                    "test": "is_family",
-                    "subject": "other",
-                    "operator": "!=",
-                    "value": "creeper"
-                  }
-                ]
-              },
-              "max_dist": 12
-            }
-          ]
+        "minecraft:mark_variant": {
+          "value": 0
         }
       },
       "aip:fighter_guard": {
-        "minecraft:behavior.nearest_attackable_target": {
-          "priority": 4,
-          "must_see": false,
-          "reselect_targets": true,
-          "within_radius": 16.0,
-          "entity_types": [
-            {
-              "filters": {
-                "all_of": [
-                  {
-                    "test": "is_family",
-                    "subject": "other",
-                    "value": "player"
-                  },
-                  {
-                    "test": "is_owner",
-                    "subject": "other",
-                    "operator": "!=",
-                    "value": true
-                  }
-                ]
-              },
-              "max_dist": 16
-            },
-            {
-              "filters": {
-                "all_of": [
-                  {
-                    "test": "is_family",
-                    "subject": "other",
-                    "value": "monster"
-                  },
-                  {
-                    "test": "is_family",
-                    "subject": "other",
-                    "operator": "!=",
-                    "value": "creeper"
-                  }
-                ]
-              },
-              "max_dist": 12
-            }
-          ]
+        "minecraft:mark_variant": {
+          "value": 1
         }
       },
       "aip:resource_follow": {
@@ -177,6 +930,42 @@
           "speed_multiplier": 1.2,
           "start_distance": 6,
           "stop_distance": 2
+        }
+      },
+      "aip:retreating": {
+        "minecraft:behavior.avoid_mob_type": {
+          "priority": 1,
+          "entity_types": [
+            {
+              "filters": {
+                "any_of": [
+                  {
+                    "test": "is_family",
+                    "subject": "other",
+                    "value": "monster"
+                  },
+                  {
+                    "all_of": [
+                      {
+                        "test": "is_family",
+                        "subject": "other",
+                        "value": "player"
+                      },
+                      {
+                        "test": "is_owner",
+                        "subject": "other",
+                        "operator": "!=",
+                        "value": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              "max_dist": 10,
+              "walk_speed_multiplier": 1.1,
+              "sprint_speed_multiplier": 1.4
+            }
+          ]
         }
       }
     },
@@ -239,13 +1028,273 @@
         "track_target": true
       },
       "minecraft:behavior.hurt_by_target": {
-        "priority": 3,
+        "priority": 4,
         "entity_types": {
           "filters": {
-            "test": "is_owner",
-            "subject": "other",
-            "operator": "!=",
-            "value": true
+            "all_of": [
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s0"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a0"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s1"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a1"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s2"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a2"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s3"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a3"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s4"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a4"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s5"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a5"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s6"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a6"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s7"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a7"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s8"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a8"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s9"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a9"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s10"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a10"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s11"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a11"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s12"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a12"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s13"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a13"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s14"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a14"
+                  }
+                ]
+              },
+              {
+                "any_of": [
+                  {
+                    "test": "has_tag",
+                    "subject": "self",
+                    "operator": "!=",
+                    "value": "aip_s15"
+                  },
+                  {
+                    "test": "has_tag",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "aip_a15"
+                  }
+                ]
+              },
+              {
+                "test": "is_owner",
+                "subject": "other",
+                "operator": "!=",
+                "value": true
+              }
+            ]
           }
         }
       },
@@ -421,7 +1470,21 @@
           ]
         }
       },
-      "aip:interacted": {}
+      "aip:interacted": {},
+      "aip:retreat": {
+        "add": {
+          "component_groups": [
+            "aip:retreating"
+          ]
+        }
+      },
+      "aip:recovered": {
+        "remove": {
+          "component_groups": [
+            "aip:retreating"
+          ]
+        }
+      }
     }
   }
 }

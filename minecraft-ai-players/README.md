@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.3.0)
+## What it does (v1.4.0)
 - **AI Guide** block: every player gets one the first time they join. Tap it to read how everything works.
   Craft another with a book + crafting table.
 - **Coder** block: the shop. Tap it, pick an AI to read what it does and its price, then buy it.
@@ -26,11 +26,25 @@ An original add-on with AI companions that look like players. It's kept separate
 |---|---|
 | Hit (left click) your AI | Opens its menu. Your hits never hurt it. |
 | Interact (right click) holding food | Heals it (bread, cooked meat, golden apple) |
-| Interact with your Fighter AI, then hit a player | The Fighter attacks that player, even if it was fighting someone else |
+| Interact with your Fighter AI holding a sword/axe/trident/mace | Gives it the weapon |
+| Interact with your Fighter AI (empty hand), then hit a player | The Fighter goes after that player |
 
-**Fighter AI menu:** *Follow and protect me* or *Guard this spot* (stays put and attacks any other player who
-comes near, then returns to its spot).
-**Resource AI menu:** choose a focus (Wood, Stone, Ores, Everything). Gathering itself comes in a later update.
+**Fighter AI menu:** *Follow and protect me*, *Guard this spot*, *Give my weapons back*, *Allies & enemies*.
+**Resource AI menu:** choose a focus (Wood, Stone, Ores, Everything), *Allies & enemies*. Gathering comes later.
+
+### Smart fighting (brain.js)
+- **Most dangerous enemy first:** every nearby enemy gets a score (commanded target > whoever is hurting
+  you > whoever hurt the AI > whatever you attacked > remembered enemies > guard intruders > monsters by
+  danger), plus closeness and finishing off weak enemies. It only switches when the new target is clearly
+  more important.
+- **Protects a hurt owner first:** attackers of the owner rank higher still when the owner is under half health.
+- **Backs off to heal** under 30% health (runs from danger, heals faster next to its owner) and returns at 70%.
+- **Best weapon:** carries up to 6 weapons (given by you or picked up) and holds the strongest. Uses an axe
+  against a player holding a shield.
+
+### Memory (saved in the world, shared by both of your AIs, kept after death)
+- **Enemies:** players who attack you or your AIs. Fighters go after them on sight. Forgive them in the menu.
+- **Allies:** players you add in the menu. Your AIs never attack them or their AIs, even if they attack you.
 
 | # | Look |
 |---|---|
@@ -50,6 +64,8 @@ comes near, then returns to its spot).
 |---|---|
 | `behavior_pack/entities/ai_player.json` | The brain: health, AI goals, roles, follow/guard modes, skin choice |
 | `behavior_pack/scripts/main.js` | Guide, shop, eggs, AI menus, commands, respawning (Script API 2.9.0) |
+| `behavior_pack/scripts/brain.js` | Smart fighting: target choice, retreat, weapons, enemy memory |
+| `behavior_pack/scripts/data.js` | Saved records and memory, shared helpers |
 | `behavior_pack/blocks/coder.json` | The Coder block (shop) |
 | `behavior_pack/blocks/ai_guide.json` | The AI Guide block |
 | `behavior_pack/items/*_egg.json` | The eggs you get after buying |
@@ -63,7 +79,8 @@ comes near, then returns to its spot).
 
 ## Rebuild
 ```
-python3 tools/make_skins.py
-python3 tools/build.py
+python3 tools/make_skins.py           # art
+python3 tools/make_entity_targets.py  # AI targeting rules (brain slots)
+python3 tools/build.py                # checks JSON and zips the .mcaddon
 ```
 Bump the version numbers in both `manifest.json` files for every release so Minecraft picks up the update.
