@@ -1,5 +1,5 @@
 """Draws the 10 original AI Player skins (64x64, player-style UV layout), their
-menu icons, the AI Recruitment Station block textures and the pack icons.
+menu icons, block and item textures, and the pack icons.
 Run: python3 tools/make_skins.py"""
 import random
 from pathlib import Path
@@ -294,8 +294,8 @@ def head_icon(skin_img, size):
     return face.resize((size, size), Image.NEAREST)
 
 
-def station_textures():
-    """16x16 sides, top and bottom of the AI Recruitment Station block."""
+def coder_textures():
+    """16x16 sides, top and bottom of the Coder block."""
     rng = random.Random(99)
     metal, rim, dark = (150, 160, 175), (95, 105, 120), (40, 44, 56)
     screen, face = (79, 224, 255), (24, 30, 44)
@@ -337,6 +337,57 @@ def station_textures():
     return side, top, bottom
 
 
+def egg_icon(base, accent, seed):
+    """16x16 egg with a band and speckles."""
+    rng = random.Random(seed)
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    for x in range(16):
+        for y in range(16):
+            dx, dy = (x - 7.5) / 5.6, (y - 8.8) / (6.6 if y > 8 else 7.4)
+            if dx * dx + dy * dy <= 1:
+                light = 30 if (x < 7 and y < 8) else (-25 if x > 9 or y > 12 else 0)
+                c = tuple(max(0, min(255, v + light + rng.randint(-8, 8))) for v in base)
+                p[x, y] = c + (255,)
+    for x in range(16):                               # glowing band
+        if p[x, 9][3]:
+            p[x, 9] = accent + (255,)
+    for x, y in ((5, 4), (9, 6), (6, 12), (10, 12), (4, 7)):
+        if p[x, y][3]:
+            p[x, y] = tuple(int(v * 0.6) for v in base) + (255,)
+    return img
+
+
+def guide_textures():
+    """16x16 side (a notice board) and top (planks) of the AI Guide block."""
+    rng = random.Random(42)
+    wood, wood_dark, paper, ink = (150, 108, 60), (100, 70, 38), (235, 225, 195), (60, 60, 70)
+    side = Image.new("RGBA", (16, 16))
+    p = side.load()
+    for x in range(16):
+        for y in range(16):
+            edge = x in (0, 15) or y in (0, 15)
+            d = rng.randint(-8, 8)
+            p[x, y] = tuple(max(0, min(255, c + d)) for c in (wood_dark if edge else wood)) + (255,)
+    for x in range(2, 14):                            # paper
+        for y in range(2, 14):
+            d = rng.randint(-5, 5)
+            p[x, y] = tuple(c + d for c in paper) + (255,)
+    for y in (4, 6, 8):                               # writing
+        for x in range(4, 12 if y != 8 else 9):
+            p[x, y] = ink + (255,)
+    for x, y in ((6, 10), (7, 10), (8, 10), (9, 10), (6, 11), (9, 11), (6, 12), (7, 12), (8, 12), (9, 12)):
+        p[x, y] = (79, 160, 230, 255)                 # little screen doodle
+    top = Image.new("RGBA", (16, 16))
+    p = top.load()
+    for x in range(16):
+        for y in range(16):
+            d = rng.randint(-10, 10)
+            c = wood_dark if y % 4 == 3 else wood
+            p[x, y] = tuple(max(0, min(255, v + d)) for v in c) + (255,)
+    return side, top
+
+
 def main():
     skins = []
     for i, paint in enumerate(AI):
@@ -346,8 +397,13 @@ def main():
         s.img.save(RP / f"textures/entity/ai_player/skin_{i}.png")
         head_icon(s.img, 64).save(RP / f"textures/aip/icons/{i}.png")
 
-    for name, img in zip(("side", "top", "bottom"), station_textures()):
-        img.save(RP / f"textures/blocks/ai_station_{name}.png")
+    for name, img in zip(("side", "top", "bottom"), coder_textures()):
+        img.save(RP / f"textures/blocks/coder_{name}.png")
+    for name, img in zip(("side", "top"), guide_textures()):
+        img.save(RP / f"textures/blocks/ai_guide_{name}.png")
+    egg_icon((200, 50, 50), (255, 210, 70), 1).save(RP / "textures/items/fighter_egg.png")
+    egg_icon((70, 160, 70), (79, 224, 255), 2).save(RP / "textures/items/resource_egg.png")
+    egg_icon((120, 200, 230), (255, 255, 255), 3).save(RP / "textures/items/ai_capsule.png")
 
     # Pack icon: four of the AI players' faces in a grid
     pack = Image.new("RGBA", (128, 128), (15, 20, 30, 255))

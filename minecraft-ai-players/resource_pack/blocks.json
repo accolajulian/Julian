@@ -1,4 +1,13 @@
 {
-  "format_version": [1, 1, 0],
-  "aip:ai_station": { "sound": "metal" }
+  "format_version": [
+    1,
+    1,
+    0
+  ],
+  "aip:coder": {
+    "sound": "metal"
+  },
+  "aip:ai_guide": {
+    "sound": "wood"
+  }
 }

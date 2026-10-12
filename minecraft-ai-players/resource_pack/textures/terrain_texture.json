@@ -4,8 +4,20 @@
   "padding": 8,
   "num_mip_levels": 4,
   "texture_data": {
-    "aip_station_side": { "textures": "textures/blocks/ai_station_side" },
-    "aip_station_top": { "textures": "textures/blocks/ai_station_top" },
-    "aip_station_bottom": { "textures": "textures/blocks/ai_station_bottom" }
+    "aip_coder_side": {
+      "textures": "textures/blocks/coder_side"
+    },
+    "aip_coder_top": {
+      "textures": "textures/blocks/coder_top"
+    },
+    "aip_coder_bottom": {
+      "textures": "textures/blocks/coder_bottom"
+    },
+    "aip_guide_side": {
+      "textures": "textures/blocks/ai_guide_side"
+    },
+    "aip_guide_top": {
+      "textures": "textures/blocks/ai_guide_top"
+    }
   }
 }

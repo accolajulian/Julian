@@ -15,13 +15,7 @@
         }
       },
       "aip:tamed": {
-        "minecraft:is_tamed": {},
-        "minecraft:behavior.follow_owner": {
-          "priority": 5,
-          "speed_multiplier": 1.2,
-          "start_distance": 6,
-          "stop_distance": 2
-        }
+        "minecraft:is_tamed": {}
       },
       "aip:skin_0": {
         "minecraft:variant": {
@@ -80,6 +74,30 @@
         "minecraft:behavior.owner_hurt_target": {
           "priority": 2
         },
+        "minecraft:health": {
+          "value": 60,
+          "max": 60
+        },
+        "minecraft:attack": {
+          "damage": 7
+        }
+      },
+      "aip:role_resource": {
+        "minecraft:health": {
+          "value": 30,
+          "max": 30
+        },
+        "minecraft:attack": {
+          "damage": 3
+        }
+      },
+      "aip:fighter_follow": {
+        "minecraft:behavior.follow_owner": {
+          "priority": 5,
+          "speed_multiplier": 1.2,
+          "start_distance": 6,
+          "stop_distance": 2
+        },
         "minecraft:behavior.nearest_attackable_target": {
           "priority": 4,
           "must_see": true,
@@ -105,22 +123,60 @@
               "max_dist": 12
             }
           ]
-        },
-        "minecraft:health": {
-          "value": 60,
-          "max": 60
-        },
-        "minecraft:attack": {
-          "damage": 7
         }
       },
-      "aip:role_resource": {
-        "minecraft:health": {
-          "value": 30,
-          "max": 30
-        },
-        "minecraft:attack": {
-          "damage": 3
+      "aip:fighter_guard": {
+        "minecraft:behavior.nearest_attackable_target": {
+          "priority": 4,
+          "must_see": false,
+          "reselect_targets": true,
+          "within_radius": 16.0,
+          "entity_types": [
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "is_family",
+                    "subject": "other",
+                    "value": "player"
+                  },
+                  {
+                    "test": "is_owner",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": true
+                  }
+                ]
+              },
+              "max_dist": 16
+            },
+            {
+              "filters": {
+                "all_of": [
+                  {
+                    "test": "is_family",
+                    "subject": "other",
+                    "value": "monster"
+                  },
+                  {
+                    "test": "is_family",
+                    "subject": "other",
+                    "operator": "!=",
+                    "value": "creeper"
+                  }
+                ]
+              },
+              "max_dist": 12
+            }
+          ]
+        }
+      },
+      "aip:resource_follow": {
+        "minecraft:behavior.follow_owner": {
+          "priority": 5,
+          "speed_multiplier": 1.2,
+          "start_distance": 6,
+          "stop_distance": 2
         }
       }
     },
@@ -139,22 +195,6 @@
       "minecraft:health": {
         "value": 40,
         "max": 40
-      },
-      "minecraft:healable": {
-        "items": [
-          {
-            "item": "minecraft:bread",
-            "heal_amount": 10
-          },
-          {
-            "item": "minecraft:cooked_beef",
-            "heal_amount": 16
-          },
-          {
-            "item": "minecraft:golden_apple",
-            "heal_amount": 40
-          }
-        ]
       },
       "minecraft:attack": {
         "damage": 5
@@ -202,10 +242,10 @@
         "priority": 3,
         "entity_types": {
           "filters": {
-            "test": "is_family",
+            "test": "is_owner",
             "subject": "other",
             "operator": "!=",
-            "value": "player"
+            "value": true
           }
         }
       },
@@ -228,6 +268,22 @@
           "event": "aip:on_tame",
           "target": "self"
         }
+      },
+      "minecraft:interact": {
+        "interactions": [
+          {
+            "on_interact": {
+              "filters": {
+                "test": "is_family",
+                "subject": "other",
+                "value": "player"
+              },
+              "event": "aip:interacted",
+              "target": "self"
+            },
+            "interact_text": "action.interact.aip_command"
+          }
+        ]
       }
     },
     "events": {
@@ -333,7 +389,39 @@
             "aip:role_resource"
           ]
         }
-      }
+      },
+      "aip:fighter_follow": {
+        "remove": {
+          "component_groups": [
+            "aip:fighter_guard"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "aip:fighter_follow"
+          ]
+        }
+      },
+      "aip:fighter_guard": {
+        "remove": {
+          "component_groups": [
+            "aip:fighter_follow"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "aip:fighter_guard"
+          ]
+        }
+      },
+      "aip:resource_follow": {
+        "add": {
+          "component_groups": [
+            "aip:resource_follow"
+          ]
+        }
+      },
+      "aip:interacted": {}
     }
   }
 }

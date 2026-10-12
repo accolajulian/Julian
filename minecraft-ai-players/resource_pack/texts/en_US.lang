@@ -1,2 +1,7 @@
 entity.aip:ai_player.name=AI Player
-tile.aip:ai_station.name=AI Recruitment Station
+entity.aip:ai_capsule.name=AI Egg
+tile.aip:coder.name=Coder
+tile.aip:ai_guide.name=AI Guide
+item.aip:fighter_egg=Fighter AI Egg
+item.aip:resource_egg=Resource AI Egg
+action.interact.aip_command=Command

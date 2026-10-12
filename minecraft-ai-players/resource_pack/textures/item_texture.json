@@ -1,0 +1,12 @@
+{
+  "resource_pack_name": "aip",
+  "texture_name": "atlas.items",
+  "texture_data": {
+    "aip_fighter_egg": {
+      "textures": "textures/items/fighter_egg"
+    },
+    "aip_resource_egg": {
+      "textures": "textures/items/resource_egg"
+    }
+  }
+}
