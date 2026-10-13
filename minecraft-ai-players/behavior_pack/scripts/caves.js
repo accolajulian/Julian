@@ -81,7 +81,7 @@ export function isCavePlacing(playerId) {
  */
 export function startCavePlacing(player, key, onPick) {
   placing.set(player.id, { key, until: Date.now() + PLACING_MS, preview: undefined, onPick });
-  player.sendMessage("§eAim at a cave or ravine. Tap Place (or left click) to send it there, sneak to cancel.");
+  player.sendMessage("§eAim at a cave or ravine. Tap Place (or left click) to send it there, crouch to cancel.");
 }
 
 /** @param {import("@minecraft/server").Player} player @param {string} [why] */
@@ -139,7 +139,7 @@ function laserColors() {
 /** Draws the laser and a ring where the AI would stand (only the aiming player sees it). @param {import("@minecraft/server").Player} player @param {CavePreview} pv */
 function draw(player, pv) {
   player.onScreenDisplay.setActionBar(
-    pv.valid ? `§aCave spot (${pv.reason}) §7| Tap Place: send it | Sneak: cancel` : `§c${pv.reason} §7| Sneak: cancel`
+    pv.valid ? `§aCave spot (${pv.reason}) §7| Tap Place: send it | Crouch: cancel` : `§c${pv.reason} §7| Crouch: cancel`
   );
   if (!pv.spot) return;
   const c = pv.valid ? laserColors().good : laserColors().bad;

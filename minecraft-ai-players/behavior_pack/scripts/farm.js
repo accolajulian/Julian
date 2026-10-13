@@ -2,7 +2,7 @@
 //
 // 1. Placing: the player picks "Sugar cane farm" and looks at water. A colored outline shows the finished
 //    farm (the 22-long side points away from the player). It can only go in water. Left click to place
-//    it, sneak to cancel.
+//    it, crouch to cancel.
 // 2. Collecting: the AI gathers logs, sand and sugar cane (it leaves the bottom of each sugar cane so it
 //    grows back). The player can also hand it materials from its menu.
 // 3. Building: it crafts the logs into planks and a boat, then, step by step:
@@ -723,7 +723,7 @@ export function isPlacing(playerId) {
 /** @param {import("@minecraft/server").Player} player @param {string} key */
 export function startPlacing(player, key) {
   placing.set(player.id, { key, until: Date.now() + PLACING_MS, asking: false, preview: undefined });
-  player.sendMessage("§eLook at water. Tap Place (or left click) to place it, sneak to cancel.");
+  player.sendMessage("§eLook at water. Tap Place (or left click) to place it, crouch to cancel.");
 }
 
 /** @param {import("@minecraft/server").Player} player @param {string} [why] */
@@ -802,8 +802,8 @@ function outlineColors() {
 function draw(player, pv) {
   player.onScreenDisplay.setActionBar(
     pv.valid
-      ? "§aTap Place (or left click): place §7| Sneak: cancel"
-      : `§c${pv.reason} §7| Sneak: cancel`
+      ? "§aTap Place (or left click): place §7| Crouch: cancel"
+      : `§c${pv.reason} §7| Crouch: cancel`
   );
   const g = pv.spot;
   if (!g) return;
