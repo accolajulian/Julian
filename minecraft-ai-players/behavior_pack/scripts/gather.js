@@ -14,6 +14,7 @@ import { system, BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER, FOCUS_TYPES } from "./gather_data.js";
 import { FARM_FOCUS, farmKinds, farmCollect } from "./farm.js";
 import { createScoutState, scout } from "./scout.js";
+import { addXp, countCollected, miningFactor, moveFactor, levelOf, blockXp } from "./levels.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
   inventoryOf,
@@ -72,6 +73,7 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
  * @property {boolean} walking  Walking to a block (see `walkers`).
  * @property {boolean} sprint  Jump sprint (collecting for a sugar cane farm).
  * @property {import("./scout.js").ScoutState} scout  Looking around the map for the best spot.
+ * @property {number} speed  Walking speed multiplier from its level.
  */
 
 /**
@@ -88,7 +90,7 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
 export function createGatherState() {
   return {
     mining: undefined, tree: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(),
-    walking: false, sprint: false, scout: createScoutState(),
+    walking: false, sprint: false, scout: createScoutState(), speed: 1,
   };
 }
 
@@ -216,6 +218,7 @@ export function gather(ai, ownerId, record, state, owner) {
   const dim = ai.dimension;
   const farming = record.focus === FARM_FOCUS;
   state.sprint = farming;
+  state.speed = moveFactor(levelOf(record));
   const m = state.mining;
   if (m) {
     const block = dim.getBlock(m);
@@ -418,7 +421,7 @@ function startChop(ai, record, p, reach, state) {
   const id = /** @type {string} */ (ai.dimension.getBlock(p)?.typeId);
   const info = GATHER[id];
   const tool = toolFor(record, info) ?? { slot: -1, speed: 1 };
-  const ticks = Math.min(400, Math.max(4, Math.ceil((info.hardness * 30) / tool.speed)));
+  const ticks = Math.min(400, Math.max(4, Math.ceil(((info.hardness * 30) / tool.speed) * miningFactor(levelOf(record)))));
   state.mining = { ...p, id, slot: tool.slot, until: system.currentTick + ticks, reach };
   face(ai, center(p));
   return tool.slot;
@@ -519,7 +522,7 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
       state.avoid.set(key, now + 120000);
       continue;
     }
-    const ticks = Math.min(400, Math.max(4, Math.ceil((info.hardness * 30) / tool.speed)));
+    const ticks = Math.min(400, Math.max(4, Math.ceil(((info.hardness * 30) / tool.speed) * miningFactor(levelOf(record)))));
     best = { location: p, id, slot: tool.slot, ticks, d };
   }
 
@@ -573,6 +576,9 @@ function finishMining(ai, ownerId, record, state, m, owner) {
   const amount = (info.min !== undefined && info.max !== undefined
     ? info.min + Math.floor(Math.random() * (info.max - info.min + 1))
     : 1) + extra;
+  // XP, and a line in its 20-minute report.
+  addXp(record, blockXp(info.drop) * (1 + extra));
+  countCollected(record, info.drop, amount);
   // Collecting for a sugar cane farm: it keeps it for the farm.
   if (farmCollect(record, info.drop, amount)) {
     wearAfterMining(ai, ownerId, record, m.slot);
@@ -765,7 +771,7 @@ function step(id, w) {
     }
   }
   const v = ai.getVelocity();
-  const speed = Math.min(w.state.sprint ? SPRINT_SPEED : WALK_SPEED, d);
+  const speed = Math.min((w.state.sprint ? SPRINT_SPEED : WALK_SPEED) * w.state.speed, d);
   ai.applyImpulse({ x: ux * speed - v.x, y: jump ? JUMP - Math.max(0, v.y) : 0, z: uz * speed - v.z });
 }
 
@@ -805,7 +811,8 @@ function travel(id, w) {
   }
   const v = ai.getVelocity();
   const jump = ai.isOnGround; // jump sprinting: jumps again every time it lands
-  ai.applyImpulse({ x: ux * SPRINT_SPEED - v.x, y: jump ? JUMP - Math.max(0, v.y) : 0, z: uz * SPRINT_SPEED - v.z });
+  const sprint = SPRINT_SPEED * w.state.speed;
+  ai.applyImpulse({ x: ux * sprint - v.x, y: jump ? JUMP - Math.max(0, v.y) : 0, z: uz * sprint - v.z });
 }
 
 /**

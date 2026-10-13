@@ -7,6 +7,7 @@
 import { BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER } from "./gather_data.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
+import { addXp, countCollected, blockXp } from "./levels.js";
 import { inventoryOf, wearTool, enchantLevel, itemName, isValuable, addValuables, addBlocks, isPlaceableBlock } from "./inventory.js";
 
 const TARGETS = {
@@ -177,7 +178,8 @@ function breakBlock(ai, ownerId, record, p, slot) {
       if (owner && owner.dimension.id === dim.id && dist(owner.location, ai.location) <= 32) giveItem(owner, stack);
       else dim.spawnItem(stack, center(p));
     }
-    if (isValuable(info.drop)) findPlayer(ownerId)?.sendMessage(`§b${record.name} mined ${amount} ${itemName(info.drop)}!`);
+    addXp(record, blockXp(info.drop));
+    countCollected(record, info.drop, amount); // (it's in the 20-minute report)
   }
 
   const toolId = inventoryOf(record).tools[slot]?.id;

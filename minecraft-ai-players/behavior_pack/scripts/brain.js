@@ -58,6 +58,7 @@ import { bridgeTowards } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from "./gather.js";
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 import { keepLoaded } from "./scout.js";
+import { moveFactor, damageBonus, levelOf } from "./levels.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
 const THINK_TICKS = 10; // the brain thinks twice a second
@@ -157,6 +158,8 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {boolean} upgraded  Fighter's final (netherite) upgrade: the 30-block sequence and volley.
  * @property {boolean} lavaProof  Lava and fire can't hurt it.
  * @property {boolean} resourcePerks  Resource AI upgrade perks: strip mining, no fall damage.
+ * @property {number} level  The level its walking speed was last set for (-1: set it again).
+ * @property {number} damageBonus  Extra damage from its level.
  * @property {string | undefined} modeEvent  Resource AI: follow/wander/stay event applied.
  * @property {import("./stripmine.js").StripState} strip
  * @property {Map<string, { hit: boolean, jumped: boolean }>} sequences  Upgraded Fighter: enemy players within 30 blocks.
@@ -363,6 +366,8 @@ world.beforeEvents.entityHurt.subscribe((event) => {
   if (brain?.equipped && event.damageSource.cause === EntityDamageCause.entityAttack) {
     event.damage += Math.max(0, (TOOL_DAMAGE[brain.equipped] ?? 0) - 3);
   }
+  // Stronger with levels: +1 damage every 10 levels.
+  if (brain && event.damageSource.cause === EntityDamageCause.entityAttack) event.damage += brain.damageBonus;
 });
 
 // Upgraded Fighter: its first hit on an enemy player in a sequence knocks them back about 7 blocks.
@@ -554,6 +559,14 @@ function think(ai, ownerId, role, record, brain) {
   brain.lavaProof = lavaProof(record);
   brain.resourcePerks = resourcePerks(record);
   brain.upgraded = fighterPerks(record);
+
+  // ---- Its level: a bit faster for every level (sprinting uses its own speed), and stronger.
+  brain.damageBonus = damageBonus(levelOf(record));
+  if (brain.level !== levelOf(record) && !brain.sprinting) {
+    const movement = ai.getComponent("minecraft:movement");
+    movement?.setCurrentValue(movement.defaultValue * moveFactor(levelOf(record)));
+    brain.level = levelOf(record);
+  }
 
   // ---- Working far from every player (gathering, building, guarding): keep its land loaded so it
   // doesn't freeze. One ticking area per AI, and each player only has one AI.
@@ -864,6 +877,7 @@ function stopSprint(ai, brain) {
   if (!brain.sprinting) return;
   brain.sprinting = false;
   ai.getComponent("minecraft:movement")?.resetToDefaultValue();
+  brain.level = -1; // the next think puts back its level speed
   ai.removeEffect("jump_boost");
 }
 
@@ -1169,6 +1183,8 @@ function ensureBrain(ai, role) {
     upgraded: false,
     lavaProof: false,
     resourcePerks: false,
+    level: -1,
+    damageBonus: 0,
     modeEvent: undefined,
     strip: createStripState(),
     sequences: new Map(),

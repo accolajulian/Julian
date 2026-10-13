@@ -23,6 +23,7 @@ import { world, system, ItemStack, MolangVariableMap, EntitySwingSource } from "
 import { MessageFormData } from "@minecraft/server-ui";
 import { GATHER } from "./gather_data.js";
 import { getAi, saveRecord, findPlayer, giveItem, countItem, takeItem } from "./data.js";
+import { addXp, notify, FARM_XP } from "./levels.js";
 
 export const FARM_FOCUS = "Sugar cane farm";
 const WIDTH = 15;
@@ -597,7 +598,9 @@ function nextPhase(ai, ownerId, record) {
     record.farm = undefined;
     record.focus = "Trees";
     record.mode = "follow";
-    owner?.sendMessage(`§a§l${record.name} finished your sugar cane farm!§r${docked ? " §fIts boat is parked next to it for you." : ""}`);
+    // Told right away (or as soon as the owner is back online).
+    notify(record, `§a§l${record.name} finished your sugar cane farm!§r${docked ? " §fIts boat is parked next to it for you." : ""}`);
+    addXp(record, FARM_XP);
   }
   saveRecord(ownerId, "resource", record);
 }

@@ -9,6 +9,7 @@
 // The AI's own 10 chicken, its torches and its water bucket are shown on info labels, so they can't be taken.
 import { world, system, ItemStack } from "@minecraft/server";
 import { AI_ENTITY, getAi, saveRecord, findPlayer, knownAis, giveItem } from "./data.js";
+import { levelText } from "./levels.js";
 import {
   inventoryOf,
   toolFromStack,
@@ -105,7 +106,7 @@ function layout(role, evolved = false) {
       ...tools, ...arrows, { kind: "shield" },
       {
         kind: "info",
-        text: (r) => `${r.name} (Fighter AI${r.upgraded ? ", fully upgraded" : ""}) - AI Chest: ${stashCount(r)}`,
+        text: (r) => `${r.name} (Fighter AI${r.upgraded ? " Max" : ""}) - ${levelText(r)} - AI Chest: ${stashCount(r)}`,
         lore: ["§7Tools are used in order 1, 2, 3: weapons for", "§7fighting, pickaxes/axes/shovels for gathering.", "§7Left click it for commands."],
       },
       torchInfo,
@@ -123,7 +124,7 @@ function layout(role, evolved = false) {
       torchInfo,
       {
         kind: "info",
-        text: (r) => `${r.name} (Resource AI)${r.upgraded ? " - Upgraded" : ""} - AI Chest: ${stashCount(r)}`,
+        text: (r) => `${r.name} (Resource AI${r.upgraded ? "+" : ""}) - ${levelText(r)} - AI Chest: ${stashCount(r)}`,
         lore: ["§7Tools are used in order 1, 2, 3.", "§7When its valuables fill up, half goes in its", "§7AI Chest. Unlocked by the upgrade."],
       },
       { kind: "info", text: (r) => (r.mode === "wander" ? `Wandering: ${r.focus}` : "Following you"), lore: ["§7Left click it to change."] },
@@ -138,7 +139,7 @@ function layout(role, evolved = false) {
   return [
     // Row 1: tools 1-2-3 (weapons), arrows, shield, info
     ...tools, ...arrows, { kind: "shield" },
-    { kind: "info", text: (r) => `${r.name} (Fighter AI)`, lore: ["§7Tools are used in order 1, 2, 3.", "§7When one breaks it uses the next."] },
+    { kind: "info", text: (r) => `${r.name} (Fighter AI) - ${levelText(r)}`, lore: ["§7Tools are used in order 1, 2, 3.", "§7When one breaks it uses the next."] },
     { kind: "info", text: () => "Weapons go in the tool slots", lore: ["§7Swords, axes, trident, mace, bow, crossbow."] },
     { kind: "info", text: () => "Left click it for commands", lore: ["§7Teleport, attack, follow, guard, settings."] },
     // Row 2: armor, blocks, food, first valuable

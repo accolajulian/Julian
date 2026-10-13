@@ -33,6 +33,7 @@ import {
   hasBoughtAny,
 } from "./data.js";
 import { releaseLoaded } from "./scout.js";
+import { levelText } from "./levels.js"; // (also starts the 20-minute reports)
 import { commandAttack, toolsChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
 import "./chest.js"; // Computer Chest (upgraded AIs' inventories from anywhere)
@@ -1102,7 +1103,9 @@ async function showCommands(player, key) {
   actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
   actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
 
-  const form = new ActionFormData().title(`${ROLES[role].color}${record.name}§r (${STAGE_NAMES[stageOf(record)]})`).body(body);
+  const form = new ActionFormData()
+    .title(`${ROLES[role].color}${record.name}§r (${STAGE_NAMES[stageOf(record)]})`)
+    .body(`§a${levelText(record)}§r\n${body}`);
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;

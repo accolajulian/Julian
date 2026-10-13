@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.22.0)
+## What it does (v1.23.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -55,6 +55,16 @@ When an enemy player comes within 30 blocks, the upgraded Fighter gets each of t
 
 When the player leaves the 30 blocks and comes back, the sequence starts again. Faster arrows do the same
 damage as a normal full-power arrow.
+
+### Levels, XP and reports (levels.js)
+- The AI earns XP: 1 per block mined/chopped/dug (iron/copper/quartz 2, redstone/lapis 3, gold 4, diamond/emerald 8,
+  ancient debris 10), 5 per mob it defeats, 25 per player, 50 for finishing a sugar cane farm.
+- Levels 0-50 (level n needs 20 + 10n XP). Every level: +1% walking speed (up to +25%), 1% faster mining (up to 30%);
+  +1 damage every 10 levels.
+- **Every 5 levels it shares the XP it earned over those levels with its owner** (normal player XP).
+- **Every 20 minutes** its owner gets a report: *Max (last 20 min) collected: 12 raw iron, 30 oak log | defeated: 3 zombie | +54 XP, Level 4 (12/60 XP)*. Then it starts counting again.
+- Finishing a sugar cane farm is announced the moment it's done.
+- Messages and shared XP for an owner who's offline are kept and given when they're back.
 
 ### Computer Chest (chest.js)
 Craft: chest + redstone + glass pane. The **player** places it (AIs never place one). It works like an **ender chest**:

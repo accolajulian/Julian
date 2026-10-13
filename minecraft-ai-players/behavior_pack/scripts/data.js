@@ -39,6 +39,12 @@ const MAX_ENEMIES = 40;
  * @property {number} [torches]  Resource AI: torches (refill to a stack when the last is placed).
  * @property {boolean} [loot]  Fighter: break tombstones and take the loot (default on).
  * @property {({ id: string, count: number } | null)[]} [stash]  Resource AI: its AI Chest (unlocked by the upgrade).
+ * @property {number} [level]  0-50, from XP (see levels.js)
+ * @property {number} [xp]  XP towards the next level
+ * @property {number} [xpBank]  XP earned since it last shared with its owner (every 5 levels)
+ * @property {number} [pendingXp]  XP to give its owner when they're online
+ * @property {import("./levels.js").Report} [report]  What it did since the last 20-minute report
+ * @property {string[]} [notes]  Messages for its owner while they're offline
  * @property {import("./farm.js").FarmPlan} [farm]  Resource AI: the sugar cane farm it's collecting for / building.
  */
 /**
