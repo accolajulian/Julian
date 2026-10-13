@@ -9,9 +9,10 @@
 //    - rides its boat over the area and lays a floor of planks 1 block below the water surface,
 //    - wades along the water channels and puts 1 sand on each plank of the 6 lines,
 //    - plants 1 sugar cane on each sand.
-//    If after 20 minutes it still doesn't have all the sugar cane (but has the logs and sand), it builds
-//    anyway, plants what it has, and each time one grows it harvests the new growth (leaving the bottom)
-//    and plants it on the next empty sand, until every sand has sugar cane.
+//    Before collecting, it puts a warp point (a lodestone) on the closest land next to the farm.
+//    20 minutes after the farm was placed it warps back there and is given whatever it's still
+//    missing, so the farm always gets finished. (If sugar cane ever runs short while planting, it
+//    harvests new growth on the farm, leaving the bottom, and plants it on the next empty sand.)
 //
 // The farm is 15 wide and 22 long:
 // - floor: 15 x 22 = 330 planks, 1 block below the water surface (replacing whatever is there),
@@ -44,7 +45,9 @@ const PLACE_PER_THINK = 2; // blocks placed per think (4 a second)
 const SPEED = 0.15; // blocks per tick while building
 const PLACING_MS = 180000; // placement mode ends after 3 minutes
 const ONLY_WATER = "The sugar cane farm can only be placed in water";
-const CANE_WAIT_TICKS = 20 * 60 * 20; // 20 minutes (game time): then it plants the sugar cane it has
+const CANE_WAIT_TICKS = 20 * 60 * 20; // 20 minutes (game time): then it's given what it's missing
+const WARP_BLOCK = "minecraft:lodestone";
+const WARP_SEARCH = 40; // looks for land this far from the farm
 
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
 /**
@@ -67,6 +70,7 @@ const CANE_WAIT_TICKS = 20 * 60 * 20; // 20 minutes (game time): then it plants 
  * @property {{ planks: number, sand: number, cane: number }} left  blocks still to place
  * @property {number} [startedAt]  game time the farm was placed
  * @property {boolean} [growing]  short of sugar cane: replanting what grows
+ * @property {Vector3} [warp]  its warp point (a lodestone on the closest land)
  */
 /** @typedef {Pick<FarmPlan, "dim" | "ox" | "oy" | "oz" | "lx" | "lz" | "wx" | "wz">} Spot */
 
@@ -191,18 +195,32 @@ export function farmCollect(record, drop, amount) {
 }
 
 /**
- * Everything collected: craft the planks and the boat and start building.
- * @param {string} ownerId @param {import("./data.js").AiRecord} record
+ * Everything collected (or 20 minutes are up): craft the planks and the boat and start building.
+ * @param {import("@minecraft/server").Entity} ai @param {string} ownerId @param {import("./data.js").AiRecord} record
  */
-export function checkCollected(ownerId, record) {
+export function checkCollected(ai, ownerId, record) {
   const plan = collecting(record);
   if (!plan) return;
   if (plan.startedAt === undefined) plan.startedAt = world.getAbsoluteTime();
   const need = farmNeeds(plan);
-  // After 20 minutes it doesn't wait for all the sugar cane: it plants what it has and replants as it grows.
-  const waitedLongEnough = world.getAbsoluteTime() - plan.startedAt >= CANE_WAIT_TICKS && plan.cane > 0;
-  if (need.logs + need.sand > 0 || (need.cane > 0 && !waitedLongEnough)) return;
-  plan.growing = need.cane > 0;
+  const missing = need.logs + need.sand + need.cane;
+  const timeUp = world.getAbsoluteTime() - plan.startedAt >= CANE_WAIT_TICKS;
+  if (missing > 0 && !timeUp) return;
+  if (missing > 0) {
+    // 20 minutes are up: it's given the rest and warps back to the farm.
+    if (need.logs > 0) plan.logs["minecraft:oak_log"] = (plan.logs["minecraft:oak_log"] ?? 0) + need.logs;
+    plan.sand += need.sand;
+    plan.cane += need.cane;
+    const given = [need.logs ? `${need.logs} logs` : "", need.sand ? `${need.sand} sand` : "", need.cane ? `${need.cane} sugar cane` : ""]
+      .filter((t) => t)
+      .join(", ");
+    findPlayer(ownerId)?.sendMessage(`§b20 minutes are up: ${record.name} was given the ${given} it still needed.`);
+  }
+  if (plan.warp && ai.dimension.id === plan.dim) {
+    ai.teleport({ x: plan.warp.x + 0.5, y: plan.warp.y + 1, z: plan.warp.z + 0.5 });
+    ai.dimension.playSound("mob.endermen.portal", ai.location);
+  }
+  plan.growing = false;
   let crafted = 0;
   for (const [id, n] of Object.entries(plan.logs)) {
     plan.planks[plankOf(id)] = (plan.planks[plankOf(id)] ?? 0) + n * 4;
@@ -218,10 +236,7 @@ export function checkCollected(ownerId, record) {
   findPlayer(ownerId)?.sendMessage(
     `§a${record.name} has everything for the sugar cane farm!` +
       (crafted > 0 ? ` §fIt crafted ${crafted} planks and a boat.` : "") +
-      " §fNow it's building: planks first, then sand, then sugar cane." +
-      (plan.growing
-        ? ` §e(It only found ${plan.cane} of ${plan.left.cane} sugar cane in 20 minutes, so it'll plant those and replant the new growth until every line is full.)`
-        : "")
+      " §fNow it's building: planks first, then sand, then sugar cane."
   );
 }
 
@@ -308,7 +323,7 @@ export function farmProgress(plan) {
   if (plan.phase === "collect") {
     const need = farmNeeds(plan);
     const minutes = plan.startedAt === undefined ? 20 : Math.max(0, Math.ceil((CANE_WAIT_TICKS - (world.getAbsoluteTime() - plan.startedAt)) / 1200));
-    const wait = need.cane > 0 && minutes > 0 ? ` (plants what it has in ${minutes} min)` : "";
+    const wait = minutes > 0 ? ` (gets the rest in ${minutes} min)` : "";
     return `Collecting: ${need.logs} logs, ${need.sand} sand, ${need.cane} sugar cane to go${wait}`;
   }
   const names = { planks: "laying the plank floor", sand: "adding the sand", cane: "planting the sugar cane" };
@@ -406,6 +421,68 @@ export function buildFarm(ai, ownerId, record) {
   const r = ROUTE[b.cells[0].idx];
   const target = at(plan, r.w, r.l, 0);
   moveTo(ai, { x: target.x + 0.5, y: target.y, z: target.z + 0.5 }, plan.boatId);
+}
+
+/**
+ * Puts a warp point (a lodestone) on the closest land next to the farm. Returns where, or undefined.
+ * @param {import("@minecraft/server").Dimension} dim @param {Spot} g
+ * @returns {Vector3 | undefined}
+ */
+function placeWarp(dim, g) {
+  const corners = [at(g, 0, 0, 0), at(g, WIDTH - 1, LENGTH - 1, 0)];
+  const minX = Math.min(corners[0].x, corners[1].x);
+  const maxX = Math.max(corners[0].x, corners[1].x);
+  const minZ = Math.min(corners[0].z, corners[1].z);
+  const maxZ = Math.max(corners[0].z, corners[1].z);
+  /** @type {{ p: Vector3, d: number } | undefined} */
+  let best;
+  // Ring by ring outward from the farm's edge, so the first land found is the closest.
+  for (let ring = 1; ring <= WARP_SEARCH && !best; ring++) {
+    for (let x = minX - ring; x <= maxX + ring; x++) {
+      for (let z = minZ - ring; z <= maxZ + ring; z++) {
+        const onRing = x === minX - ring || x === maxX + ring || z === minZ - ring || z === maxZ + ring;
+        if (!onRing) continue;
+        const dx = x < minX ? minX - x : x > maxX ? x - maxX : 0;
+        const dz = z < minZ ? minZ - z : z > maxZ ? z - maxZ : 0;
+        const d = Math.hypot(dx, dz);
+        if (best && d >= best.d) continue;
+        const spot = landAt(dim, x, z, g.oy);
+        if (spot) best = { p: spot, d };
+      }
+    }
+  }
+  if (!best) return undefined;
+  dim.setBlockType(best.p, WARP_BLOCK);
+  dim.playSound("random.orb", best.p);
+  return best.p;
+}
+
+/**
+ * Land at (or a little above) the water level here: a solid block with room on top. Returns the spot on top.
+ * @param {import("@minecraft/server").Dimension} dim @param {number} x @param {number} z @param {number} waterY
+ */
+function landAt(dim, x, z, waterY) {
+  for (let y = waterY; y <= waterY + 3; y++) {
+    const ground = dim.getBlock({ x, y, z });
+    const above = dim.getBlock({ x, y: y + 1, z });
+    const head = dim.getBlock({ x, y: y + 2, z });
+    if (!ground || !above || !head) return undefined;
+    if (ground.isAir || ground.isLiquid || isWater(ground) || /leaves|log/.test(ground.typeId)) continue;
+    if (above.isAir && head.isAir) return { x, y: y + 1, z };
+  }
+  return undefined;
+}
+
+/** Takes its warp point away (the farm is done or cancelled). @param {FarmPlan} plan */
+export function removeWarp(plan) {
+  if (!plan.warp) return;
+  try {
+    const dim = world.getDimension(plan.dim);
+    if (dim.getBlock(plan.warp)?.typeId === WARP_BLOCK) dim.setBlockType(plan.warp, "minecraft:air");
+  } catch {
+    // unloaded: it stays
+  }
+  plan.warp = undefined;
 }
 
 /**
@@ -516,6 +593,7 @@ function nextPhase(ai, ownerId, record) {
       Math.hypot(owner.location.x - ai.location.x, owner.location.z - ai.location.z) <= 32 ? owner : undefined;
     plan.boat = !docked; // returnFarmMaterials gives the boat item if it couldn't be parked
     returnFarmMaterials(record, close, ai);
+    removeWarp(plan);
     record.farm = undefined;
     record.focus = "Trees";
     record.mode = "follow";
@@ -748,6 +826,8 @@ async function confirmPlace(player, s) {
   // Moving a farm it's still collecting for keeps what it collected.
   const keep = latest.farm?.phase === "collect" ? latest.farm : undefined;
   if (latest.farm && !keep) returnFarmMaterials(latest, player, undefined);
+  if (latest.farm) removeWarp(latest.farm);
+  const warp = placeWarp(player.dimension, pv.spot);
   latest.farm = {
     ...pv.spot,
     phase: "collect",
@@ -758,9 +838,15 @@ async function confirmPlace(player, s) {
     boat: keep?.boat ?? false,
     left: { planks: FLOOR_PLANKS, sand: LINE_BLOCKS, cane: LINE_BLOCKS },
     startedAt: keep?.startedAt ?? world.getAbsoluteTime(),
+    warp,
   };
   latest.focus = FARM_FOCUS;
   latest.mode = "wander";
   saveRecord(player.id, "resource", latest);
-  stopPlacing(player, `§a${latest.name} is collecting materials for your sugar cane farm. §7Left click it to check progress or hand it materials.`);
+  stopPlacing(
+    player,
+    `§a${latest.name} is collecting materials for your sugar cane farm.` +
+      (warp ? ` §fIts warp point (lodestone) is at ${warp.x}, ${warp.y}, ${warp.z}.` : " §7(No land close to the farm for a warp point.)") +
+      " §7Left click it to check progress or hand it materials."
+  );
 }

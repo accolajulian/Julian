@@ -605,7 +605,7 @@ function think(ai, ownerId, role, record, brain) {
         buildFarm(ai, ownerId, record);
       } else {
         slot = gather(ai, ownerId, record, brain.gather, undefined);
-        if (record.focus === FARM_FOCUS) checkCollected(ownerId, record);
+        if (record.focus === FARM_FOCUS) checkCollected(ai, ownerId, record);
       }
     }
     // Working on a farm far from every player: keep its land loaded so it doesn't freeze.

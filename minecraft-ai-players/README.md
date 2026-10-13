@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.19.0)
+## What it does (v1.20.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -110,7 +110,7 @@ from its block slots and tells you when it runs out.
 - **Trees:** chops whole trees (see below). **Caves:** finds ores in caves and ravines and mines them, placing a torch about every 10 blocks.
 - **Sugar cane farm:** pick it and look at water. A colored outline shows the finished farm (planks edge 1 block under the water, sand lines, sugar cane); the 22-long side points away from you. It can only go in water (the action bar says so in red). Left click to place, sneak to cancel. The AI then collects **84 logs** (335 planks: 330 floor + 5 boat), **108 sand** and **108 sugar cane** (leaving the bottom of each cane to regrow; you can also hand it materials from its menu), crafts the planks and a boat, rides the boat to lay a 15 x 22 plank floor 1 block below the water surface (replacing anything there), then wades along the channels putting sand on the 6 lines of 18 and planting sugar cane on each. When it's done, its boat is parked next to the farm.
   - While collecting it **jump sprints** and uses **map awareness**: it scans all loaded land around it (48 blocks) for the best spot (most of what it still needs, closest first). If there's nothing loaded nearby it briefly loads land further out with ticking areas (rings at 96/160/224 blocks), scans it, and jump sprints there, hopping over walls, cliffs and lava. Far from every player it keeps its own land loaded so it doesn't freeze.
-  - **20-minute rule:** if it still doesn't have all 108 sugar cane 20 minutes (game time) after the farm was placed, it builds anyway, plants what it has, and every time one grows it harvests the new growth (leaving the bottom) and plants it on the next empty sand, until all 6 lines are full.
+  - **Warp point & 20-minute rule:** before collecting, it puts a warp point (a lodestone) on the closest land next to the farm. 20 minutes (game time) after the farm was placed, if it's still missing anything it's given the rest, warps back to its warp point and builds the full farm. The lodestone is removed when the farm is finished or cancelled.
 - **AI Chest:** it always carries its own AI Chest (never placed). Whenever its 10 valuables slots fill up, half of each slot goes into the AI Chest (27 slots), like a starting-out tax. It's locked until the AI is upgraded at the Coder, so by then there's usually a lot saved up. Once upgraded: left click the AI → *AI Chest* → *Take everything*, or pick *<name>'s AI Chest* on a Computer Chest and take items out. Deleting a not-yet-upgraded AI loses what's in its locked AI Chest.
 - Carries an infinite water bucket (shown in its inventory, can't be taken). To get down into a ravine it pours water over the edge and swims down; to get back up a wall it pours water above itself and swims up. It scoops the water back up afterwards. (Not in the Nether.)
 - Only chops real trees (logs with leaves above), so it won't take apart log houses.

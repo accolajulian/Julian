@@ -32,7 +32,7 @@ import {
 import { commandAttack, toolsChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
 import "./chest.js"; // Computer Chest (upgraded AIs' inventories from anywhere)
-import { FARM_FOCUS, startPlacing, isPlacing, farmProgress, giveFarmMaterials, returnFarmMaterials } from "./farm.js";
+import { FARM_FOCUS, startPlacing, isPlacing, farmProgress, giveFarmMaterials, returnFarmMaterials, removeWarp } from "./farm.js";
 import {
   FOOD_ITEM,
   FOOD_RESERVED,
@@ -1292,6 +1292,7 @@ async function showFarm(player, key) {
       const r = mine(player, key);
       if (!r?.farm) return;
       returnFarmMaterials(r, player, r.id ? world.getEntity(r.id) : undefined);
+      removeWarp(r.farm);
       r.farm = undefined;
       r.focus = "Trees";
       saveRecord(player.id, "resource", r);
