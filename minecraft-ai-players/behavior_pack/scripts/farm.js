@@ -9,6 +9,9 @@
 //    - rides its boat over the area and lays a floor of planks 1 block below the water surface,
 //    - wades along the water channels and puts 1 sand on each plank of the 6 lines,
 //    - plants 1 sugar cane on each sand.
+//    If after 20 minutes it still doesn't have all the sugar cane (but has the logs and sand), it builds
+//    anyway, plants what it has, and each time one grows it harvests the new growth (leaving the bottom)
+//    and plants it on the next empty sand, until every sand has sugar cane.
 //
 // The farm is 15 wide and 22 long:
 // - floor: 15 x 22 = 330 planks, 1 block below the water surface (replacing whatever is there),
@@ -41,6 +44,7 @@ const PLACE_PER_THINK = 2; // blocks placed per think (4 a second)
 const SPEED = 0.15; // blocks per tick while building
 const PLACING_MS = 180000; // placement mode ends after 3 minutes
 const ONLY_WATER = "The sugar cane farm can only be placed in water";
+const CANE_WAIT_TICKS = 20 * 60 * 20; // 20 minutes (game time): then it plants the sugar cane it has
 
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
 /**
@@ -61,6 +65,8 @@ const ONLY_WATER = "The sugar cane farm can only be placed in water";
  * @property {boolean} boat  crafted its boat
  * @property {string} [boatId]  the boat in the water
  * @property {{ planks: number, sand: number, cane: number }} left  blocks still to place
+ * @property {number} [startedAt]  game time the farm was placed
+ * @property {boolean} [growing]  short of sugar cane: replanting what grows
  */
 /** @typedef {Pick<FarmPlan, "dim" | "ox" | "oy" | "oz" | "lx" | "lz" | "wx" | "wz">} Spot */
 
@@ -191,8 +197,12 @@ export function farmCollect(record, drop, amount) {
 export function checkCollected(ownerId, record) {
   const plan = collecting(record);
   if (!plan) return;
+  if (plan.startedAt === undefined) plan.startedAt = world.getAbsoluteTime();
   const need = farmNeeds(plan);
-  if (need.logs + need.sand + need.cane > 0) return;
+  // After 20 minutes it doesn't wait for all the sugar cane: it plants what it has and replants as it grows.
+  const waitedLongEnough = world.getAbsoluteTime() - plan.startedAt >= CANE_WAIT_TICKS && plan.cane > 0;
+  if (need.logs + need.sand > 0 || (need.cane > 0 && !waitedLongEnough)) return;
+  plan.growing = need.cane > 0;
   let crafted = 0;
   for (const [id, n] of Object.entries(plan.logs)) {
     plan.planks[plankOf(id)] = (plan.planks[plankOf(id)] ?? 0) + n * 4;
@@ -208,7 +218,10 @@ export function checkCollected(ownerId, record) {
   findPlayer(ownerId)?.sendMessage(
     `§a${record.name} has everything for the sugar cane farm!` +
       (crafted > 0 ? ` §fIt crafted ${crafted} planks and a boat.` : "") +
-      " §fNow it's building: planks first, then sand, then sugar cane."
+      " §fNow it's building: planks first, then sand, then sugar cane." +
+      (plan.growing
+        ? ` §e(It only found ${plan.cane} of ${plan.left.cane} sugar cane in 20 minutes, so it'll plant those and replant the new growth until every line is full.)`
+        : "")
   );
 }
 
@@ -294,10 +307,13 @@ export function returnFarmMaterials(record, player, ai) {
 export function farmProgress(plan) {
   if (plan.phase === "collect") {
     const need = farmNeeds(plan);
-    return `Collecting: ${need.logs} logs, ${need.sand} sand, ${need.cane} sugar cane to go`;
+    const minutes = plan.startedAt === undefined ? 20 : Math.max(0, Math.ceil((CANE_WAIT_TICKS - (world.getAbsoluteTime() - plan.startedAt)) / 1200));
+    const wait = need.cane > 0 && minutes > 0 ? ` (plants what it has in ${minutes} min)` : "";
+    return `Collecting: ${need.logs} logs, ${need.sand} sand, ${need.cane} sugar cane to go${wait}`;
   }
   const names = { planks: "laying the plank floor", sand: "adding the sand", cane: "planting the sugar cane" };
-  return `Building: ${names[plan.phase]} (${plan.left[plan.phase]} to go)`;
+  const growing = plan.phase === "cane" && plan.growing ? ", replanting as it grows" : "";
+  return `Building: ${names[plan.phase]} (${plan.left[plan.phase]} to go${growing})`;
 }
 
 // ================================================================ building
@@ -335,6 +351,12 @@ export function buildFarm(ai, ownerId, record) {
     saveRecord(ownerId, "resource", record);
   }
 
+  // Out of sugar cane: harvest what has grown on the farm and plant it on the empty sand.
+  if (phase === "cane" && plan.cane <= 0) {
+    if (harvestGrowth(ai, plan)) saveRecord(ownerId, "resource", record);
+    return;
+  }
+
   // Place what's in reach (looking a few blocks ahead in its order).
   let placed = 0;
   let changed = false;
@@ -355,6 +377,7 @@ export function buildFarm(ai, ownerId, record) {
       continue;
     }
     const id = phase === "planks" ? takePlank(plan) : phase === "sand" ? (plan.sand > 0 ? "minecraft:sand" : undefined) : plan.cane > 0 ? CANE_BLOCK : undefined;
+    if (!id && phase === "cane") break; // used the last sugar cane: next think it harvests new growth
     if (!id) {
       // Ran out (someone broke part of the farm?): go and collect some more.
       plan.phase = "collect";
@@ -383,6 +406,39 @@ export function buildFarm(ai, ownerId, record) {
   const r = ROUTE[b.cells[0].idx];
   const target = at(plan, r.w, r.l, 0);
   moveTo(ai, { x: target.x + 0.5, y: target.y, z: target.z + 0.5 }, plan.boatId);
+}
+
+/**
+ * Finds a planted sugar cane that has grown (2+ tall), goes to it and harvests the new growth,
+ * leaving the bottom so it keeps growing. Returns true if it harvested some.
+ * @param {import("@minecraft/server").Entity} ai @param {FarmPlan} plan
+ */
+function harvestGrowth(ai, plan) {
+  const dim = ai.dimension;
+  /** @type {{ c: { w: number, l: number, idx: number }, base: Vector3, d: number } | undefined} */
+  let best;
+  for (const c of CELLS.cane) {
+    const base = at(plan, c.w, c.l, 1);
+    if (dim.getBlock(base)?.typeId !== CANE_BLOCK || dim.getBlock({ ...base, y: base.y + 1 })?.typeId !== CANE_BLOCK) continue;
+    const d = Math.hypot(base.x + 0.5 - ai.location.x, base.z + 0.5 - ai.location.z);
+    if (!best || d < best.d) best = { c, base, d };
+  }
+  if (!best) return false; // nothing has grown yet: wait
+  if (best.d > REACH) {
+    const r = ROUTE[best.c.idx];
+    const target = at(plan, r.w, r.l, 0);
+    moveTo(ai, { x: target.x + 0.5, y: target.y, z: target.z + 0.5 }, undefined);
+    return false;
+  }
+  let top = best.base.y + 1;
+  while (top < best.base.y + 6 && dim.getBlock({ ...best.base, y: top + 1 })?.typeId === CANE_BLOCK) top++;
+  for (let y = top; y > best.base.y; y--) {
+    dim.setBlockType({ ...best.base, y }, "minecraft:air");
+    plan.cane++;
+  }
+  dim.playSound("dig.grass", best.base);
+  ai.playAnimation("animation.aip.ai_player.mine");
+  return true;
 }
 
 /**
@@ -701,6 +757,7 @@ async function confirmPlace(player, s) {
     cane: keep?.cane ?? 0,
     boat: keep?.boat ?? false,
     left: { planks: FLOOR_PLANKS, sand: LINE_BLOCKS, cane: LINE_BLOCKS },
+    startedAt: keep?.startedAt ?? world.getAbsoluteTime(),
   };
   latest.focus = FARM_FOCUS;
   latest.mode = "wander";

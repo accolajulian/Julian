@@ -13,6 +13,7 @@
 import { system, BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER, FOCUS_TYPES } from "./gather_data.js";
 import { FARM_FOCUS, farmKinds, farmCollect } from "./farm.js";
+import { createScoutState, scout } from "./scout.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
   inventoryOf,
@@ -42,6 +43,9 @@ const IDLE_MS = 25000; // nothing to mine for this long: take a short break from
 const WALK_RADIUS = 14; // how far it looks for blocks to walk to
 const OWNER_RANGE = 12; // only gathers this close to its owner
 const WALK_SPEED = 0.2; // blocks per tick (about a player's walking speed)
+const SPRINT_SPEED = 0.28; // jump sprinting (collecting for a sugar cane farm)
+const TRAVEL_ARRIVED = 4; // close enough to a scouted spot
+const HOP_AFTER = 30; // ticks stuck on a long trip before it hops over the obstacle
 const JUMP = 0.42; // jump strength for stepping up one block
 const STUCK_TICKS = 40; // no progress for this long: give up the walk
 const WALK_MS = 15000; // gives up on a walk after this long
@@ -66,6 +70,8 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
  * @property {Map<string, number>} avoid  Blocks it won't mine for a while (next to lava), key -> until.
  * @property {Map<string, number>} warned  Chat warning -> last time.
  * @property {boolean} walking  Walking to a block (see `walkers`).
+ * @property {boolean} sprint  Jump sprint (collecting for a sugar cane farm).
+ * @property {import("./scout.js").ScoutState} scout  Looking around the map for the best spot.
  */
 
 /**
@@ -80,7 +86,10 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
 
 /** @returns {GatherState} */
 export function createGatherState() {
-  return { mining: undefined, tree: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(), walking: false };
+  return {
+    mining: undefined, tree: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(),
+    walking: false, sprint: false, scout: createScoutState(),
+  };
 }
 
 /** Busy with a block or a tree (it should stand still, not wander off). @param {GatherState} state */
@@ -205,6 +214,8 @@ export function gather(ai, ownerId, record, state, owner) {
   if (record.focus === "Nothing" || now < state.pausedUntil) return undefined;
 
   const dim = ai.dimension;
+  const farming = record.focus === FARM_FOCUS;
+  state.sprint = farming;
   const m = state.mining;
   if (m) {
     const block = dim.getBlock(m);
@@ -248,6 +259,17 @@ export function gather(ai, ownerId, record, state, owner) {
       }
       state.avoid.set(`${far.location.x},${far.location.y},${far.location.z}`, now + 60000);
     }
+    if (farming && !far) {
+      // Map awareness: find the best spot for what the farm still needs and jump sprint there.
+      const spot = scout(ai, farmKinds(record), state.scout);
+      state.idleSince = now;
+      if (spot === "searching") {
+        warn(state, ownerId, "scout", `§7${record.name} is scouting the map for ${farmKinds(record).map((k) => KIND_NAMES[k] ?? k).join(", ")}...`);
+      } else if (spot) {
+        startTravel(ai, state, spot);
+      }
+      return undefined;
+    }
     if (now - state.idleSince > IDLE_MS) {
       // Probably stuck walking to something it can't mine: take a short break, then look again.
       state.pausedUntil = now + 15000;
@@ -260,6 +282,9 @@ export function gather(ai, ownerId, record, state, owner) {
 }
 
 // ================================================================ trees
+
+/** @type {Record<string, string>} */
+const KIND_NAMES = { Wood: "logs", Sand: "sand", Cane: "sugar cane" };
 
 /** @param {string | undefined} id */
 function isLog(id) {
@@ -619,7 +644,7 @@ function hasLeavesAbove(dim, p) {
 /**
  * @typedef {{ source: Vector3, col: Vector3, out: Vector3 | undefined, dir: "down" | "up", endY: number, until: number }} WaterRide
  *   Swimming down or up a water column it poured: `source` is the water block, `col` the column it swims in.
- * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide }} Walker
+ * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide, travel?: boolean }} Walker
  */
 /** AIs walking to a block. @type {Map<string, Walker>} */
 const walkers = new Map();
@@ -632,6 +657,19 @@ const walkers = new Map();
  */
 function startWalking(ai, state, stand, block) {
   walkers.set(ai.id, { ai, state, stand, block, until: Date.now() + WALK_MS, stuck: 0, last: { ...ai.location } });
+  state.walking = true;
+}
+
+/**
+ * A long trip to a spot it scouted: jump sprints there, hopping over anything in the way.
+ * @param {import("@minecraft/server").Entity} ai @param {GatherState} state @param {Vector3} spot
+ */
+function startTravel(ai, state, spot) {
+  const target = floor(spot);
+  const distance = Math.hypot(target.x - ai.location.x, target.z - ai.location.z);
+  walkers.set(ai.id, {
+    ai, state, stand: target, block: target, until: Date.now() + 20000 + (distance / 4) * 1000, stuck: 0, last: { ...ai.location }, travel: true,
+  });
   state.walking = true;
 }
 
@@ -666,6 +704,10 @@ system.runInterval(() => {
 function step(id, w) {
   if (w.water) {
     swim(id, w);
+    return;
+  }
+  if (w.travel) {
+    travel(id, w);
     return;
   }
   const ai = w.ai;
@@ -706,6 +748,8 @@ function step(id, w) {
         return; // otherwise wait (gives up if it stays stuck)
       }
       jump = ai.isOnGround;
+    } else if (w.state.sprint && ai.isOnGround && d > 2.5 && free(dim, { ...ahead, y: fy - 1 }) === false) {
+      jump = true; // jump sprinting (only onto solid ground)
     } else {
       // Never walk into lava. A drop of more than 3 blocks (a ravine): if where it's going is down
       // there, pour water over the edge and swim down; otherwise don't go.
@@ -721,8 +765,68 @@ function step(id, w) {
     }
   }
   const v = ai.getVelocity();
-  const speed = Math.min(WALK_SPEED, d);
+  const speed = Math.min(w.state.sprint ? SPRINT_SPEED : WALK_SPEED, d);
   ai.applyImpulse({ x: ux * speed - v.x, y: jump ? JUMP - Math.max(0, v.y) : 0, z: uz * speed - v.z });
+}
+
+/**
+ * One tick of a long trip: jump sprinting, swimming across water, dropping down slopes. Stuck (a wall,
+ * a cliff) or lava ahead: it hops over (a short teleport to the ground further on).
+ * @param {string} id @param {Walker} w
+ */
+function travel(id, w) {
+  const ai = w.ai;
+  const dim = ai.dimension;
+  const p = ai.location;
+  const dx = w.stand.x + 0.5 - p.x;
+  const dz = w.stand.z + 0.5 - p.z;
+  const d = Math.hypot(dx, dz);
+  if (d < TRAVEL_ARRIVED) {
+    ai.clearVelocity();
+    stopWalking(id, w.state); // there: normal gathering takes over
+    return;
+  }
+  const ux = dx / d;
+  const uz = dz / d;
+  ai.setRotation({ x: 0, y: (Math.atan2(-ux, uz) * 180) / Math.PI });
+  const ahead = { x: Math.floor(p.x + ux), y: Math.floor(p.y + 0.01), z: Math.floor(p.z + uz) };
+  const lavaAhead = [0, -1, -2].some((k) => LAVA.includes(dim.getBlock({ ...ahead, y: ahead.y + k })?.typeId ?? ""));
+  if (Math.hypot(p.x - w.last.x, p.z - w.last.z) > 0.05) {
+    w.last = { ...p };
+    w.stuck = 0;
+  } else {
+    w.stuck++;
+  }
+  if (lavaAhead || w.stuck > HOP_AFTER) {
+    hop(ai, ux, uz);
+    w.last = { ...ai.location };
+    w.stuck = 0;
+    return;
+  }
+  const v = ai.getVelocity();
+  const jump = ai.isOnGround; // jump sprinting: jumps again every time it lands
+  ai.applyImpulse({ x: ux * SPRINT_SPEED - v.x, y: jump ? JUMP - Math.max(0, v.y) : 0, z: uz * SPRINT_SPEED - v.z });
+}
+
+/**
+ * Teleports a few blocks ahead onto the ground (never into lava).
+ * @param {import("@minecraft/server").Entity} ai @param {number} ux @param {number} uz
+ */
+function hop(ai, ux, uz) {
+  const dim = ai.dimension;
+  for (const k of [6, 10, 3, 14]) {
+    const x = ai.location.x + ux * k;
+    const z = ai.location.z + uz * k;
+    let top;
+    try {
+      top = dim.getTopmostBlock({ x, z });
+    } catch {
+      continue;
+    }
+    if (!top || LAVA.includes(top.typeId)) continue;
+    ai.teleport({ x, y: top.location.y + 1, z });
+    return;
+  }
 }
 
 // ================================================================ water bucket (ravines)

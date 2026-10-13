@@ -52,6 +52,7 @@ import { stripMine, createStripState } from "./stripmine.js";
 import { bridgeTowards } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from "./gather.js";
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
+import { keepLoaded } from "./scout.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
 const THINK_TICKS = 10; // the brain thinks twice a second
@@ -607,6 +608,8 @@ function think(ai, ownerId, role, record, brain) {
         if (record.focus === FARM_FOCUS) checkCollected(ownerId, record);
       }
     }
+    // Working on a farm far from every player: keep its land loaded so it doesn't freeze.
+    keepLoaded(ai, record.key, wandering && record.focus === FARM_FOCUS && !!record.farm);
     // While it's walking to or chopping/mining something it stands still instead of strolling off.
     const working = wandering && !stripping && (isBusy(brain.gather) || building);
     const modeEvent = stripping || working ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
