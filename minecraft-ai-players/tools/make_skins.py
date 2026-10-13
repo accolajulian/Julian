@@ -631,6 +631,42 @@ def slot_screen_icon(kind):
     return img
 
 
+def pack_icon():
+    """256x256 pack icon: a computer (black monitor with a dark blue screen of green code, stand and
+    keyboard) on a near-black background, drawn as 64x64 pixel art and scaled up."""
+    rng = random.Random(256)
+    img = Image.new("RGBA", (64, 64), (10, 10, 10, 255))
+    p = img.load()
+    edge = (40, 44, 60, 255)
+    def box(x0, y0, x1, y1, color):
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                p[x, y] = color
+    box(6, 5, 57, 42, edge)                        # monitor case (with a thin grey rim)
+    box(7, 6, 56, 41, BODY + (255,))
+    draw_screen(p, 10, 9, 53, 37)
+    for cx in range(12, 52, 3):                    # green code falling down the screen
+        head = rng.randrange(9, 38)
+        trail = rng.randint(5, 18)
+        for k in range(trail):
+            y = head - k
+            if y < 10 or y > 36 or (k and rng.random() < 0.35):
+                continue
+            level = 1 - k / trail
+            color = (210, 255, 220) if k == 0 else (int(15 + 30 * level), int(80 + 165 * level), int(30 + 50 * level))
+            p[cx, y] = color + (255,)
+    p[49, 39] = p[50, 39] = CODE_GREEN + (255,)    # power light
+    box(28, 43, 35, 48, BODY + (255,))             # stand
+    box(20, 49, 43, 50, edge)
+    box(8, 53, 55, 60, edge)                       # keyboard
+    box(9, 54, 54, 59, BODY + (255,))
+    for y in (55, 57):
+        for x in range(11, 53, 3):
+            p[x, y] = p[x + 1, y] = (30, 34, 48, 255)
+    box(20, 59, 43, 59, (30, 34, 48, 255))         # space bar
+    return img.resize((256, 256), Image.NEAREST)
+
+
 def main():
     skins = []
     for i, paint in enumerate(AI):
@@ -655,12 +691,10 @@ def main():
     remote_screen_icon().save(RP / "textures/items/fighter_robot.png")
     remote_screen_icon().save(RP / "textures/items/resource_robot.png")
 
-    # Pack icon: four of the AI players' faces in a grid
-    pack = Image.new("RGBA", (128, 128), (15, 20, 30, 255))
-    for n, i in enumerate((1, 2, 0, 9)):
-        pack.alpha_composite(head_icon(skins[i], 56), (8 + (n % 2) * 64, 8 + (n // 2) * 64))
+    # Pack icon: a computer
+    icon = pack_icon()
     for p in ("behavior_pack", "resource_pack"):
-        pack.save(ROOT / p / "pack_icon.png")
+        icon.save(ROOT / p / "pack_icon.png")
 
     print("drew", len(skins), "skins")
 
