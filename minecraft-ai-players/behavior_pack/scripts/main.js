@@ -31,6 +31,7 @@ import {
   canGather,
   resourcePerks,
   hasBoughtAny,
+  SKIN_LOOK,
 } from "./data.js";
 import { releaseLoaded } from "./scout.js";
 import { levelText } from "./levels.js"; // (also starts the 20-minute reports)
@@ -187,19 +188,6 @@ const TARGET_MODES = /** @type {const} */ ([
   { id: "players", label: "Players only", about: "Ignores monsters unless they attack" },
 ]);
 
-// The 10 looks (skin numbers aip:skin_0 ... aip:skin_9). An AI's look is picked automatically.
-const LOOKS = [
-  "Robot with a glowing visor",
-  "Red hair, green hoodie",
-  "Knight in iron armor",
-  "Orange hair, leather jacket",
-  "White hair, ice-blue parka",
-  "Explorer with a safari hat",
-  "Purple-haired astronaut",
-  "Sporty runner with a headband",
-  "Braids and a teal top",
-  "Gamer with headphones",
-];
 
 const GUIDE_TEXT =
   "§lStep 1: Craft a Coder§r\n" +
@@ -418,7 +406,7 @@ async function showRoleInfo(player, role) {
 /** @param {import("@minecraft/server").Player} player @param {RoleId} role */
 async function buy(player, role) {
   const info = ROLES[role];
-  const look = autoLook(player.id, role);
+  const look = SKIN_LOOK; // every AI wears the same skin (see data.js)
   const name = await askForName(player, info.title);
   if (name === undefined) return;
 
@@ -445,16 +433,6 @@ async function buy(player, role) {
   player.sendMessage(`§aYou bought a ${info.title}! Throw the egg to spawn §e${name}§a.`);
 }
 
-/**
- * Picks the AI's look automatically: the same for a player every time (no choosing).
- * Add-ons can't read a player's own skin, so it uses one of the 10 AI player skins.
- * @param {string} playerId @param {RoleId} role
- */
-function autoLook(playerId, role) {
-  let hash = role === "fighter" ? 3 : 0;
-  for (const ch of playerId) hash = (hash * 31 + ch.charCodeAt(0)) % 1000003;
-  return hash % LOOKS.length;
-}
 
 /**
  * Keeps asking until the player types a name (or closes the form).

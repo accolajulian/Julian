@@ -23,6 +23,7 @@ import {
   resourcePerks,
   fighterPerks,
   canGather,
+  SKIN_LOOK,
 } from "./data.js";
 import {
   ALLOWED_TOOLS,
@@ -552,6 +553,13 @@ function think(ai, ownerId, role, record, brain) {
   if (!health) return;
   const hpRatio = health.currentValue / health.effectiveMax;
   const now = Date.now();
+
+  // ---- Its skin: every AI wears the same one (AIs from before it was added switch to it).
+  if (record.look !== SKIN_LOOK) {
+    record.look = SKIN_LOOK;
+    ai.triggerEvent(`aip:skin_${SKIN_LOOK}`);
+    saveRecord(ownerId, role, record);
+  }
 
   // ---- Stage perks (see data.js): lava/fire proof, fall proof, the Fighter's final upgrade.
   brain.role = role;

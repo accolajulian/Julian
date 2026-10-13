@@ -997,6 +997,11 @@
       },
       "aip:upgraded": {
         "minecraft:fire_immune": {}
+      },
+      "aip:skin_10": {
+        "minecraft:variant": {
+          "value": 10
+        }
       }
     },
     "components": {
@@ -1573,6 +1578,27 @@
             "aip:fighter_guard",
             "aip:resource_follow",
             "aip:resource_wander"
+          ]
+        }
+      },
+      "aip:skin_10": {
+        "remove": {
+          "component_groups": [
+            "aip:skin_0",
+            "aip:skin_1",
+            "aip:skin_2",
+            "aip:skin_3",
+            "aip:skin_4",
+            "aip:skin_5",
+            "aip:skin_6",
+            "aip:skin_7",
+            "aip:skin_8",
+            "aip:skin_9"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "aip:skin_10"
           ]
         }
       }

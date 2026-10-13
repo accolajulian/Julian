@@ -16,7 +16,8 @@
         "s6": "textures/entity/ai_player/skin_6",
         "s7": "textures/entity/ai_player/skin_7",
         "s8": "textures/entity/ai_player/skin_8",
-        "s9": "textures/entity/ai_player/skin_9"
+        "s9": "textures/entity/ai_player/skin_9",
+        "s10": "textures/entity/ai_player/skin_custom"
       },
       "geometry": {
         "default": "geometry.aip.ai_player"

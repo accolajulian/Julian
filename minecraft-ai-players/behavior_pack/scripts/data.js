@@ -2,6 +2,8 @@
 import { world } from "@minecraft/server";
 
 export const AI_ENTITY = "aip:ai_player";
+/** The skin every AI wears (skin number 10: textures/entity/ai_player/skin_custom.png). */
+export const SKIN_LOOK = 10;
 export const CAPSULE_ENTITY = "aip:ai_capsule";
 const MAX_ENEMIES = 40;
 
