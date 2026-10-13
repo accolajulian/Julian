@@ -67,7 +67,8 @@
         "inventory_size": 27,
         "restrict_to_owner": true,
         "private": true
-      }
+      },
+      "minecraft:body_rotation_blocked": {}
     },
     "events": {
       "aip:placed": {

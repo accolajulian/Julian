@@ -4,10 +4,12 @@
 // Place it like a block (it's really a small entity, so right clicking it opens an inventory screen).
 // - Right click it: your AI's AI Chest: only materials it mined (never its torches or chicken).
 //   Only the player who placed it can open it.
-// - Left click it: pick it back up (or choose which AI's chest, if you control more than one).
+// - Left click it: it breaks like a normal chest and drops itself as an item (nothing inside is lost:
+//   the AI Chest lives with the AI).
+// It sits exactly like a placed block: centered on its block, facing straight one of the 4 ways, and
+// never moves, turns or shows a name over it.
 import { world, system, ItemStack } from "@minecraft/server";
-import { ActionFormData } from "@minecraft/server-ui";
-import { getAi, controlledBy, giveItem, canGather, resourcePerks } from "./data.js";
+import { getAi, controlledBy, canGather, resourcePerks } from "./data.js";
 import { stashCount } from "./inventory.js";
 import { syncEmpty, syncStash } from "./container.js";
 import { sparks } from "./effects.js";
@@ -24,10 +26,12 @@ world.afterEvents.entitySpawn.subscribe(({ entity }) => {
     .sort((a, b) => dist(a.location, entity.location) - dist(b.location, entity.location))[0];
   if (!player) return;
   const at = { x: Math.floor(entity.location.x) + 0.5, y: Math.floor(entity.location.y + 0.01), z: Math.floor(entity.location.z) + 0.5 };
-  entity.teleport(at, { facingLocation: { x: player.location.x, y: at.y, z: player.location.z } });
+  // Face the player, snapped to one of the 4 straight directions (like a placed chest).
+  const yaw = Math.round(((Math.atan2(-(player.location.x - at.x), player.location.z - at.z) * 180) / Math.PI) / 90) * 90;
+  entity.setDynamicProperty("aip:spot", JSON.stringify({ ...at, yaw }));
+  settle(entity);
   entity.getComponent("minecraft:tameable")?.tame(player); // only this player can open it
   entity.setDynamicProperty("aip:owner", player.id);
-  entity.nameTag = "Computer Chest";
   // Like an ender chest: it opens your AI's AI Chest.
   const ai = controlledBy(player.id).find(canGather);
   if (ai) entity.setDynamicProperty("aip:view", `stash:${ai.key}`);
@@ -37,6 +41,30 @@ world.afterEvents.entitySpawn.subscribe(({ entity }) => {
       : "§aComputer Chest placed."
   );
 });
+
+/**
+ * Keeps a chest exactly where it was placed (block center, straight rotation), with no name over it.
+ * @param {import("@minecraft/server").Entity} chest
+ */
+function settle(chest) {
+  if (chest.nameTag) chest.nameTag = "";
+  const raw = chest.getDynamicProperty("aip:spot");
+  let spot;
+  if (typeof raw === "string") {
+    spot = JSON.parse(raw);
+  } else {
+    // Placed before this version: snap it where it is.
+    const l = chest.location;
+    spot = { x: Math.floor(l.x) + 0.5, y: Math.floor(l.y + 0.01), z: Math.floor(l.z) + 0.5, yaw: Math.round(chest.getRotation().y / 90) * 90 };
+    chest.setDynamicProperty("aip:spot", JSON.stringify(spot));
+  }
+  const l = chest.location;
+  const r = chest.getRotation();
+  if (Math.hypot(l.x - spot.x, l.y - spot.y, l.z - spot.z) > 0.01 || Math.abs(r.y - spot.yaw) > 0.5 || r.x !== 0) {
+    chest.teleport({ x: spot.x, y: spot.y, z: spot.z }, { rotation: { x: 0, y: spot.yaw } });
+  }
+  chest.clearVelocity();
+}
 
 /** @param {import("@minecraft/server").Vector3} a @param {import("@minecraft/server").Vector3} b */
 function dist(a, b) {
@@ -56,6 +84,11 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target }) => {
 system.runInterval(() => {
   for (const dimensionId of ["minecraft:overworld", "minecraft:nether", "minecraft:the_end"]) {
     for (const chest of world.getDimension(dimensionId).getEntities({ type: CHEST_ENTITY })) {
+      try {
+        settle(chest); // never budges or turns
+      } catch {
+        // unloaded
+      }
       if (chest.getProperty("aip:open") !== true) continue;
       const watched = chest.dimension.getPlayers({ location: chest.location, maxDistance: 6 }).some((p) =>
         p.getEntitiesFromViewDirection({ maxDistance: 6 }).some((hit) => hit.entity.id === chest.id)
@@ -68,7 +101,7 @@ system.runInterval(() => {
   }
 }, 10);
 
-// Left click: choose an AI or pick the chest up. (Hits never break it.)
+// Left click: it breaks like a normal chest and drops itself (only its owner can break it).
 world.afterEvents.entityHitEntity.subscribe(({ damagingEntity, hitEntity }) => {
   if (hitEntity.typeId !== CHEST_ENTITY || damagingEntity.typeId !== "minecraft:player") return;
   const player = /** @type {import("@minecraft/server").Player} */ (damagingEntity);
@@ -76,56 +109,15 @@ world.afterEvents.entityHitEntity.subscribe(({ damagingEntity, hitEntity }) => {
     player.sendMessage("§cThis Computer Chest belongs to someone else.");
     return;
   }
-  system.run(() => chestMenu(player, hitEntity));
+  system.run(() => {
+    if (!hitEntity.isValid) return;
+    const at = hitEntity.location;
+    const dim = hitEntity.dimension;
+    hitEntity.remove();
+    dim.playSound("dig.stone", at);
+    dim.spawnItem(new ItemStack(CHEST_ITEM, 1), { x: at.x, y: at.y + 0.3, z: at.z });
+  });
 });
-
-/** Players with this menu open (only one at a time). @type {Set<string>} */
-const open = new Set();
-
-/**
- * @param {import("@minecraft/server").Player} player
- * @param {import("@minecraft/server").Entity} chest
- */
-async function chestMenu(player, chest) {
-  if (open.has(player.id)) return;
-  open.add(player.id);
-  try {
-    const mine = controlledBy(player.id);
-    // Each AI's AI Chest (locked until upgraded), and each upgraded AI's own inventory.
-    /** @type {{ view: string, name: string, about: string }[]} */
-    const views = [];
-    for (const r of mine) {
-      if (canGather(r)) {
-        views.push({
-          view: `stash:${r.key}`,
-          name: `${r.name}'s AI Chest`,
-          about: resourcePerks(r) ? `${stashCount(r)} items` : `Locked: ${stashCount(r)} items saved`,
-        });
-      }
-    }
-    const showing = chest.getDynamicProperty("aip:view");
-    const current = typeof showing === "string" ? views.find((v) => v.view === showing) : undefined;
-    const form = new ActionFormData()
-      .title("Computer Chest")
-      .body(
-        `Showing: §e${current ? current.name : "nothing"}§r\n\n` +
-          (views.length ? "Right click the chest to open the AI Chest." : "§cYou don't have an AI yet.§r Buy one at the Coder.")
-      );
-    views.forEach((v) => form.button(`${v.name}\n§8${v.about}`));
-    form.button("§cPick up the chest");
-    const response = await form.show(player);
-    if (response.canceled || response.selection === undefined || !chest.isValid) return;
-    if (response.selection < views.length) {
-      chest.setDynamicProperty("aip:view", views[response.selection].view);
-      player.sendMessage(`§aThe Computer Chest now shows ${views[response.selection].name}.`);
-    } else {
-      chest.remove();
-      giveItem(player, new ItemStack(CHEST_ITEM, 1));
-    }
-  } finally {
-    open.delete(player.id);
-  }
-}
 
 // Keep every Computer Chest showing its chosen AI's inventory.
 system.runInterval(() => {

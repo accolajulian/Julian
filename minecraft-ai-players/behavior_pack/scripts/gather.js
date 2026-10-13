@@ -640,8 +640,11 @@ function treeLogs(dim, base) {
         for (let dz = -1; dz <= 1; dz++) {
           const n = { x: p.x + dx, y: p.y + dy, z: p.z + dz };
           if (n.y < base.y || Math.abs(n.x - base.x) > 5 || Math.abs(n.z - base.z) > 5 || n.y > base.y + 30) continue;
-          // At ground level only the trunk itself (2x2 trunks), so it doesn't wander into the next tree.
-          if (n.y <= base.y + 1 && (dy !== 0 || Math.abs(dx) + Math.abs(dz) !== 1)) continue;
+          // At ground level only the trunk itself: straight up, or sideways for 2x2 trunks (so it doesn't
+          // wander into the next tree over).
+          const straightUp = dx === 0 && dz === 0 && dy === 1;
+          const sideways = dy === 0 && Math.abs(dx) + Math.abs(dz) === 1;
+          if (n.y <= base.y + 1 && !straightUp && !sideways) continue;
           const k = blockKey(n);
           if (seen.has(k)) continue;
           seen.add(k);

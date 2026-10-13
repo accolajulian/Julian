@@ -158,10 +158,15 @@ The AI doesn't level up on its own; it only gets stronger at the Coder (see *Sta
 - Messages for an owner who's offline are kept and given when they're back.
 
 ### Computer Chest (chest.js)
-Craft: chest + redstone + glass pane. Tap Place with it on a block to put it down (it places itself like an armor stand). It's a black box covered in green Matrix code with a glowing seam; when you open it the lid slides straight up like a shulker box's (no spinning) and closes when you look away. The **player** places it (AIs never place one). It only ever holds materials the AI mined (never its torches or chicken). It works like an **ender chest**:
-every Computer Chest you place opens the same **AI Chest**, the one your AI fills. **Right click** it to open your AI's
-AI Chest (locked until the AI is upgraded at the Coder; it shows how much is saved). **Left click** it to switch to an
-upgraded AI's own inventory instead, or to pick the chest up. Only the player who placed it can use it.
+Craft: chest + redstone + glass pane. Tap Place with it on a block to put it down. It sits exactly like a placed
+chest: centered on its block, facing straight towards you (one of the 4 directions), and it never moves, turns or
+shows a name over it. It's a beige 2000s computer case; when you open it the lid slides straight up like a shulker
+box's (no spinning) and closes when you look away. The **player** places it (AIs never place one). It only ever holds
+materials the AI mined (never its torches or chicken). It works like an **ender chest**: every Computer Chest you
+place opens the same **AI Chest**, the one your AI fills. **Right click** it to open your AI's AI Chest (locked until
+the AI is upgraded at the Coder; it shows how much is saved). **Left click** it to break it like a normal chest: it
+drops itself as an item (nothing is lost; the AI Chest lives with the AI). Only the player who placed it can use or
+break it.
 
 ### Controls
 | Action | What happens |
