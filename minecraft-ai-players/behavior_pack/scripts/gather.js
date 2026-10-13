@@ -14,7 +14,7 @@ import { system, BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER, FOCUS_TYPES } from "./gather_data.js";
 import { FARM_FOCUS, farmKinds, farmCollect } from "./farm.js";
 import { createScoutState, scout } from "./scout.js";
-import { caveBlocks } from "./caves.js";
+import { caveBlocks, CAVE_LEASH } from "./caves.js";
 import { isDropping, startDrop } from "./mlg.js";
 import { countCollected } from "./levels.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
@@ -61,6 +61,7 @@ const SOFT = /leaves|^minecraft:(dirt|coarse_dirt|grass_block|podzol|mycelium|mu
 const STUCK_TICKS = 40; // no progress for this long: give up the walk
 const WALK_MS = 15000; // gives up on a walk after this long
 const TREE_REACH = 6; // from inside the trunk it reaches logs this far away
+const TREE_SEARCH = 24; // looks for the closest tree trunk this far around itself
 const TREE_MS = 120000; // gives up on a tree after this long
 /** Blocks it may break to step into the trunk gap. */
 const WATER_MS = 15000; // gives up swimming after this long
@@ -68,7 +69,7 @@ const WATER_DEPTH = 24; // deepest ravine it will swim down
 const WATER_HEIGHT = 16; // highest wall it will swim up
 const CLEARABLE = /leaves|dirt|grass_block|podzol|mycelium|mud|moss|snow|vine|roots|propagule|_log$|_stem$|_wood$/;
 /** Blocks it can walk through (plants, torches, snow...). */
-const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers/;
+const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers|glow_lichen/;
 const WARN_MS = 30000; // don't repeat the same chat warning more often than this
 const TOOL_WARN_MS = 300000; // "needs a pickaxe" at most every 5 minutes
 const AXE_LOGS = 2; // a wooden axe: 3 planks + 2 sticks = 5 planks = 2 logs
@@ -92,6 +93,7 @@ const DIG_TICKS = 8; // one block every this many ticks when digging out
  * @property {number} speed  Walking speed multiplier from its level.
  * @property {boolean} lost  It scouted and found nothing anywhere: it may stroll around to explore.
  * @property {number} stuckSince  When scouting stopped giving it anywhere new to go (0: it isn't stuck).
+ * @property {CaveState} cave  Exploring caves.
  */
 
 /**
@@ -109,6 +111,7 @@ export function createGatherState() {
   return {
     mining: undefined, tree: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(),
     walking: false, sprint: false, scout: createScoutState(), speed: 1, lost: false, stuckSince: 0,
+    cave: { visited: new Map(), tunnel: undefined, dig: undefined, plannedAt: 0, turn: 0 },
   };
 }
 
@@ -142,7 +145,7 @@ export function avoidLava(ai, ownerId, role, record, state) {
     return true;
   }
 
-  const lava = lavaAround(dim, feet, 2, 1);
+  const lava = lavaAround(dim, feet, 1, 1); // only lava right next to it (it never walks into lava anyway)
   if (lava.length === 0) return false;
 
   // Cover the closest lava blocks (up to 3 at a time) with blocks it carries.
@@ -265,9 +268,23 @@ export function gather(ai, ownerId, record, state, owner) {
 
   if (state.tree) return chopTree(ai, record, state);
   if (state.walking) return undefined; // on its way to a block
+  if (record.focus === "Caves") return caveThink(ai, ownerId, record, state, owner);
+
+  // Trees: one whole tree at a time, always the closest trunk to it.
+  const trees = record.focus === "Trees";
+  if (trees) {
+    const base = findTree(ai, record, state);
+    if (base) {
+      state.lost = false;
+      state.stuckSince = 0;
+      startTree(ai, state, base);
+      state.idleSince = now;
+      return undefined;
+    }
+  }
 
   // Find the closest gatherable block in reach.
-  const target = findTarget(ai, record, state, ownerId, REACH, owner);
+  const target = trees ? undefined : findTarget(ai, record, state, ownerId, REACH, owner);
   if (target && isLog(target.id)) {
     state.lost = false;
     state.stuckSince = 0;
@@ -276,7 +293,7 @@ export function gather(ai, ownerId, record, state, owner) {
   }
   if (!target) {
     // Nothing in reach: walk to the nearest one further away (a tree gets the tree routine).
-    const far = findTarget(ai, record, state, ownerId, WALK_RADIUS, owner);
+    const far = trees ? undefined : findTarget(ai, record, state, ownerId, WALK_RADIUS, owner);
     if (far && isLog(far.id)) {
       state.lost = false;
       state.stuckSince = 0;
@@ -390,6 +407,41 @@ function skipNearby(ai, state, kinds) {
   }
 }
 
+/**
+ * The closest tree trunk: the bottom log of a real tree (standing on the ground, leaves above it), of a
+ * kind of wood it has room for. Measured from the AI, so it goes tree to tree.
+ * @param {import("@minecraft/server").Entity} ai @param {import("./data.js").AiRecord} record @param {GatherState} state
+ * @returns {Vector3 | undefined}
+ */
+function findTree(ai, record, state) {
+  const dim = ai.dimension;
+  const f = floor(ai.location);
+  const types = Object.keys(GATHER).filter((id) => GATHER[id].focus === "Wood" && canTakeWood(record, GATHER[id].drop));
+  if (types.length === 0) return undefined;
+  const r = TREE_SEARCH;
+  let found;
+  try {
+    found = [...dim.getBlocks(new BlockVolume({ x: f.x - r, y: f.y - 8, z: f.z - r }, { x: f.x + r, y: f.y + 8, z: f.z + r }), { includeTypes: types }).getBlockLocationIterator()];
+  } catch {
+    return undefined;
+  }
+  const now = Date.now();
+  /** @type {Vector3 | undefined} */
+  let best;
+  let bestD = Infinity;
+  for (const p of found) {
+    const d = Math.hypot(p.x - f.x, p.z - f.z) + Math.abs(p.y - f.y) * 2;
+    if (d >= bestD || (state.avoid.get(blockKey(p)) ?? 0) > now) continue;
+    const below = dim.getBlock({ ...p, y: p.y - 1 });
+    // The bottom of the trunk, on real ground (not a branch, not up in the leaves).
+    if (!below || isLog(below.typeId) || passable(below) || /leaves/.test(below.typeId)) continue;
+    if (!hasLeavesAbove(dim, p) || lavaNextTo(dim, p).length > 0) continue;
+    best = p;
+    bestD = d;
+  }
+  return best;
+}
+
 /** @type {Record<string, string>} */
 const KIND_NAMES = { Wood: "logs", Sand: "sand", Cane: "sugar cane" };
 
@@ -481,9 +533,17 @@ function chopTree(ai, record, state) {
   }
 
   if (t.phase === "base") {
-    // 2. Stand still and chop the bottom two logs.
-    const next = [t.base, above].find((p) => isLog(dim.getBlock(p)?.typeId));
+    // 2. Stand still next to the trunk and chop every log it can reach from there, bottom first.
+    const eye = eyeOf(ai);
+    const next = t.logs
+      .filter((p) => dist(center(p), eye) <= REACH + 1 && isLog(dim.getBlock(p)?.typeId))
+      .sort((a, b) => a.y - b.y || dist(center(a), eye) - dist(center(b), eye))[0];
     if (next) return startChop(ai, record, next, REACH + 1, state);
+    // Nothing left of the tree: done, on to the next one.
+    if (!t.logs.some((p) => isLog(dim.getBlock(p)?.typeId))) {
+      endTree(state, t, false);
+      return undefined;
+    }
     t.phase = "enter";
     t.walked = false;
   }
@@ -653,17 +713,11 @@ function finishMining(ai, ownerId, record, state, m, owner) {
   const info = GATHER[m.id];
   if (!info) return;
 
-  // Check for lava once more: it may have flowed in. Cover it if possible, otherwise leave the block.
-  const lava = lavaNextTo(dim, m);
-  for (const spot of lava) {
-    const block = takeBlock(record);
-    if (!block) {
-      state.avoid.set(`${m.x},${m.y},${m.z}`, Date.now() + 120000);
-      saveRecord(ownerId, "resource", record);
-      warn(state, ownerId, "lava", `§6${record.name} found lava behind that block and left it alone.`);
-      return;
-    }
-    dim.setBlockType(spot, block);
+  // Check for lava once more: it may have flowed in. Then it leaves the block alone (no blocks placed).
+  if (lavaNextTo(dim, m).length > 0) {
+    state.avoid.set(`${m.x},${m.y},${m.z}`, Date.now() + 120000);
+    warn(state, ownerId, "lava", `§6${record.name} found lava behind that block and left it alone.`);
+    return;
   }
 
   // Sugar cane: take the rest of the stalk above it too (top first, so nothing pops off).
@@ -755,12 +809,269 @@ function hasLeavesAbove(dim, p) {
   }
 }
 
+// ================================================================ caves (Resource AI)
+// X-ray: it "sees" every chosen ore around it, even inside the walls, and maps the cave it's in (every
+// spot it can walk to). Then, smartest first:
+// 1. An ore in the cave wall it can walk to: it walks the cave path there and mines it.
+// 2. An ore hidden in the rock close by: it digs a tunnel straight to it (only through natural stone,
+//    dirt and ores, never next to lava).
+// 3. No ore: it follows the cave on, preferring the way down and places it hasn't been yet.
+// 4. A dead end: it digs a staircase down and keeps going.
+
+const CAVE_SCAN = 20; // how far around it it sees ores and maps the cave (blocks)
+const CAVE_UP = 12;
+const CAVE_DOWN = 16;
+const CAVE_REACH = 4.5; // mines ores this far from its eyes
+const CAVE_PLAN_MS = 2500; // re-plans (scans) at most this often
+const CAVE_NODES = 2500; // cave spots it maps at most
+const TUNNEL_TO = 10; // digs to hidden ores at most this far away
+const TUNNEL_MS = 60000;
+const VISITED_MS = 600000; // places it's been count as explored for 10 minutes
+const CAVE_AIR = ["minecraft:air", "minecraft:torch", "minecraft:cave_vines", "minecraft:glow_lichen"];
+
+/**
+ * @typedef {Object} CaveState
+ * @property {Map<string, number>} visited  4x4x4 areas it's been in -> when
+ * @property {{ goal: Vector3, ore: boolean, until: number } | undefined} tunnel  digging towards an ore (or down)
+ * @property {{ cell: Vector3, until: number } | undefined} dig  the block it's digging in a tunnel
+ * @property {number} plannedAt
+ * @property {number} turn  which way it digs down at a dead end
+ */
+
+/** @param {Vector3} p */
+function areaKey(p) {
+  return `${Math.floor(p.x) >> 2},${Math.floor(p.y) >> 2},${Math.floor(p.z) >> 2}`;
+}
+
+/**
+ * One think in a cave. Returns the tool slot it's using.
+ * @param {import("@minecraft/server").Entity} ai @param {string} ownerId @param {import("./data.js").AiRecord} record
+ * @param {GatherState} state @param {import("@minecraft/server").Player | undefined} owner
+ * @returns {number | undefined}
+ */
+function caveThink(ai, ownerId, record, state, owner) {
+  const cs = state.cave;
+  const now = Date.now();
+  cs.visited.set(areaKey(ai.location), now);
+  if (cs.visited.size > 4000) for (const [k, t] of cs.visited) if (now - t > VISITED_MS) cs.visited.delete(k);
+  if (cs.tunnel) return tunnelStep(ai, ownerId, record, state, owner);
+  if (now - cs.plannedAt < CAVE_PLAN_MS) return undefined;
+  cs.plannedAt = now;
+
+  const dim = ai.dimension;
+  const f = floor(ai.location);
+  const range = dim.heightRange;
+  const lo = { x: f.x - CAVE_SCAN, y: Math.max(range.min, f.y - CAVE_DOWN), z: f.z - CAVE_SCAN };
+  const hi = { x: f.x + CAVE_SCAN, y: Math.min(range.max - 1, f.y + CAVE_UP), z: f.z + CAVE_SCAN };
+  const volume = new BlockVolume(lo, hi);
+  // Ores it can mine (its pickaxe is strong enough), not next to lava.
+  const oreTypes = caveBlocks(record, dim.id).filter((id) => toolFor(record, GATHER[id]));
+  /** @type {Set<string>} */
+  const air = new Set();
+  /** @type {Set<string>} */
+  const lava = new Set();
+  /** @type {Vector3[]} */
+  let ores = [];
+  try {
+    for (const p of dim.getBlocks(volume, { includeTypes: CAVE_AIR }).getBlockLocationIterator()) air.add(blockKey(p));
+    for (const p of dim.getBlocks(volume, { includeTypes: LAVA }).getBlockLocationIterator()) lava.add(blockKey(p));
+    if (oreTypes.length) ores = [...dim.getBlocks(volume, { includeTypes: oreTypes }).getBlockLocationIterator()];
+  } catch {
+    return undefined; // not loaded
+  }
+  ores = ores.filter((o) => (state.avoid.get(blockKey(o)) ?? 0) <= now && !lavaNextTo(dim, o).length);
+
+  // Map the cave: every spot it can walk to from here (steps up 1, drops down up to 2).
+  const k = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => `${x},${y},${z}`;
+  const open = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => air.has(k(x, y, z));
+  const walkable = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) =>
+    y - 1 >= lo.y && open(x, y, z) && open(x, y + 1, z) && !open(x, y - 1, z) && !lava.has(k(x, y - 1, z));
+  /** @type {Map<string, { p: Vector3, steps: number, from: string | undefined }>} */
+  const cells = new Map();
+  const start = { ...f };
+  cells.set(blockKey(start), { p: start, steps: 0, from: undefined });
+  const queue = [start];
+  while (queue.length && cells.size < CAVE_NODES) {
+    const p = /** @type {Vector3} */ (queue.shift());
+    const here = /** @type {{ steps: number }} */ (cells.get(blockKey(p)));
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = p.x + dx;
+      const z = p.z + dz;
+      if (x < lo.x || x > hi.x || z < lo.z || z > hi.z) continue;
+      let ny;
+      if (walkable(x, p.y, z)) ny = p.y;
+      else if (open(p.x, p.y + 2, p.z) && walkable(x, p.y + 1, z)) ny = p.y + 1;
+      else if (open(x, p.y, z) && open(x, p.y + 1, z)) {
+        for (let dy = 1; dy <= 2; dy++) {
+          if (walkable(x, p.y - dy, z)) {
+            ny = p.y - dy;
+            break;
+          }
+          if (!open(x, p.y - dy, z)) break;
+        }
+      }
+      if (ny === undefined) continue;
+      const q = { x, y: ny, z };
+      const key = blockKey(q);
+      if (cells.has(key)) continue;
+      cells.set(key, { p: q, steps: here.steps + 1, from: blockKey(p) });
+      queue.push(q);
+    }
+  }
+  const pathTo = (/** @type {string} */ key) => {
+    /** @type {Vector3[]} */
+    const path = [];
+    for (let c = cells.get(key); c && c.from !== undefined; c = cells.get(c.from)) path.unshift(c.p);
+    return path;
+  };
+
+  // 1. An ore in the cave wall it can walk to (fewest steps).
+  /** @type {{ ore: Vector3, key: string, steps: number } | undefined} */
+  let best;
+  for (const ore of ores) {
+    const exposed = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([dx, dy, dz]) => open(ore.x + dx, ore.y + dy, ore.z + dz));
+    if (!exposed) continue;
+    for (const [key, c] of cells) {
+      if (best && c.steps >= best.steps) continue;
+      if (dist({ x: c.p.x + 0.5, y: c.p.y + 1.6, z: c.p.z + 0.5 }, center(ore)) <= CAVE_REACH) best = { ore, key, steps: c.steps };
+    }
+  }
+  if (best) {
+    state.stuckSince = 0;
+    if (best.steps === 0) return mineOre(ai, record, state, best.ore);
+    startWalking(ai, state, cells.get(best.key)?.p ?? best.ore, best.ore, pathTo(best.key));
+    return jobToolSlot(record);
+  }
+
+  // 2. An ore hidden in the rock close by: tunnel to it.
+  const hidden = ores
+    .map((o) => ({ o, d: dist(center(o), eyeOf(ai)) }))
+    .filter((h) => h.d <= TUNNEL_TO)
+    .sort((a, b) => a.d - b.d)[0];
+  if (hidden) {
+    if (hidden.d <= CAVE_REACH) return mineOre(ai, record, state, hidden.o);
+    cs.tunnel = { goal: hidden.o, ore: true, until: now + TUNNEL_MS };
+    return jobToolSlot(record);
+  }
+
+  // 3. Follow the cave on: further along, down rather than up, places it hasn't been, not too far
+  // from the cave spot you picked.
+  const spot = record.cave && record.cave.dim === dim.id ? record.cave : undefined;
+  /** @type {{ key: string, score: number } | undefined} */
+  let go;
+  for (const [key, c] of cells) {
+    if (c.steps < 6) continue;
+    const seen = now - (cs.visited.get(areaKey(c.p)) ?? 0) < VISITED_MS;
+    const far = spot && Math.hypot(c.p.x - spot.x, c.p.z - spot.z) > CAVE_LEASH - 16;
+    const score = c.steps * 0.5 + (f.y - c.p.y) * 1.5 - (seen ? 40 : 0) - (far ? 80 : 0);
+    if (!go || score > go.score) go = { key, score };
+  }
+  if (go && go.score > -20) {
+    const target = /** @type {{ p: Vector3 }} */ (cells.get(go.key)).p;
+    startWalking(ai, state, target, target, pathTo(go.key));
+    return jobToolSlot(record);
+  }
+
+  // 4. A dead end (or it's explored everything near): dig a staircase down and keep going.
+  const dirs = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  const [dx, dz] = dirs[cs.turn++ % 4];
+  const depth = Math.max(range.min + 6, f.y - 6);
+  cs.tunnel = { goal: { x: f.x + dx * 8, y: depth, z: f.z + dz * 8 }, ore: false, until: now + TUNNEL_MS };
+  return jobToolSlot(record);
+}
+
+/**
+ * Starts mining an ore it can reach (gather() finishes it).
+ * @param {import("@minecraft/server").Entity} ai @param {import("./data.js").AiRecord} record
+ * @param {GatherState} state @param {Vector3} ore
+ */
+function mineOre(ai, record, state, ore) {
+  const id = ai.dimension.getBlock(ore)?.typeId ?? "";
+  const info = GATHER[id];
+  const tool = info ? toolFor(record, info) : undefined;
+  if (!info || !tool) return undefined;
+  const ticks = Math.min(400, Math.max(4, Math.ceil((info.hardness * 30) / tool.speed)));
+  state.mining = { ...ore, id, slot: tool.slot, until: system.currentTick + ticks, reach: CAVE_REACH + 1 };
+  face(ai, center(ore));
+  return tool.slot;
+}
+
+/**
+ * One think of digging a tunnel (1 wide, 2 high, in steps like stairs) towards a hidden ore, or down.
+ * @param {import("@minecraft/server").Entity} ai @param {string} ownerId @param {import("./data.js").AiRecord} record
+ * @param {GatherState} state @param {import("@minecraft/server").Player | undefined} owner
+ * @returns {number | undefined}
+ */
+function tunnelStep(ai, ownerId, record, state, owner) {
+  const cs = state.cave;
+  const t = /** @type {NonNullable<CaveState["tunnel"]>} */ (cs.tunnel);
+  const dim = ai.dimension;
+  const pick = toolFor(record, { tool: "pickaxe", tier: 0, required: true });
+  const stop = (/** @type {boolean} */ skip) => {
+    if (skip && t.ore) state.avoid.set(blockKey(t.goal), Date.now() + TREE_DONE_MS);
+    cs.tunnel = undefined;
+    cs.dig = undefined;
+    cs.plannedAt = 0;
+    return undefined;
+  };
+  if (!pick || Date.now() > t.until) return stop(true);
+  if (t.ore) {
+    const id = dim.getBlock(t.goal)?.typeId ?? "";
+    if (!GATHER[id]) return stop(false); // someone else mined it
+    if (dist(center(t.goal), eyeOf(ai)) <= CAVE_REACH) {
+      stop(false);
+      return mineOre(ai, record, state, t.goal);
+    }
+  }
+  const feet = floor(ai.location);
+  const dx = t.goal.x - feet.x;
+  const dz = t.goal.z - feet.z;
+  const dy = t.goal.y - feet.y;
+  if (!t.ore && Math.abs(dx) + Math.abs(dz) === 0 && Math.abs(dy) < 1) return stop(false);
+  const h = Math.abs(dx) >= Math.abs(dz) ? { x: Math.sign(dx), z: 0 } : { x: 0, z: Math.sign(dz) };
+  const sy = dy < -0.5 ? -1 : dy > 1.5 ? 1 : 0;
+  const next = { x: feet.x + h.x, y: feet.y + sy, z: feet.z + h.z };
+  const cells = [next, { ...next, y: next.y + 1 }];
+  if (sy > 0) cells.push({ ...feet, y: feet.y + 2 });
+  if (sy < 0) cells.push({ ...next, y: next.y + 2 }); // going down: room for its head on the way
+  for (const cell of cells) {
+    const block = dim.getBlock(cell);
+    if (!block) return stop(true);
+    if (passable(block)) continue;
+    const info = GATHER[block.typeId];
+    const ore = info?.focus === "Ores";
+    if ((!ore && !DIGGABLE.test(block.typeId)) || lavaNextTo(dim, cell).length > 0 || (ore && !toolFor(record, info))) return stop(true);
+    // Dig it, taking as long as its pickaxe would.
+    if (!cs.dig || blockKey(cs.dig.cell) !== blockKey(cell)) {
+      const hardness = info?.hardness ?? 1.5;
+      cs.dig = { cell, until: system.currentTick + Math.min(200, Math.max(3, Math.ceil((hardness * 30) / pick.speed))) };
+    }
+    face(ai, center(cell));
+    ai.playAnimation("animation.aip.ai_player.mine");
+    if (system.currentTick < cs.dig.until) return pick.slot;
+    cs.dig = undefined;
+    if (ore) {
+      finishMining(ai, ownerId, record, state, { ...cell, id: block.typeId, slot: pick.slot }, owner); // an ore on the way: keeps it
+    } else {
+      dim.setBlockType(cell, "minecraft:air");
+      dim.playSound(/dirt|grass|gravel|sand|mud|clay|soul/.test(block.typeId) ? "dig.gravel" : "dig.stone", cell);
+      wearAfterMining(ai, ownerId, record, pick.slot);
+    }
+    return pick.slot;
+  }
+  // The way is clear: step in (never onto lava).
+  if (LAVA.includes(dim.getBlock({ ...next, y: next.y - 1 })?.typeId ?? "")) return stop(true);
+  ai.teleport({ x: next.x + 0.5, y: next.y, z: next.z + 0.5 }, { facingLocation: center(t.goal) });
+  return pick.slot;
+}
+
 // ================================================================ walking
 
 /**
  * @typedef {{ source: Vector3, col: Vector3, out: Vector3 | undefined, dir: "down" | "up", endY: number, until: number }} WaterRide
  *   Swimming down or up a water column it poured: `source` is the water block, `col` the column it swims in.
- * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide, travel?: boolean, stepTicks: number }} Walker
+ * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide, travel?: boolean, stepTicks: number, path?: Vector3[] }} Walker
+ *   `path`: the rest of the way (cave paths): it walks to `stand`, then the next spot, and so on.
  */
 /** AIs walking to a block. @type {Map<string, Walker>} */
 const walkers = new Map();
@@ -770,9 +1081,14 @@ const walkers = new Map();
  * @param {GatherState} state
  * @param {Vector3} stand  feet position to walk to
  * @param {Vector3} block  the block it will mine
+ * @param {Vector3[]} [path]  spots to walk through, in order (ending at `stand`)
  */
-function startWalking(ai, state, stand, block) {
-  walkers.set(ai.id, { ai, state, stand, block, until: Date.now() + WALK_MS, stuck: 0, last: { ...ai.location }, stepTicks: 0 });
+function startWalking(ai, state, stand, block, path) {
+  const rest = path && path.length > 1 ? path.slice(1) : undefined;
+  const first = path?.[0] ?? stand;
+  walkers.set(ai.id, {
+    ai, state, stand: first, block, until: Date.now() + WALK_MS + (path?.length ?? 0) * 700, stuck: 0, last: { ...ai.location }, stepTicks: 0, path: rest,
+  });
   state.walking = true;
 }
 
@@ -832,6 +1148,12 @@ function step(id, w) {
   const dx = w.stand.x + 0.5 - p.x;
   const dz = w.stand.z + 0.5 - p.z;
   const d = Math.hypot(dx, dz);
+  if (w.path?.length && d < 0.5 && Math.abs(p.y - w.stand.y) < 1.2) {
+    w.stand = /** @type {Vector3} */ (w.path.shift()); // on to the next spot along the way
+    w.stuck = 0;
+    w.stepTicks = 0;
+    return;
+  }
   if (d < 0.3 && Math.abs(p.y - w.stand.y) < 1) {
     ai.clearVelocity();
     stopWalking(id, w.state); // arrived: the next think starts work

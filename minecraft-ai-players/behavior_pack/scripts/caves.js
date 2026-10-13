@@ -4,7 +4,8 @@
 //   Debris, Nether Gold Ore and Nether Quartz Ore (each also switchable).
 // - Pick where it works with a laser: look at a cave or ravine and tap Place (or left click). The spot
 //   has to be underground: at least 10 blocks above it (or deep down with a roof over it). The AI is
-//   sent there and mines the chosen ores around it, coming back to that area if it wanders off.
+//   sent there and explores the caves from there (see gather.js: it sees ores through the rock, walks
+//   the cave to the ones in the walls, tunnels to hidden ones close by, and follows the cave down).
 import { world, system, MolangVariableMap } from "@minecraft/server";
 import { isLeftClick } from "./effects.js";
 import { GATHER } from "./gather_data.js";
@@ -30,7 +31,7 @@ const DEEP_Y = 20; // this deep down, a roof of 3 blocks is enough
 const DEEP_COVER = 3;
 const LASER_RANGE = 64;
 const PLACING_MS = 120000;
-export const CAVE_LEASH = 64; // wanders back if it gets further than this from its cave spot
+export const CAVE_LEASH = 128; // explores the caves up to about this far from its cave spot (goes back if it's further)
 
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
 /** @typedef {{ x: number, y: number, z: number, dim: string }} CaveSpot */
