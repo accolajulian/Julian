@@ -182,7 +182,7 @@ shown on info labels and can't be taken.
 | 2 | Helmet, Chestplate, Leggings, Boots, Blocks 1-2, Own chicken (info), Spare chicken, Valuables 1 | same |
 | 3 | Valuables 2-10 | Valuables 2-10 |
 
-**Remote menu (Fighter):** *Jobs* (if it was a Resource AI), *Stay here* / *Follow me* (one button), *Fight* (Attack a player, Guard here, Style, Targets, Loot tombstones, Teach a tombstone), *Teleport*, *AI Chest*, *More* (Friends & enemies, Delete).
+**Remote menu (Fighter that was a Resource AI):** *Resourcer* (its jobs: Trees, Caves, Strip mine, Sugar cane farm, plus the AI Chest), *Fighter* (Attack a player, Guard here, Style, Targets, Loot tombstones, Teach a tombstone), *Stay here* / *Follow me* (one button), *Teleport*, *More* (Friends & enemies, Delete). It's the same AI, so it keeps its Resource AI egg and Remote after the upgrade (no new Fighter egg or red Remote).
 
 | Fighting | What it does |
 |---|---|

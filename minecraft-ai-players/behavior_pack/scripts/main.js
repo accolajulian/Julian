@@ -229,10 +229,20 @@ const GUIDE_TEXT =
   "§7Lost your egg? Open the Coder and pick your AI to get a new one.";
 
 
+/**
+ * Which kind of egg and Remote an AI uses. A Fighter that was a Resource AI is the same AI, so it
+ * keeps its Resource AI egg and Remote.
+ * @param {AiRecord} record
+ * @returns {import("./data.js").RoleId}
+ */
+function itemRole(record) {
+  return record.evolved ? "resource" : record.role;
+}
+
 /** @param {import("@minecraft/server").Player} player @param {AiRecord} record */
 function giveEgg(player, record) {
-  const egg = new ItemStack(ROLES[record.role].egg, 1);
-  egg.nameTag = `§r${ROLES[record.role].title} Egg: §e${record.name}`;
+  const egg = new ItemStack(ROLES[itemRole(record)].egg, 1);
+  egg.nameTag = `§r${record.evolved ? "AI" : ROLES[record.role].title} Egg: §e${record.name}`;
   egg.setLore([`§7Bought by: ${player.name}`, "§7Use it to throw it and spawn your AI."]);
   egg.setDynamicProperty("aip:key", record.key);
   egg.setDynamicProperty("aip:serial", record.serial);
@@ -573,22 +583,10 @@ function becomeFighter(player, record) {
   }
   toolsChanged(record.id);
 
-  // Its blue Remote becomes a red one (and an egg not thrown yet becomes a Fighter egg).
-  const container = player.getComponent("minecraft:inventory")?.container;
-  if (container) {
-    for (let i = 0; i < container.size; i++) {
-      const item = container.getItem(i);
-      if (!item || item.getDynamicProperty("aip:key") !== record.key) continue;
-      if (item.typeId === ROLES.resource.robot) container.setItem(i, makeRecallRobot(player, record));
-      if (item.typeId === ROLES.resource.egg) {
-        container.setItem(i, undefined);
-        giveEgg(player, record);
-      }
-    }
-  }
+  // It's the same AI: it keeps its egg and Remote. The Remote's menu now asks Resourcer or Fighter.
   player.sendMessage(
     `§b${record.name} is now a Fighter AI! §fIt keeps everything it could do before. ` +
-      "Its Remote now has fight commands, plus §eJobs§f (it still fights any enemy that shows up)."
+      "Its Remote now has §eResourcer§f (jobs, AI Chest) and §eFighter§f (fight commands); it still fights any enemy that shows up."
   );
 }
 
@@ -755,7 +753,7 @@ function hatch(egg, location, dimension) {
  * @param {import("@minecraft/server").Player} player @param {AiRecord} record
  */
 function makeRecallRobot(player, record) {
-  const robot = new ItemStack(ROLES[record.role].robot, 1);
+  const robot = new ItemStack(ROLES[itemRole(record)].robot, 1);
   robot.nameTag = REMOTE_NAME(record);
   robot.setLore([`§7AI: ${record.name}`, `§7Controlled by: ${player.name}`, "§7Left click: menu"]);
   robot.setDynamicProperty("aip:key", record.key);
@@ -806,7 +804,7 @@ function takeControl(player, record) {
   if (container) {
     for (let i = 0; i < container.size; i++) {
       const item = container.getItem(i);
-      if (item && ROLES[record.role].robot === item.typeId && robotKey(item) === record.key) {
+      if (item && ROLE_IDS.some((r) => ROLES[r].robot === item.typeId) && robotKey(item) === record.key) {
         container.setItem(i, makeRecallRobot(player, record));
       }
     }
@@ -835,7 +833,7 @@ system.runInterval(() => {
         takeControl(player, record);
       } else if (
         item.nameTag !== REMOTE_NAME(record) ||
-        item.typeId !== ROLES[record.role].robot ||
+        item.typeId !== ROLES[itemRole(record)].robot ||
         item.getLore().some((line) => line.includes("Right click"))
       ) {
         container.setItem(i, makeRecallRobot(player, record)); // an older one: rename it "Remote" (and fix its colour)
@@ -891,7 +889,6 @@ function recallAi(player, key) {
 async function deleteAi(player, key) {
   const record = mine(player, key);
   if (!record) return;
-  const role = record.role;
   const confirm = await new MessageFormData()
     .title(`Delete ${record.name}?`)
     .body(
@@ -919,8 +916,8 @@ async function deleteAi(player, key) {
     for (let i = 0; i < container.size; i++) {
       const item = container.getItem(i);
       if (!item) continue;
-      const isRobot = item.typeId === ROLES[role].robot && robotKey(item) === key;
-      const isEgg = item.typeId === ROLES[role].egg && item.getDynamicProperty("aip:key") === key;
+      const isRobot = ROLE_IDS.some((r) => ROLES[r].robot === item.typeId) && robotKey(item) === key;
+      const isEgg = ROLE_IDS.some((r) => ROLES[r].egg === item.typeId) && item.getDynamicProperty("aip:key") === key;
       if (isRobot || isEgg) container.setItem(i, undefined);
     }
   }
@@ -1078,18 +1075,25 @@ async function showCommands(player, key) {
 
   /** @type {{ label: string, run: () => unknown }[]} */
   const actions = [];
-  // Jobs first: a stray tap on it only opens a menu.
-  if (canGather(record)) actions.push({ label: `${record.mode === "wander" ? "§2" : ""}Jobs`, run: () => showJobs(player, key) });
+  // A Fighter that was a Resource AI: first choose Resourcer (its jobs and AI Chest) or Fighter
+  // (fight commands). Menus first: a stray tap on one only opens a menu.
+  const both = fighter && !!record.evolved;
+  if (both) {
+    actions.push({ label: `${record.mode === "wander" ? "§2" : ""}Resourcer`, run: () => showJobs(player, key, true) });
+    actions.push({ label: `${record.mode === "guard" ? "§2" : ""}Fighter`, run: () => showFight(player, key) });
+  } else if (canGather(record)) {
+    actions.push({ label: `${record.mode === "wander" ? "§2" : ""}Jobs`, run: () => showJobs(player, key) });
+  }
   // One button: stop following (stay here) or start following again. Not while it's on a job:
   // then Teleport brings it back to you and ends the job.
   const following = record.mode === "follow";
   if (record.mode !== "wander") {
     actions.push({ label: following ? "Stay here" : "Follow me", run: needAi((a) => setMode(player, key, a, following ? "stay" : "follow")) });
   }
-  if (fighter) actions.push({ label: "Fight", run: () => showFight(player, key) });
+  if (fighter && !both) actions.push({ label: "Fight", run: () => showFight(player, key) });
   // (Not the first button: on touch screens the tap that opens the menu can land on the first one.)
   actions.push({ label: record.mode === "wander" ? "Teleport §8(ends job)" : "Teleport", run: () => recallAi(player, key) });
-  if (canGather(record)) actions.push({ label: `AI Chest${resourcePerks(record) ? "" : " §8(locked)"}`, run: () => showStash(player, key) });
+  if (canGather(record) && !both) actions.push({ label: `AI Chest${resourcePerks(record) ? "" : " §8(locked)"}`, run: () => showStash(player, key) });
   actions.push({ label: "More", run: () => showMore(player, key) });
 
   const form = new ActionFormData()
@@ -1139,9 +1143,10 @@ function setJob(player, key, job) {
 
 /**
  * Jobs: picking one starts it. The sugar cane farm opens its own menu once it's placed.
- * @param {import("@minecraft/server").Player} player @param {string} key
+ * As "Resourcer" (a Fighter that was a Resource AI) it also has the AI Chest.
+ * @param {import("@minecraft/server").Player} player @param {string} key @param {boolean} [resourcer]
  */
-async function showJobs(player, key) {
+async function showJobs(player, key, resourcer = false) {
   const record = mine(player, key);
   if (!record) return;
   const working = record.mode === "wander";
@@ -1156,7 +1161,8 @@ async function showJobs(player, key) {
     label: `${working && record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm §8(In Water Only)${record.farm ? " - in progress" : ` - ${FARM_COST} iron`}`,
     run: () => (record.farm ? showFarm(player, key) : startPlacing(player, key)),
   });
-  const form = new ActionFormData().title("Jobs").body(working ? `§7Now:§r ${record.focus}` : "Pick a job.");
+  if (resourcer) actions.push({ label: `AI Chest${resourcePerks(record) ? "" : " §8(locked)"}`, run: () => showStash(player, key) });
+  const form = new ActionFormData().title(resourcer ? "Resourcer" : "Jobs").body(working ? `§7Now:§r ${record.focus}` : "Pick a job.");
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
