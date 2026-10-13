@@ -729,7 +729,7 @@ function think(ai, ownerId, role, record, brain) {
 
   // ---- Drowning: head under water, it swims up. Still in the water after 2 seconds (and not following
   // you, where boats.js decides): it puts a boat down and gets in.
-  if (!boating && ai.isInWater && !boatOf(ai)) {
+  if (!boating && ai.isInWater && !boatOf(ai) && !farmBuilding(record)) { // (building a farm it wades on purpose)
     const l = ai.location;
     const underwater = /water/.test(ai.dimension.getBlock({ x: l.x, y: l.y + 1.6, z: l.z })?.typeId ?? "");
     brain.wetSince ||= now;

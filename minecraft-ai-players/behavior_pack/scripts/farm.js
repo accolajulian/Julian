@@ -27,6 +27,7 @@ import { GATHER } from "./gather_data.js";
 import { getAi, saveRecord, findPlayer, giveItem, countItem, takeItem } from "./data.js";
 import { notify } from "./levels.js";
 import { inventoryOf, isWood } from "./inventory.js";
+import { boatOf, leaveBoat } from "./boats.js";
 
 export const FARM_FOCUS = "Sugar cane farm";
 const WIDTH = 15;
@@ -395,6 +396,7 @@ export function farmProgress(plan) {
  * @typedef {Object} BuildState  Per loaded AI (not saved).
  * @property {"planks" | "sand" | "cane"} phase
  * @property {{ w: number, l: number, dy: number, idx: number }[]} cells  still to place, in order
+ * @property {number} placedAt  when it last placed a block (it never stalls: see buildFarm)
  */
 /** @type {Map<string, BuildState>} */
 const builds = new Map();
@@ -423,6 +425,10 @@ export function buildFarm(ai, ownerId, record) {
     builds.set(ai.id, b);
     saveRecord(ownerId, "resource", record);
   }
+
+  // In some other boat while wading (not its farm boat): get out.
+  const other = boatOf(ai);
+  if (other && other.id !== plan.boatId) leaveBoat(ai, other, undefined);
 
   // Out of sugar cane: harvest what has grown on the farm and plant it on the empty sand.
   if (phase === "cane" && plan.cane <= 0) {
@@ -468,7 +474,33 @@ export function buildFarm(ai, ownerId, record) {
     placed++;
     changed = true;
   }
-  if (placed > 0) ai.playAnimation("animation.aip.ai_player.mine");
+  if (placed > 0) {
+    ai.playAnimation("animation.aip.ai_player.mine");
+    b.placedAt = Date.now();
+  }
+  // Never stalls: nothing placed for 8 seconds, it hops to the spot on its route next to the next
+  // block; still nothing after 16 seconds, it just places that block (so the farm always gets finished).
+  const idle = Date.now() - b.placedAt;
+  if (placed === 0 && b.cells.length > 0 && idle > 8000) {
+    const c = b.cells[0];
+    const p = at(plan, c.w, c.l, c.dy);
+    if (idle > 16000 && dim.getBlock(p)) {
+      const id = phase === "planks" ? takePlank(plan) : phase === "sand" ? (plan.sand > 0 ? "minecraft:sand" : undefined) : plan.cane > 0 ? CANE_BLOCK : undefined;
+      if (id) {
+        if (phase === "sand") plan.sand -= 1;
+        if (phase === "cane") plan.cane -= 1;
+        dim.setBlockType(p, id);
+        plan.left[phase] = Math.max(0, plan.left[phase] - 1);
+        b.cells.shift();
+        b.placedAt = Date.now() - 12000; // keeps going quickly if it's still stuck
+        changed = true;
+      }
+    } else if (idle > 8000 && idle < 8600) {
+      const r = ROUTE[c.idx];
+      const spot = at(plan, r.w, r.l, 0);
+      if (!plan.boatId) ai.teleport({ x: spot.x + 0.5, y: spot.y, z: spot.z + 0.5 });
+    }
+  }
   if (changed) saveRecord(ownerId, "resource", record);
 
   if (b.cells.length === 0) {
@@ -607,7 +639,7 @@ function startPhase(ai, plan) {
   } else {
     stowBoat(plan); // it wades along the channels for the sand and sugar cane
   }
-  return { phase, cells };
+  return { phase, cells, placedAt: Date.now() };
 }
 
 /** Takes the boat out of the water (it's put back when the farm is done). @param {FarmPlan} plan */
