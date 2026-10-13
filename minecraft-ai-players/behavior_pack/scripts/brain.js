@@ -51,6 +51,7 @@ import { handleTombs, createLootState } from "./tombs.js";
 import { stripMine, createStripState } from "./stripmine.js";
 import { bridgeTowards } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from "./gather.js";
+import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
 const THINK_TICKS = 10; // the brain thinks twice a second
@@ -593,14 +594,21 @@ function think(ai, ownerId, role, record, brain) {
     // ---- Gather only while wandering, and not while being attacked or near lava.
     const safe = wandering && !lavaClose && now - lastHit > RECENT_MS;
     setGatherBehavior(ai, brain.gather, stripping ? "Nothing" : record.focus, safe && !stripping);
+    // Sugar cane farm: collect the materials (normal gathering), then build it.
+    const building = wandering && farmBuilding(record);
     let slot = fleeSlot;
     if (slot === undefined && safe) {
-      slot = stripping
-        ? stripMine(ai, ownerId, record, brain.strip, () => placeTorch(ai, ownerId, record, brain, Date.now()))
-        : gather(ai, ownerId, record, brain.gather, undefined);
+      if (stripping) {
+        slot = stripMine(ai, ownerId, record, brain.strip, () => placeTorch(ai, ownerId, record, brain, Date.now()));
+      } else if (building) {
+        buildFarm(ai, ownerId, record);
+      } else {
+        slot = gather(ai, ownerId, record, brain.gather, undefined);
+        if (record.focus === FARM_FOCUS) checkCollected(ownerId, record);
+      }
     }
     // While it's walking to or chopping/mining something it stands still instead of strolling off.
-    const working = wandering && !stripping && isBusy(brain.gather);
+    const working = wandering && !stripping && (isBusy(brain.gather) || building);
     const modeEvent = stripping || working ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
     if (brain.modeEvent !== modeEvent) {
       ai.triggerEvent(modeEvent);
@@ -609,7 +617,7 @@ function think(ai, ownerId, role, record, brain) {
     equip(ai, brain, record, slot ?? firstTool(record, false));
     if (safe) placeTorch(ai, ownerId, record, brain, now);
     // Not mining and its owner is away: bridge/pillar to catch up.
-    if (slot === undefined && !isBusy(brain.gather) && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
+    if (slot === undefined && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
       bridgeTowards(ai, ownerId, role, record, owner.location);
     }
     return;

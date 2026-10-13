@@ -12,6 +12,7 @@
 // next to lava. Lava near any AI gets covered with blocks from its block slots, or the AI backs away.
 import { system, BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER, FOCUS_TYPES } from "./gather_data.js";
+import { FARM_FOCUS, farmKinds, farmCollect } from "./farm.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
   inventoryOf,
@@ -444,12 +445,15 @@ function avoidTree(state, logs) {
 function findTarget(ai, record, state, ownerId, radius, owner) {
   const dim = ai.dimension;
   const feet = floor(ai.location);
-  const kind = FOCUS_TYPES[record.focus];
-  const types = Object.keys(GATHER).filter((id) => GATHER[id].focus === kind);
+  // Sugar cane farm: whatever it still needs (logs, sand, sugar cane).
+  const farming = record.focus === FARM_FOCUS;
+  const kinds = farming ? farmKinds(record) : [FOCUS_TYPES[record.focus]];
+  const types = Object.keys(GATHER).filter((id) => kinds.includes(GATHER[id].focus));
+  if (types.length === 0) return undefined;
   const r = Math.ceil(radius);
   // In caves it looks further up and down (ravines, cave walls).
-  const down = kind === "Ores" ? 12 : 4;
-  const up = kind === "Ores" ? 8 : 6;
+  const down = kinds.includes("Ores") ? 12 : farming ? 6 : 4;
+  const up = kinds.includes("Ores") ? 8 : 6;
   const volume = new BlockVolume({ x: feet.x - r, y: feet.y - down, z: feet.z - r }, { x: feet.x + r, y: feet.y + up, z: feet.z + r });
   const nearOwner = owner && owner.dimension.id === dim.id ? owner.location : undefined;
   let found;
@@ -478,6 +482,8 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
     if (!id || !info) continue;
     // Only chop real trees (logs with leaves above them), not someone's log house.
     if (info.focus === "Wood" && !hasLeavesAbove(dim, p)) continue;
+    // Leave the bottom of each sugar cane so it grows back.
+    if (info.focus === "Cane" && dim.getBlock({ ...p, y: p.y - 1 })?.typeId !== id) continue;
     const tool = toolFor(record, info);
     if (!tool) {
       missingTool = info;
@@ -526,13 +532,30 @@ function finishMining(ai, ownerId, record, state, m, owner) {
     dim.setBlockType(spot, block);
   }
 
+  // Sugar cane: take the rest of the stalk above it too (top first, so nothing pops off).
+  let extra = 0;
+  if (info.focus === "Cane") {
+    let top = m.y + 1;
+    while (top < m.y + 8 && dim.getBlock({ ...m, y: top })?.typeId === m.id) top++;
+    for (let y = top - 1; y > m.y; y--) {
+      dim.setBlockType({ ...m, y }, "minecraft:air");
+      extra++;
+    }
+  }
   dim.setBlockType(m, "minecraft:air");
-  dim.playSound(info.tool === "axe" ? "dig.wood" : "dig.stone", m);
+  dim.playSound(info.tool === "axe" ? "dig.wood" : info.tool === "pickaxe" ? "dig.stone" : info.tool === "shovel" ? "dig.sand" : "dig.grass", m);
+
+  const amount = (info.min !== undefined && info.max !== undefined
+    ? info.min + Math.floor(Math.random() * (info.max - info.min + 1))
+    : 1) + extra;
+  // Collecting for a sugar cane farm: it keeps it for the farm.
+  if (farmCollect(record, info.drop, amount)) {
+    wearAfterMining(ai, ownerId, record, m.slot);
+    saveRecord(ownerId, "resource", record);
+    return;
+  }
 
   // Drops go to its valuables / block slots; anything that doesn't fit goes to its owner (or is dropped).
-  const amount = info.min !== undefined && info.max !== undefined
-    ? info.min + Math.floor(Math.random() * (info.max - info.min + 1))
-    : 1;
   let left = amount;
   if (isValuable(info.drop)) left -= addValuables(record, info.drop, left);
   if (isPlaceableBlock(info.drop)) left -= addBlocks(record, info.drop, left);
@@ -543,15 +566,22 @@ function finishMining(ai, ownerId, record, state, m, owner) {
     else dim.spawnItem(stack, center(m));
   }
 
-  // Wear the tool. If it breaks, the next think uses the next suitable slot.
-  if (m.slot >= 0) {
-    const toolId = inventoryOf(record).tools[m.slot]?.id;
-    if (wearTool(record, m.slot) === "broke" && toolId) {
-      dim.playSound("random.break", ai.location);
-      findPlayer(ownerId)?.sendMessage(`§c${record.name}'s ${itemName(toolId)} broke!`);
-    }
-  }
+  wearAfterMining(ai, ownerId, record, m.slot);
   saveRecord(ownerId, "resource", record);
+}
+
+/**
+ * Wears the tool. If it breaks, the next think uses the next suitable slot.
+ * @param {import("@minecraft/server").Entity} ai @param {string} ownerId
+ * @param {import("./data.js").AiRecord} record @param {number} slot
+ */
+function wearAfterMining(ai, ownerId, record, slot) {
+  if (slot < 0) return;
+  const toolId = inventoryOf(record).tools[slot]?.id;
+  if (wearTool(record, slot) === "broke" && toolId) {
+    ai.dimension.playSound("random.break", ai.location);
+    findPlayer(ownerId)?.sendMessage(`§c${record.name}'s ${itemName(toolId)} broke!`);
+  }
 }
 
 /**

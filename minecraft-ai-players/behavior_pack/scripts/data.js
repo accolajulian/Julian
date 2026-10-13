@@ -38,6 +38,7 @@ const MAX_ENEMIES = 40;
  * @property {number} [torches]  Resource AI: torches (refill to a stack when the last is placed).
  * @property {boolean} [loot]  Fighter: break tombstones and take the loot (default on).
  * @property {({ id: string, count: number } | null)[]} [stash]  Resource AI: its AI Chest (unlocked by the upgrade).
+ * @property {import("./farm.js").FarmPlan} [farm]  Resource AI: the sugar cane farm it's collecting for / building.
  */
 /**
  * @typedef {Object} Memory  Saved per owner, shared by both of their AIs. Survives death.
@@ -68,7 +69,7 @@ export function getAi(key) {
  * @param {AiRecord | undefined} record
  */
 function upgradeRecord(record) {
-  if (record && !["Trees", "Caves", "Strip mine", "Nothing"].includes(record.focus)) {
+  if (record && !["Trees", "Caves", "Strip mine", "Sugar cane farm", "Nothing"].includes(record.focus)) {
     record.focus = record.focus === "Wood" ? "Trees" : "Caves";
   }
   return record;

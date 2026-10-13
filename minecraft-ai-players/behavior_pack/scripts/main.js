@@ -32,6 +32,7 @@ import {
 import { commandAttack, toolsChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
 import "./chest.js"; // Computer Chest (upgraded AIs' inventories from anywhere)
+import { FARM_FOCUS, startPlacing, isPlacing, farmProgress, giveFarmMaterials, returnFarmMaterials } from "./farm.js";
 import {
   FOOD_ITEM,
   FOOD_RESERVED,
@@ -561,7 +562,7 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
 
 // ...and left click (an attack swing) opens its commands.
 world.afterEvents.playerSwingStart.subscribe(({ player, heldItemStack, swingSource }) => {
-  if (swingSource !== EntitySwingSource.Attack) return;
+  if (swingSource !== EntitySwingSource.Attack || isPlacing(player.id)) return; // (placing a farm uses left click)
   const record = robotRecord(player, heldItemStack);
   if (record) system.run(() => openMenu(player, (p) => showCommands(p, record.key)));
 });
@@ -1008,6 +1009,12 @@ async function showCommands(player, key) {
     actions.push({ label: `${wandering ? "§2" : ""}Wander and gather\n§8Goes off to get the resource below`, run: setResource({ mode: "wander" }) });
     const resources = RESOURCE_FOCUS.filter((f) => f !== "Nothing");
     if (record.upgraded) resources.push("Strip mine");
+    actions.push({
+      label: record.farm
+        ? `${record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm\n§8${farmProgress(record.farm)}`
+        : "Sugar cane farm\n§8Builds a 15 x 22 farm in water",
+      run: () => (record.farm ? showFarm(player, key) : startPlacing(player, key)),
+    });
     const saved = stashCount(record);
     actions.push({
       label: `AI Chest\n§8${saved} items${record.upgraded ? "" : " - locked until upgraded"}`,
@@ -1239,6 +1246,71 @@ function returnEverything(player, record) {
   giveArrows(player, totalArrows(record));
   const food = takeableFood(record);
   if (food > 0) giveItem(player, new ItemStack(FOOD_ITEM, food));
+}
+
+// ================================================================ sugar cane farm
+
+/**
+ * Progress of the sugar cane farm, with ways to help (hand over materials), move or cancel it.
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+async function showFarm(player, key) {
+  const record = mine(player, key);
+  const plan = record?.farm;
+  if (!record || !plan) return;
+  /** @type {{ label: string, run: () => unknown }[]} */
+  const actions = [];
+  if (record.focus !== FARM_FOCUS || record.mode !== "wander") {
+    actions.push({
+      label: "Keep working on it",
+      run: () => {
+        const r = mine(player, key);
+        if (!r?.farm) return;
+        r.focus = FARM_FOCUS;
+        r.mode = "wander";
+        saveRecord(player.id, "resource", r);
+        toolsChanged(r.id);
+        player.sendMessage(`§a${r.name} is back on the sugar cane farm.`);
+      },
+    });
+  }
+  if (plan.phase === "collect") {
+    actions.push({
+      label: "Give it materials\n§8Logs, planks, sand, sugar cane from your inventory",
+      run: () => {
+        const r = mine(player, key);
+        if (!r) return;
+        const taken = giveFarmMaterials(player, r);
+        player.sendMessage(taken.length ? `§a${r.name} took ${taken.join(", ")}.` : "§eYou don't have anything it still needs.");
+      },
+    });
+    actions.push({ label: "Move the farm\n§8Pick a new spot", run: () => startPlacing(player, key) });
+  }
+  actions.push({
+    label: "§cCancel the farm\n§8You get back what it collected",
+    run: () => {
+      const r = mine(player, key);
+      if (!r?.farm) return;
+      returnFarmMaterials(r, player, r.id ? world.getEntity(r.id) : undefined);
+      r.farm = undefined;
+      r.focus = "Trees";
+      saveRecord(player.id, "resource", r);
+      toolsChanged(r.id);
+      player.sendMessage(`§e${r.name} stopped the sugar cane farm.`);
+    },
+  });
+  const form = new ActionFormData()
+    .title("Sugar cane farm")
+    .body(
+      `${farmProgress(plan)}\n\n` +
+        `Collected: ${Object.values(plan.logs).reduce((a, b) => a + b, 0)} logs, ` +
+        `${Object.values(plan.planks).reduce((a, b) => a + b, 0)} planks, ${plan.sand} sand, ${plan.cane} sugar cane` +
+        (plan.boat ? ", a boat" : "")
+    );
+  actions.forEach((a) => form.button(a.label));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  await actions[response.selection].run();
 }
 
 // ================================================================ AI Chest (Resource AI)

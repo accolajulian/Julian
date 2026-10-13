@@ -50,6 +50,11 @@ for lit in ("minecraft:lit_redstone_ore", "minecraft:lit_deepslate_redstone_ore"
 GATHER["minecraft:nether_gold_ore"] = {"focus": "Ores", "drop": "minecraft:gold_nugget", "min": 2, "max": 6, "hardness": 3, "tool": "pickaxe", "tier": 0, "required": True}
 GATHER["minecraft:quartz_ore"] = {"focus": "Ores", "drop": "minecraft:quartz", "hardness": 3, "tool": "pickaxe", "tier": 0, "required": True}
 GATHER["minecraft:ancient_debris"] = {"focus": "Ores", "drop": "minecraft:ancient_debris", "hardness": 30, "tool": "pickaxe", "tier": 3, "required": True}
+# Sugar cane farm materials (only gathered while collecting for a farm).
+for sand in ("sand", "red_sand"):
+    GATHER[f"minecraft:{sand}"] = {"focus": "Sand", "drop": f"minecraft:{sand}", "hardness": 0.5, "tool": "shovel", "tier": 0, "required": False}
+GATHER["minecraft:reeds"] = {"focus": "Cane", "drop": "minecraft:sugar_cane", "hardness": 0.1, "tool": "none", "tier": 0, "required": False}
+
 # What the Resource AI can be told to get, and which blocks each one means.
 FOCUSES = ["Trees", "Caves"]
 FOCUS_TYPES = {"Trees": "Wood", "Caves": "Ores"}

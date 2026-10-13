@@ -342,6 +342,30 @@ export const GATHER = {
     "tool": "pickaxe",
     "tier": 3,
     "required": true
+  },
+  "minecraft:sand": {
+    "focus": "Sand",
+    "drop": "minecraft:sand",
+    "hardness": 0.5,
+    "tool": "shovel",
+    "tier": 0,
+    "required": false
+  },
+  "minecraft:red_sand": {
+    "focus": "Sand",
+    "drop": "minecraft:red_sand",
+    "hardness": 0.5,
+    "tool": "shovel",
+    "tier": 0,
+    "required": false
+  },
+  "minecraft:reeds": {
+    "focus": "Cane",
+    "drop": "minecraft:sugar_cane",
+    "hardness": 0.1,
+    "tool": "none",
+    "tier": 0,
+    "required": false
   }
 };
 
