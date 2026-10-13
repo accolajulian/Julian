@@ -62,7 +62,7 @@ import { bridgeTowards, isBridging } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy, digStep, jobToolSlot } from "./gather.js";
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 import { keepLoaded } from "./scout.js";
-import { boatThink } from "./boats.js";
+import { boatThink, spawnBoat, boatOf } from "./boats.js";
 import { isDropping, takeHandChanged, startDrop } from "./mlg.js";
 import { CAVE_LEASH } from "./caves.js";
 
@@ -277,6 +277,7 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {boolean} lavaProof  Lava and fire can't hurt it.
  * @property {boolean} resourcePerks  Resource AI upgrade perks: strip mining, no fall damage.
  * @property {number} level  0 once its walking speed is back to normal (-1: set it again).
+ * @property {number} wetSince  when it got into the water (0: it isn't in water)
  * @property {boolean} followPaused  the game's follow behavior is off while it sprints after you
  * @property {string | undefined} lookEvent  aip:look_on / aip:look_off applied (it never looks at players on a job).
  * @property {boolean} eatingToFull  Too hungry to sprint: eating chicken until it's full.
@@ -724,6 +725,24 @@ function think(ai, ownerId, role, record, brain) {
 
   // ---- Boats: on the water with you it follows by boat (see boats.js); then no walking-follow below.
   const boating = dropping || boatThink(ai, owner, record);
+
+  // ---- Drowning: head under water, it swims up. Still in the water after 2 seconds (and not following
+  // you, where boats.js decides): it puts a boat down and gets in.
+  if (!boating && ai.isInWater && !boatOf(ai)) {
+    const l = ai.location;
+    const underwater = /water/.test(ai.dimension.getBlock({ x: l.x, y: l.y + 1.6, z: l.z })?.typeId ?? "");
+    brain.wetSince ||= now;
+    if (underwater) {
+      const v = ai.getVelocity();
+      ai.applyImpulse({ x: 0, y: 0.3 - v.y, z: 0 });
+    }
+    if (record.mode !== "follow" && now - brain.wetSince > 2000) {
+      spawnBoat(ai);
+      brain.wetSince = 0;
+    }
+  } else {
+    brain.wetSince = 0;
+  }
 
   // ---- Following and a bit behind: jump sprint after you in your tracks (the loop above does it every
   // tick). It never teleports to you: it walks, sprints, builds up, crouch-bridges or takes a boat.
@@ -1385,7 +1404,7 @@ function pickUpItems(ai, ownerId, role, record) {
   // else only when it's right next to it.
   for (const item of ai.dimension.getEntities({ location: ai.location, maxDistance: TOOL_PICKUP_RANGE, type: "minecraft:item" })) {
     const stack = item.getComponent("minecraft:item")?.itemStack;
-    if (!stack) continue;
+    if (!stack || /sapling|propagule/.test(stack.typeId)) continue; // leaves saplings alone
     const isTool = toolsFor(record).has(stack.typeId) && stack.amount === 1;
     if (!isTool && distance(item.location, ai.location) > 2.5) continue;
     let message;
@@ -1424,7 +1443,7 @@ function pickUpItems(ai, ownerId, role, record) {
     }
     saveRecord(ownerId, role, record);
     toolsChanged(ai.id);
-    findPlayer(ownerId)?.sendMessage(`§a${record.name} ${message}.`);
+    if (isTool) findPlayer(ownerId)?.sendMessage(`§a${record.name} ${message}.`); // only tools get a message
     return; // one per think
   }
 }
@@ -1476,6 +1495,7 @@ function ensureBrain(ai, role) {
     level: -1,
     lookEvent: undefined,
     followPaused: false,
+    wetSince: 0,
     eatingToFull: false,
     biteAt: 0,
     hungryWarnedAt: 0,

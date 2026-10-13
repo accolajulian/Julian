@@ -16,6 +16,7 @@ import { FARM_FOCUS, farmKinds, farmCollect } from "./farm.js";
 import { createScoutState, scout } from "./scout.js";
 import { caveBlocks, CAVE_LEASH } from "./caves.js";
 import { isDropping, startDrop } from "./mlg.js";
+import { boatOf, spawnBoat, leaveBoat } from "./boats.js";
 import { countCollected } from "./levels.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
@@ -60,17 +61,20 @@ const TREE_DONE_MS = 600000; // logs it couldn't reach on a tree it finished: sk
 const SOFT = /leaves|^minecraft:(dirt|coarse_dirt|grass_block|podzol|mycelium|mud|rooted_dirt|sand|red_sand|gravel|snow|snow_layer|vine|moss_block|clay)$/;
 const STUCK_TICKS = 40; // no progress for this long: give up the walk
 const WALK_MS = 15000; // gives up on a walk after this long
-const TREE_REACH = 6; // from inside the trunk it reaches logs this far away
+const TREE_REACH = 11; // it chops logs up to this far from its eyes
 const TREE_SEARCH = 24; // looks for the closest tree trunk this far around itself
 const TREE_MS = 120000; // gives up on a tree after this long
 /** Blocks it may break to step into the trunk gap. */
 const WATER_MS = 15000; // gives up swimming after this long
 const WATER_DEPTH = 24; // deepest ravine it will swim down
 const WATER_HEIGHT = 16; // highest wall it will swim up
-const CLEARABLE = /leaves|dirt|grass_block|podzol|mycelium|mud|moss|snow|vine|roots|propagule|_log$|_stem$|_wood$/;
 /** Blocks it can walk through (plants, torches, snow...). */
 const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers|glow_lichen/;
 const WARN_MS = 30000; // don't repeat the same chat warning more often than this
+const UNSTICK_MS = 30000; // on Trees/farm: in the same spot with nothing mined this long, it moves on
+const BOAT_REACH = 4.5; // from a boat it digs sand this far away
+const BOAT_SCAN = 40; // looks this far for sand by the water
+const TURN = 0.35; // how much of the way it turns its head each tick (smooth, no snapping)
 const TOOL_WARN_MS = 300000; // "needs a pickaxe" at most every 5 minutes
 const TABLE_TICKS = 30; // its crafting table stays out this long, then it picks it back up
 /** Natural ground it may dig through to climb out of a pit (never anything built, never ores). */
@@ -93,15 +97,17 @@ const DIG_TICKS = 8; // one block every this many ticks when digging out
  * @property {boolean} lost  It scouted and found nothing anywhere: it may stroll around to explore.
  * @property {number} stuckSince  When scouting stopped giving it anywhere new to go (0: it isn't stuck).
  * @property {CaveState} cave  Exploring caves.
+ * @property {Vector3 | undefined} anchor  where it was when it last moved a few blocks
+ * @property {number} anchorAt
+ * @property {number} minedAt  when it last mined something
  */
 
 /**
  * @typedef {Object} TreeJob
  * @property {Vector3} base  lowest log of the trunk
- * @property {Vector3} stand  where it stands to chop the bottom two logs
+ * @property {Vector3 | undefined} stand  where it stands if it has to walk closer
  * @property {Vector3[]} logs  every log of this tree
- * @property {"approach" | "base" | "enter" | "chop"} phase
- * @property {boolean} walked  already tried walking for this phase
+ * @property {boolean} walked  already walked closer
  * @property {number} until
  */
 
@@ -111,6 +117,7 @@ export function createGatherState() {
     mining: undefined, tree: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(),
     walking: false, sprint: false, scout: createScoutState(), speed: 1, lost: false, stuckSince: 0,
     cave: { visited: new Map(), tunnel: undefined, dig: undefined, plannedAt: 0, turn: 0 },
+    anchor: undefined, anchorAt: Date.now(), minedAt: Date.now(),
   };
 }
 
@@ -242,7 +249,22 @@ export function gather(ai, ownerId, record, state, owner) {
   // The right tool for the job: an axe for trees (it crafts a wooden one once it has wood; until then
   // it chops by hand), a pickaxe for caves (it crafts a stone one from its cobblestone and a log).
   if (record.focus === "Trees") craftTool(ai, record, ownerId, "axe", state);
-  if (farming && farmKinds(record).includes("Sand")) craftTool(ai, record, ownerId, "shovel", state);
+  const needSand = farming && farmKinds(record).includes("Sand");
+  if (needSand) craftTool(ai, record, ownerId, "shovel", state);
+  // Not getting anywhere (same spot, nothing mined for 30 seconds): skip what's around here and move on.
+  if (record.focus === "Trees" || farming) {
+    if (!state.anchor || dist(ai.location, state.anchor) > 3) {
+      state.anchor = { ...ai.location };
+      state.anchorAt = now;
+    } else if (now - state.anchorAt > UNSTICK_MS && now - state.minedAt > UNSTICK_MS) {
+      skipNearby(ai, state, farming ? farmKinds(record) : ["Wood"]);
+      state.tree = undefined;
+      state.mining = undefined;
+      stopWalking(ai.id, state);
+      state.scout.nextAt = 0;
+      state.anchorAt = now;
+    }
+  }
   if (record.focus === "Caves" && !craftTool(ai, record, ownerId, "pickaxe", state)) {
     state.mining = undefined;
     state.pausedUntil = now + 10000;
@@ -263,6 +285,20 @@ export function gather(ai, ownerId, record, state, owner) {
     finishMining(ai, ownerId, record, state, m, owner);
     state.mining = undefined;
     state.idleSince = now;
+    return undefined;
+  }
+
+  // Boats: collecting sand it can work from a boat along the shore; any other time it gets out on land.
+  const boat = boatOf(ai);
+  if (boat) {
+    if (needSand) return boatSand(ai, record, state, boat);
+    toShore(ai, state, boat);
+    return undefined;
+  }
+  boatGoals.delete(ai.id);
+  if (needSand && ai.isInWater) {
+    stopWalking(ai.id, state);
+    spawnBoat(ai); // in the water looking for sand: a boat, and it digs from that
     return undefined;
   }
 
@@ -501,12 +537,14 @@ function startTree(ai, state, log) {
   let base = { ...log };
   while (isLog(dim.getBlock({ ...base, y: base.y - 1 })?.typeId)) base = { ...base, y: base.y - 1 };
   const logs = treeLogs(dim, base);
-  const stand = standSpot(dim, base, ai.location, true) ?? clearStand(dim, base);
-  if (!stand) {
+  // In reach already (11 blocks): it chops from where it is. Otherwise it walks next to the trunk.
+  const inReach = dist(center(base), eyeOf(ai)) <= TREE_REACH;
+  const stand = inReach ? undefined : standSpot(dim, base, ai.location, true) ?? clearStand(dim, base);
+  if (!inReach && !stand) {
     avoidTree(state, logs);
     return;
   }
-  state.tree = { base, stand, logs, phase: "approach", walked: false, until: Date.now() + TREE_MS };
+  state.tree = { base, stand, logs, walked: false, until: Date.now() + TREE_MS };
 }
 
 /**
@@ -555,61 +593,25 @@ function chopTree(ai, record, state) {
     return undefined;
   }
   if (state.walking) return undefined;
-  const above = { ...t.base, y: t.base.y + 1 };
-
-  if (t.phase === "approach") {
-    // 1. Walk up to the trunk.
-    if (flatDist(ai.location, t.stand) > 0.8) {
-      if (t.walked) {
-        endTree(state, t, true); // couldn't get there
-        return undefined;
-      }
-      t.walked = true;
-      startWalking(ai, state, t.stand, above);
-      return undefined;
-    }
-    ai.clearVelocity();
-    t.phase = "base";
+  const left = t.logs.filter((p) => isLog(dim.getBlock(p)?.typeId));
+  if (left.length === 0) {
+    endTree(state, t, false); // the whole tree is chopped: on to the next one
+    return undefined;
   }
-
-  if (t.phase === "base") {
-    // 2. Stand still next to the trunk and chop every log it can reach from there, bottom first.
-    const eye = eyeOf(ai);
-    const next = t.logs
-      .filter((p) => dist(center(p), eye) <= REACH + 1 && isLog(dim.getBlock(p)?.typeId))
-      .sort((a, b) => a.y - b.y || dist(center(a), eye) - dist(center(b), eye))[0];
-    if (next) return startChop(ai, record, next, REACH + 1, state);
-    // Nothing left of the tree: done, on to the next one.
-    if (!t.logs.some((p) => isLog(dim.getBlock(p)?.typeId))) {
-      endTree(state, t, false);
-      return undefined;
-    }
-    t.phase = "enter";
-    t.walked = false;
-  }
-
-  if (t.phase === "enter") {
-    // 3. Step into the gap the two logs left, breaking dirt or leaves in the way.
-    if (clearGap(dim, record, t.base)) return undefined;
-    if (flatDist(ai.location, t.base) > 0.4 || Math.abs(ai.location.y - t.base.y) > 0.6) {
-      if (!t.walked) {
-        t.walked = true;
-        startWalking(ai, state, t.base, { ...t.base, y: t.base.y + 3 });
-        return undefined;
-      }
-      ai.teleport({ x: t.base.x + 0.5, y: t.base.y, z: t.base.z + 0.5 }); // it's one block away: hop in
-    }
-    ai.clearVelocity();
-    t.phase = "chop";
-  }
-
-  // 4. Chop the rest of the tree from inside the trunk, lowest logs first.
+  // Chop every log it can reach (11 blocks), lowest first, then the closest.
   const eye = eyeOf(ai);
-  const next = t.logs
-    .filter((p) => dist(center(p), eye) <= TREE_REACH && isLog(dim.getBlock(p)?.typeId))
+  const next = left
+    .filter((p) => dist(center(p), eye) <= TREE_REACH)
     .sort((a, b) => a.y - b.y || dist(center(a), eye) - dist(center(b), eye))[0];
   if (next) return startChop(ai, record, next, TREE_REACH, state);
-  endTree(state, t, false); // done: on to the next tree
+  // The rest is out of reach: walk next to the trunk once, then give up on what's left.
+  const stand = t.stand ?? standSpot(dim, t.base, ai.location, true);
+  if (!t.walked && stand) {
+    t.walked = true;
+    startWalking(ai, state, stand, t.base);
+    return undefined;
+  }
+  endTree(state, t, false);
   return undefined;
 }
 
@@ -629,28 +631,6 @@ function startChop(ai, record, p, reach, state) {
   state.mining = { ...p, id, slot: tool.slot, until: system.currentTick + ticks, reach };
   face(ai, center(p));
   return tool.slot;
-}
-
-/**
- * Breaks dirt or leaves where the AI's feet and head go in the trunk gap. Returns true if it broke something.
- * @param {import("@minecraft/server").Dimension} dim
- * @param {import("./data.js").AiRecord} record
- * @param {Vector3} base
- */
-function clearGap(dim, record, base) {
-  let broke = false;
-  for (const p of [base, { ...base, y: base.y + 1 }]) {
-    const block = dim.getBlock(p);
-    if (!block || passable(block) || !CLEARABLE.test(block.typeId)) continue;
-    const id = block.typeId;
-    dim.setBlockType(p, "minecraft:air");
-    dim.playSound(/leaves/.test(id) ? "dig.grass" : "dig.gravel", p);
-    const drop = /grass_block|podzol|mycelium/.test(id) ? "minecraft:dirt" : id;
-    if (isWood(drop)) addWood(record, drop, 1);
-    else if (!/leaves|vine|snow/.test(id) && isPlaceableBlock(drop)) addBlocks(record, drop, 1);
-    broke = true;
-  }
-  return broke;
 }
 
 /** @param {GatherState} state @param {TreeJob} t @param {boolean} failed */
@@ -719,6 +699,8 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
     if (!id || !info) continue;
     // Only chop real trees (logs with leaves above them), not someone's log house.
     if (info.focus === "Wood" && !hasLeavesAbove(dim, p)) continue;
+    // Sand under water: only from a boat (on foot it would drown).
+    if (info.focus === "Sand" && /water/.test(dim.getBlock({ ...p, y: p.y + 1 })?.typeId ?? "")) continue;
     // Leave the bottom of each sugar cane so it grows back.
     if (info.focus === "Cane" && dim.getBlock({ ...p, y: p.y - 1 })?.typeId !== id) continue;
     const tool = toolFor(record, info);
@@ -776,6 +758,7 @@ function finishMining(ai, ownerId, record, state, m, owner) {
   const amount = (info.min !== undefined && info.max !== undefined
     ? info.min + Math.floor(Math.random() * (info.max - info.min + 1))
     : 1) + extra;
+  state.minedAt = Date.now();
   // A line in its 20-minute report.
   countCollected(record, info.drop, amount);
   // Collecting for a sugar cane farm: it keeps it for the farm.
@@ -1101,7 +1084,8 @@ function tunnelStep(ai, ownerId, record, state, owner) {
   }
   // The way is clear: step in (never onto lava).
   if (LAVA.includes(dim.getBlock({ ...next, y: next.y - 1 })?.typeId ?? "")) return stop(true);
-  ai.teleport({ x: next.x + 0.5, y: next.y, z: next.z + 0.5 }, { facingLocation: center(t.goal) });
+  ai.teleport({ x: next.x + 0.5, y: next.y, z: next.z + 0.5 });
+  face(ai, center(t.goal));
   return pick.slot;
 }
 
@@ -1212,7 +1196,7 @@ function step(id, w) {
 
   const ux = dx / d;
   const uz = dz / d;
-  ai.setRotation({ x: 0, y: (Math.atan2(-ux, uz) * 180) / Math.PI });
+  turnTo(ai, 0, (Math.atan2(-ux, uz) * 180) / Math.PI);
   const fy = Math.floor(p.y + 0.01);
   const ahead = { x: Math.floor(p.x + ux * 0.7), y: fy, z: Math.floor(p.z + uz * 0.7) };
   let jump = false;
@@ -1286,7 +1270,7 @@ function travel(id, w) {
   }
   const ux = dx / d;
   const uz = dz / d;
-  ai.setRotation({ x: 0, y: (Math.atan2(-ux, uz) * 180) / Math.PI });
+  turnTo(ai, 0, (Math.atan2(-ux, uz) * 180) / Math.PI);
   const ahead = { x: Math.floor(p.x + ux), y: Math.floor(p.y + 0.01), z: Math.floor(p.z + uz) };
   const lavaAhead = [0, -1, -2].some((k) => LAVA.includes(dim.getBlock({ ...ahead, y: ahead.y + k })?.typeId ?? ""));
   if (Math.hypot(p.x - w.last.x, p.z - w.last.z) > 0.05) {
@@ -1641,13 +1625,196 @@ export function face(ai, p) {
   const dx = p.x - eye.x;
   const dz = p.z - eye.z;
   const pitch = (-Math.atan2(p.y - eye.y, Math.hypot(dx, dz)) * 180) / Math.PI;
-  ai.setRotation({ x: pitch, y: (Math.atan2(-dx, dz) * 180) / Math.PI });
+  turnTo(ai, pitch, (Math.atan2(-dx, dz) * 180) / Math.PI);
 }
 
-/** Distance ignoring height. @param {Vector3} a @param {Vector3} b */
-function flatDist(a, b) {
-  return Math.hypot(a.x - (b.x + 0.5), a.z - (b.z + 0.5));
+/** Where each AI is turning to look: it turns there smoothly over a few ticks. @type {Map<string, { ai: import("@minecraft/server").Entity, x: number, y: number, until: number }>} */
+const turning = new Map();
+
+/**
+ * Turns the AI's head/body towards a direction smoothly (a bit more every tick) instead of snapping,
+ * so it doesn't jerk around when it changes its mind about where to look.
+ * @param {import("@minecraft/server").Entity} ai @param {number} pitch @param {number} yaw
+ */
+export function turnTo(ai, pitch, yaw) {
+  turning.set(ai.id, { ai, x: pitch, y: yaw, until: system.currentTick + 20 });
 }
+
+system.runInterval(() => {
+  for (const [id, t] of turning) {
+    try {
+      if (!t.ai.isValid || system.currentTick > t.until) {
+        turning.delete(id);
+        continue;
+      }
+      const r = t.ai.getRotation();
+      const dy = ((((t.y - r.y) % 360) + 540) % 360) - 180; // the short way round
+      const dx = t.x - r.x;
+      if (Math.abs(dy) < 1 && Math.abs(dx) < 1) {
+        t.ai.setRotation({ x: t.x, y: t.y });
+        continue;
+      }
+      t.ai.setRotation({ x: r.x + dx * TURN, y: r.y + dy * TURN });
+    } catch {
+      turning.delete(id);
+    }
+  }
+}, 1);
+
+// ================================================================ boats (sand by the water)
+
+/** Where each AI is paddling its boat. @type {Map<string, { boat: import("@minecraft/server").Entity, goal: Vector3, last: Vector3, still: number, sand: Vector3 | undefined, state: GatherState }>} */
+const boatGoals = new Map();
+
+/** Water with air above it (the surface). @param {import("@minecraft/server").Dimension} dim @param {Vector3} p */
+function surface(dim, p) {
+  return /water/.test(dim.getBlock(p)?.typeId ?? "") && !!dim.getBlock({ ...p, y: p.y + 1 })?.isAir;
+}
+
+/** Land right next to this spot (solid at water level or a block up). @param {import("@minecraft/server").Dimension} dim @param {Vector3} p */
+function shoreAt(dim, p) {
+  return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) =>
+    [0, 1].some((dy) => {
+      const b = dim.getBlock({ x: p.x + dx, y: p.y + dy, z: p.z + dz });
+      return !!b && !passable(b);
+    })
+  );
+}
+
+/**
+ * Collecting sand from a boat: digs sand by the water it can reach; otherwise paddles to the closest
+ * sand by the water; none: paddles along the shore to find more.
+ * @param {import("@minecraft/server").Entity} ai @param {import("./data.js").AiRecord} record
+ * @param {GatherState} state @param {import("@minecraft/server").Entity} boat
+ * @returns {number | undefined}
+ */
+function boatSand(ai, record, state, boat) {
+  const dim = ai.dimension;
+  const now = Date.now();
+  state.cave.visited.set(areaKey(boat.location), now);
+  const g = boatGoals.get(ai.id);
+  if (g && dist(boat.location, g.goal) > 1.2) {
+    // Paddling. Not moving for 3 seconds: something's in the way, so skip that sand.
+    if (dist(boat.location, g.last) < 0.1) {
+      if (++g.still > 6) {
+        if (g.sand) state.avoid.set(blockKey(g.sand), now + 60000);
+        boatGoals.delete(ai.id);
+      }
+    } else {
+      g.last = { ...boat.location };
+      g.still = 0;
+    }
+    return undefined;
+  }
+  boatGoals.delete(ai.id);
+  const types = Object.keys(GATHER).filter((id) => GATHER[id].focus === "Sand");
+  const f = floor(boat.location);
+  let found;
+  try {
+    found = [...dim.getBlocks(new BlockVolume({ x: f.x - BOAT_SCAN, y: f.y - 6, z: f.z - BOAT_SCAN }, { x: f.x + BOAT_SCAN, y: f.y + 3, z: f.z + BOAT_SCAN }), { includeTypes: types }).getBlockLocationIterator()];
+  } catch {
+    return undefined;
+  }
+  const eye = eyeOf(ai);
+  const byWater = found
+    .filter((p) => (state.avoid.get(blockKey(p)) ?? 0) <= now)
+    .filter((p) => [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([dx, dy, dz]) => /water/.test(dim.getBlock({ x: p.x + dx, y: p.y + dy, z: p.z + dz })?.typeId ?? "")))
+    .sort((a, b) => dist(center(a), eye) - dist(center(b), eye));
+  // In reach: dig it from the boat.
+  const near = byWater[0];
+  if (near && dist(center(near), eye) <= BOAT_REACH) {
+    const id = dim.getBlock(near)?.typeId ?? "";
+    const tool = toolFor(record, GATHER[id]) ?? { slot: -1, speed: 1 };
+    state.mining = { ...near, id, slot: tool.slot, until: system.currentTick + Math.max(4, Math.ceil((GATHER[id].hardness * 30) / tool.speed)), reach: BOAT_REACH };
+    face(ai, center(near));
+    return tool.slot;
+  }
+  // Paddle over next to the closest sand by the water.
+  if (near) {
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (const dy of [0, 1, -1]) {
+        const w = { x: near.x + dx, y: near.y + dy, z: near.z + dz };
+        if (!surface(dim, w)) continue;
+        boatGoals.set(ai.id, { boat, goal: { x: w.x + 0.5, y: w.y, z: w.z + 0.5 }, last: { ...boat.location }, still: 0, sand: near, state });
+        return undefined;
+      }
+    }
+    state.avoid.set(blockKey(near), now + 60000);
+    return undefined;
+  }
+  // No sand by the water around here: paddle along the shore to somewhere it hasn't been.
+  let best;
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    for (const r of [16, 10]) {
+      const w = { x: Math.floor(f.x + Math.cos(a) * r), y: f.y, z: Math.floor(f.z + Math.sin(a) * r) };
+      if (!surface(dim, w) || !shoreAt(dim, w)) continue;
+      const seen = now - (state.cave.visited.get(areaKey(w)) ?? 0) < VISITED_MS;
+      const score = r - (seen ? 30 : 0);
+      if (!best || score > best.score) best = { w, score };
+      break;
+    }
+  }
+  if (best) boatGoals.set(ai.id, { boat, goal: { x: best.w.x + 0.5, y: best.w.y, z: best.w.z + 0.5 }, last: { ...boat.location }, still: 0, sand: undefined, state });
+  return undefined;
+}
+
+/**
+ * Gets out of its boat onto land next to it; no land right there: paddles to the closest shore.
+ * @param {import("@minecraft/server").Entity} ai @param {GatherState} state @param {import("@minecraft/server").Entity} boat
+ */
+function toShore(ai, state, boat) {
+  const dim = ai.dimension;
+  const f = floor(boat.location);
+  for (let r = 1; r <= 3; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        for (const dy of [0, 1, 2]) {
+          const feet = { x: f.x + dx, y: f.y + dy, z: f.z + dz };
+          const below = dim.getBlock({ ...feet, y: feet.y - 1 });
+          if (!free(dim, feet) || !below || passable(below) || below.isLiquid || LAVA.includes(below.typeId)) continue;
+          boatGoals.delete(ai.id);
+          leaveBoat(ai, boat, undefined);
+          system.runTimeout(() => ai.isValid && ai.teleport({ x: feet.x + 0.5, y: feet.y, z: feet.z + 0.5 }), 2);
+          return;
+        }
+      }
+    }
+  }
+  if (boatGoals.has(ai.id)) return;
+  for (let r = 4; r <= 32; r += 2) {
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const w = { x: Math.floor(f.x + Math.cos(a) * r), y: f.y, z: Math.floor(f.z + Math.sin(a) * r) };
+      if (!surface(dim, w) || !shoreAt(dim, w)) continue;
+      boatGoals.set(ai.id, { boat, goal: { x: w.x + 0.5, y: w.y, z: w.z + 0.5 }, last: { ...boat.location }, still: 0, sand: undefined, state });
+      return;
+    }
+  }
+}
+
+// Every tick: each AI with somewhere to paddle pushes its boat there (slowing down as it arrives).
+system.runInterval(() => {
+  for (const [id, g] of boatGoals) {
+    try {
+      if (!g.boat.isValid || g.state.mining) continue;
+      const p = g.boat.location;
+      const dx = g.goal.x - p.x;
+      const dz = g.goal.z - p.z;
+      const d = Math.hypot(dx, dz);
+      const v = g.boat.getVelocity();
+      if (d < 0.8) {
+        g.boat.applyImpulse({ x: -v.x, y: 0, z: -v.z });
+        continue;
+      }
+      const speed = Math.min(0.35, d * 0.15);
+      g.boat.applyImpulse({ x: (dx / d) * speed - v.x, y: 0, z: (dz / d) * speed - v.z });
+      g.boat.setRotation({ x: 0, y: (Math.atan2(-dx, dz) * 180) / Math.PI });
+    } catch {
+      boatGoals.delete(id);
+    }
+  }
+}, 1);
 
 /** @param {Vector3} a @param {Vector3} b */
 function dist(a, b) {

@@ -22,7 +22,7 @@ const paddlers = new Map();
 const swapped = new Map();
 
 /** The boat this entity is riding, if any. @param {Entity} e */
-function boatOf(e) {
+export function boatOf(e) {
   try {
     const on = e.getComponent("minecraft:riding")?.entityRidingOn;
     return on && BOATS.includes(on.typeId) ? on : undefined;
@@ -47,8 +47,8 @@ export function boatThink(ai, owner, record) {
   const boat = boatOf(ai);
   const following = record.mode === "follow" && owner && owner.dimension.id === ai.dimension.id;
   if (!following || !owner) {
-    // Not following (e.g. building a farm from its farm boat): only leave a boat it spawned to follow you.
-    if (boat && boat.getDynamicProperty(OWN_BOAT) === true) leaveBoat(ai, boat, undefined);
+    // Not following: on a job, gathering decides when it gets out (on land; see gather.js). Staying
+    // or guarding in a boat it just floats there (safe from drowning).
     paddlers.delete(ai.id);
     return false;
   }
@@ -83,7 +83,7 @@ export function boatThink(ai, owner, record) {
 }
 
 /** Spawns a boat for the AI on the water (next to it, or next to you if it's on land) and puts it in. @param {Entity} ai */
-function spawnBoat(ai) {
+export function spawnBoat(ai) {
   const dim = ai.dimension;
   let p = { x: ai.location.x, y: Math.floor(ai.location.y), z: ai.location.z };
   // Float it on top of the water.
@@ -102,7 +102,7 @@ function spawnBoat(ai) {
  * Gets out of the boat. Its own spawned boat disappears; a player's boat is left where it is.
  * @param {Entity} ai @param {Entity} boat @param {import("@minecraft/server").Player | undefined} _owner
  */
-function leaveBoat(ai, boat, _owner) {
+export function leaveBoat(ai, boat, _owner) {
   try {
     boat.getComponent("minecraft:rideable")?.ejectRider(ai);
     if (boat.getDynamicProperty(OWN_BOAT) === true) system.runTimeout(() => boat.isValid && boat.remove(), 2);

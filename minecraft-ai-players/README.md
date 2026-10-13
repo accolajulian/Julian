@@ -62,6 +62,25 @@ the map and jump sprints to the nearest trees (only strolling if there are no tr
 can't reach on a tree are skipped for 10 minutes and it moves on. Leaves, dirt, sand, snow and vines in its way
 are broken; a 1-block step it can't jump, it hops up onto. It never jumps or hops up onto trees.
 
+**Chopping:** it chops logs from up to **11 blocks away**, so it rarely has to climb or squeeze into trunks: it
+picks the closest tree, chops every log it can reach (lowest first), walks closer once if some are still too far,
+then goes to the next tree. If it stays in the same spot for 30 seconds without getting anything (Trees or the
+farm), it skips what's around there and moves on.
+
+**Smooth turning:** it turns its head and body smoothly towards where it's going or what it's mining (a bit
+each tick) instead of snapping, so it doesn't jerk around.
+
+**Water:** if its head goes under water it swims up; still in the water after 2 seconds (not while following you)
+it puts a boat down and gets in. Collecting sand for the farm it works **from the boat**: it digs sand by the
+water within reach, paddles to the next sand along the water, and with none nearby paddles along the shore to
+places it hasn't been. On foot it never digs sand that's under water. Done with sand (or on another job) it
+paddles to the shore and gets out on land.
+
+**Farm materials it already has:** logs in its wood/block slots and planks in its block slots count towards the
+farm right away (it tells you how many it used).
+
+**Pickups:** it leaves saplings alone, and only tells you when it picks up a tool.
+
 **Wood slots:** it has 3 wood slots, one kind of wood each (up to a stack). Once all 3 hold a kind of wood it
 only chops trees of those kinds. When a slot is full, half of it goes in its AI Chest, but the AI Chest only
 ever takes up to a stack of each kind of wood. When all 3 slots are full (and the AI Chest has its stack of

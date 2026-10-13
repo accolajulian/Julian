@@ -25,6 +25,7 @@ import { MessageFormData } from "@minecraft/server-ui";
 import { GATHER } from "./gather_data.js";
 import { getAi, saveRecord, findPlayer, giveItem, countItem, takeItem } from "./data.js";
 import { notify } from "./levels.js";
+import { inventoryOf, isWood } from "./inventory.js";
 
 export const FARM_FOCUS = "Sugar cane farm";
 const WIDTH = 15;
@@ -183,6 +184,40 @@ export function farmKinds(record) {
 }
 
 /**
+ * Whatever farm materials it already carries count towards the farm: logs in its wood and block slots,
+ * planks in its block slots. (They're moved into the farm's materials.)
+ * @param {string} ownerId @param {import("./data.js").AiRecord} record @param {FarmPlan} plan
+ */
+function useOwnMaterials(ownerId, record, plan) {
+  const inv = inventoryOf(record);
+  let logs = 0;
+  let planks = 0;
+  for (const slots of [inv.wood, inv.blocks]) {
+    slots.forEach((b, i) => {
+      if (!b) return;
+      const need = farmNeeds(plan);
+      let n = 0;
+      if (isWood(b.id) && need.logs > 0) {
+        n = Math.min(b.count, need.logs);
+        plan.logs[b.id] = (plan.logs[b.id] ?? 0) + n;
+        logs += n;
+      } else if (b.id.endsWith("_planks") && need.logs > 0) {
+        n = Math.min(b.count, need.logs * 4);
+        plan.planks[b.id] = (plan.planks[b.id] ?? 0) + n;
+        planks += n;
+      }
+      b.count -= n;
+      if (b.count <= 0) slots[i] = null;
+    });
+  }
+  if (logs + planks === 0) return;
+  saveRecord(ownerId, record.role, record);
+  findPlayer(ownerId)?.sendMessage(
+    `§a${record.name} used ${[logs ? `${logs} logs` : "", planks ? `${planks} planks` : ""].filter((t) => t).join(" and ")} it already had for the farm.`
+  );
+}
+
+/**
  * Keeps a gathered drop for the farm. Returns true if it was kept.
  * @param {import("./data.js").AiRecord} record @param {string} drop @param {number} amount
  */
@@ -204,6 +239,7 @@ export function checkCollected(ai, ownerId, record) {
   const plan = collecting(record);
   if (!plan) return;
   if (plan.startedAt === undefined) plan.startedAt = world.getAbsoluteTime();
+  useOwnMaterials(ownerId, record, plan);
   const need = farmNeeds(plan);
   const missing = need.logs + need.sand + need.cane;
   const timeUp = world.getAbsoluteTime() - plan.startedAt >= CANE_WAIT_TICKS;
