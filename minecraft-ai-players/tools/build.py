@@ -6,6 +6,13 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Safety check: the packs must keep the minimum game version they were made for. (Raising it by
+# mistake makes Minecraft refuse to load the pack: "resource pack failed".)
+MIN_ENGINE = [1, 21, 0]
+for _pack in ("behavior_pack", "resource_pack"):
+    _header = json.loads((ROOT / _pack / "manifest.json").read_text())["header"]
+    assert _header["min_engine_version"] == MIN_ENGINE, f"{_pack}: min_engine_version must be {MIN_ENGINE}"
 PACKS = ["behavior_pack", "resource_pack"]
 OUT = ROOT / "dist/AI_Players.mcaddon"
 

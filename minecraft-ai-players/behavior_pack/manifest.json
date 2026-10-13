@@ -7,12 +7,12 @@
     "version": [
       1,
       25,
-      1
+      2
     ],
     "min_engine_version": [
       1,
-      25,
-      1
+      21,
+      0
     ]
   },
   "modules": [
@@ -20,10 +20,10 @@
       "type": "data",
       "uuid": "5da8a4fe-41c8-4ea4-97d3-62b374959930",
       "version": [
-      1,
-      25,
-      1
-    ]
+        1,
+        25,
+        2
+      ]
     },
     {
       "type": "script",
@@ -31,20 +31,20 @@
       "entry": "scripts/main.js",
       "uuid": "72f57ecb-0c3c-4a1e-b146-181fa6cdc203",
       "version": [
-      1,
-      25,
-      1
-    ]
+        1,
+        25,
+        2
+      ]
     }
   ],
   "dependencies": [
     {
       "uuid": "40a27797-dca3-436f-a415-2cb01ae9d04f",
       "version": [
-      1,
-      25,
-      1
-    ]
+        1,
+        25,
+        2
+      ]
     },
     {
       "module_name": "@minecraft/server",
