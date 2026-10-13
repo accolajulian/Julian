@@ -6,7 +6,7 @@
 // - Right click your AI: its inventory. Right clicking the Remote does nothing.
 // - Allies can right click your AI to take spare cooked chicken from its food slot.
 // - If an AI dies it respawns next to the player who bought it, and keeps its memory.
-import { world, system, ItemStack, EntityDamageCause, EntitySwingSource } from "@minecraft/server";
+import { world, system, ItemStack, EntityDamageCause } from "@minecraft/server";
 import { ActionFormData, MessageFormData, ModalFormData } from "@minecraft/server-ui";
 import {
   AI_ENTITY,
@@ -36,7 +36,7 @@ import {
 import { releaseLoaded } from "./scout.js";
 import { CAVE_ORES, NETHER_ORES, oresOf, netherOresOf, startCavePlacing, isCavePlacing } from "./caves.js";
 import { levelText } from "./levels.js";
-import { sparks } from "./effects.js"; // (also starts the 20-minute reports)
+import { sparks, isLeftClick } from "./effects.js"; // (also starts the 20-minute reports)
 import { commandAttack, toolsChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
 import "./chest.js"; // Computer Chest (opens the AI Chest from anywhere)
@@ -616,10 +616,21 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
 // Remote: everything is done with LEFT click (an attack swing), which opens its menu.
 // Right clicking the Remote does nothing.
 world.afterEvents.playerSwingStart.subscribe(({ player, heldItemStack, swingSource }) => {
-  if (swingSource !== EntitySwingSource.Attack || isPlacing(player.id) || isCavePlacing(player.id)) return; // (placing uses left click)
+  // (placing a farm or picking a cave spot uses left click too)
+  if (!isLeftClick(swingSource) || isPlacing(player.id) || isCavePlacing(player.id)) return;
+  // Holding the button down keeps swinging: don't open the menu again right after it closed.
+  if (Date.now() - (menuClosedAt.get(player.id) ?? 0) < 600) return;
   const record = robotRecord(player, heldItemStack);
-  if (record) system.run(() => openMenu(player, (p) => showCommands(p, record.key)));
+  if (record) {
+    system.run(async () => {
+      await openMenu(player, (p) => showCommands(p, record.key));
+      menuClosedAt.set(player.id, Date.now());
+    });
+  }
 });
+
+/** When each player's Remote menu last closed. @type {Map<string, number>} */
+const menuClosedAt = new Map();
 
 
 /** The name on an AI's Remote: just "Remote", in green (matches its Matrix look). @param {AiRecord} record */

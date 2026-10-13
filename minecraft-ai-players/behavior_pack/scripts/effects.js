@@ -1,5 +1,14 @@
 // Little visual effects shared by the rest of the add-on.
-import { system, MolangVariableMap } from "@minecraft/server";
+import { system, MolangVariableMap, EntitySwingSource } from "@minecraft/server";
+
+/**
+ * Is this arm swing a left click (the attack button)? On PC that's "Attack", but on touch screens a
+ * tap of the attack button on a block or on empty air can come through as "Mine" or "None".
+ * @param {EntitySwingSource} source
+ */
+export function isLeftClick(source) {
+  return source === EntitySwingSource.Attack || source === EntitySwingSource.Mine || source === EntitySwingSource.None;
+}
 
 /** Green spark color, made the first time it's needed (not allowed while the add-on starts up). */
 /** @type {MolangVariableMap | undefined} */

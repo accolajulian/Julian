@@ -5,7 +5,8 @@
 // - Pick where it works with a laser: look at a cave or ravine and tap Place (or left click). The spot
 //   has to be underground: at least 10 blocks above it (or deep down with a roof over it). The AI is
 //   sent there and mines the chosen ores around it, coming back to that area if it wanders off.
-import { world, system, MolangVariableMap, EntitySwingSource } from "@minecraft/server";
+import { world, system, MolangVariableMap } from "@minecraft/server";
+import { isLeftClick } from "./effects.js";
 import { GATHER } from "./gather_data.js";
 import { getAi, saveRecord, findPlayer } from "./data.js";
 
@@ -206,6 +207,6 @@ function pick(player) {
   system.run(() => s.onPick(spot));
 }
 world.afterEvents.playerSwingStart.subscribe(({ player, swingSource }) => {
-  if (swingSource === EntitySwingSource.Attack) pick(player);
+  if (isLeftClick(swingSource)) pick(player);
 });
 world.afterEvents.itemUse.subscribe(({ source }) => pick(source));

@@ -19,7 +19,8 @@
 // - 6 lines of 18 sand on the floor (2 blocks apart, 2-block gaps at the edges) = 108 sand,
 // - 1 sugar cane on every sand = 108 sugar cane.
 // Materials: 330 + 5 for the boat = 335 planks = 84 logs (1 plank spare), 108 sand, 108 sugar cane.
-import { world, system, ItemStack, MolangVariableMap, EntitySwingSource } from "@minecraft/server";
+import { world, system, ItemStack, MolangVariableMap } from "@minecraft/server";
+import { isLeftClick } from "./effects.js";
 import { MessageFormData } from "@minecraft/server-ui";
 import { GATHER } from "./gather_data.js";
 import { getAi, saveRecord, findPlayer, giveItem, countItem, takeItem } from "./data.js";
@@ -803,7 +804,7 @@ function tryConfirm(player) {
   system.run(() => confirmPlace(player, s).finally(() => (s.asking = false)));
 }
 world.afterEvents.playerSwingStart.subscribe(({ player, swingSource }) => {
-  if (swingSource === EntitySwingSource.Attack) tryConfirm(player);
+  if (isLeftClick(swingSource)) tryConfirm(player);
 });
 world.afterEvents.itemUse.subscribe(({ source }) => tryConfirm(source));
 

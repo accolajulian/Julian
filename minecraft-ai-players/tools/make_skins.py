@@ -429,6 +429,8 @@ SLOT_SHAPES = {
                "..X.......X.X...", "..X.......XX....", "..XXXXXXXXX....."],
     "valuables": ["....XXXXXXXX....", "...XX..XX..XX...", "..XXXXXXXXXXXX..", "...XX......XX...", "....XX....XX....",
                   ".....XX..XX.....", "......XXXX......", ".......XX......."],
+    "water": ["...XXXXXXXXXX...", "...X........X...", "...XXXXXXXXXX...", "....XXXXXXXX....", "....XXXXXXXX....",
+              ".....XXXXXX.....", ".....XXXXXX.....", "......XXXX......"],
     "info": [".......XX.......", ".......XX.......", "................", "......XXX.......", ".......XX.......",
              ".......XX.......", ".......XX.......", "......XXXX......"],
 }
@@ -514,6 +516,121 @@ def computer_chest_textures():
     return tex, icon
 
 
+# ---------------------------------------------------------------- computer-look items
+# Every item is a little computer: a black body with a dark blue screen, and a symbol on the screen.
+SCREEN = (10, 26, 82)          # dark blue screen
+SCREEN_LINE = (7, 19, 62)      # every other row a little darker (scanlines)
+SCREEN_SHINE = (40, 70, 150)   # a glint in the screen's corner
+BODY = (0, 0, 0)               # straight black
+CODE_GREEN = (90, 255, 140)
+
+
+def draw_screen(p, x0, y0, x1, y1):
+    """A dark blue screen from (x0, y0) to (x1, y1) inclusive."""
+    for x in range(x0, x1 + 1):
+        for y in range(y0, y1 + 1):
+            p[x, y] = (SCREEN if (y - y0) % 2 == 0 else SCREEN_LINE) + (255,)
+    p[x0, y0] = SCREEN_SHINE + (255,)
+
+
+def draw_symbol(p, rows, left, top, color):
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            if ch == "X":
+                p[left + x, top + y] = color + (255,)
+
+
+def monitor_icon(symbol=None, color=(170, 210, 255), stand=True):
+    """16x16 monitor: black case, dark blue screen (with a symbol on it), stand and keyboard."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    bottom = 11 if stand else 14
+    for x in range(1, 15):
+        for y in range(1, bottom + 1):
+            p[x, y] = BODY + (255,)
+    draw_screen(p, 2, 2, 13, bottom - 1)
+    if symbol:
+        h = len(symbol)
+        w = max(len(r) for r in symbol)
+        draw_symbol(p, symbol, 2 + (12 - w) // 2, 2 + (bottom - 2 - h) // 2, color)
+    if stand:
+        for y in (12, 13):
+            p[7, y] = p[8, y] = BODY + (255,)
+        for x in range(4, 12):
+            p[x, 14] = BODY + (255,)
+    return img
+
+
+def pod_icon(symbol, color):
+    """16x16 AI egg as a computer pod: a black egg shape with a dark blue screen window and a symbol."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    for x in range(16):
+        for y in range(16):
+            dx, dy = (x - 7.5) / 5.6, (y - 8.8) / (6.6 if y > 8 else 7.4)
+            if dx * dx + dy * dy <= 1:
+                p[x, y] = BODY + (255,)
+    draw_screen(p, 5, 5, 10, 11)
+    if symbol:
+        draw_symbol(p, symbol, 5 + (6 - max(len(r) for r in symbol)) // 2, 5 + (7 - len(symbol)) // 2, color)
+    for x in range(3, 13):                        # a thin green seam around the middle
+        if p[x, 12][3] and not (5 <= x <= 10):
+            p[x, 12] = CODE_GREEN + (255,)
+    return img
+
+
+SWORD = ["....X", "...X.", "X.X..", ".X...", "X.X.."]
+PICK = ["XXXX.", ".X.X.", "...X.", "..X..", ".X..."]
+DOT = [".X.", "XXX", ".X."]
+CODE = ["XX.X", "....", "X.XX", "....", "XX.."]
+
+
+def remote_screen_icon():
+    """16x16 remote: a black handheld with a dark blue screen showing code, and green buttons."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    for x in range(5, 11):
+        for y in range(1, 15):
+            p[x, y] = BODY + (255,)
+    p[5, 1] = p[10, 1] = p[5, 14] = p[10, 14] = (0, 0, 0, 0)
+    draw_screen(p, 6, 2, 9, 7)
+    draw_symbol(p, ["X.X.", "..X.", "XX..", "...X"], 6, 3, CODE_GREEN)
+    for x, y in ((7, 9), (8, 9), (6, 11), (9, 11), (7, 13), (8, 13)):
+        p[x, y] = CODE_GREEN + (255,)              # buttons
+    return img
+
+
+def chest_item_icon():
+    """16x16 Computer Chest item: a black chest with a dark blue screen on the front and a green seam."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    for x in range(1, 15):
+        for y in range(3, 15):
+            p[x, y] = BODY + (255,)
+    for x in range(1, 15):
+        p[x, 7] = CODE_GREEN + (255,)              # the lid seam
+    draw_screen(p, 4, 9, 11, 13)
+    draw_symbol(p, CODE, 6, 9, CODE_GREEN)
+    return img
+
+
+def slot_screen_icon(kind):
+    """16x16 slot label: a little monitor showing the outline of what goes in the slot."""
+    shape = SLOT_SHAPES[kind]
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    for x in range(16):
+        for y in range(16):
+            p[x, y] = BODY + (255,)
+    draw_screen(p, 1, 1, 14, 14)
+    top = (16 - len(shape)) // 2
+    for y, row in enumerate(shape):
+        for x, ch in enumerate(row):
+            if ch == "X" and 1 <= x <= 14 and 1 <= top + y <= 14:
+                p[x, top + y] = (150, 200, 255, 255)
+    return img
+
+
 def main():
     skins = []
     for i, paint in enumerate(AI):
@@ -525,18 +642,18 @@ def main():
 
     for name, img in zip(("side", "top", "bottom"), coder_textures()):
         img.save(RP / f"textures/blocks/coder_{name}.png")
-    computer_icon().save(RP / "textures/items/ai_computer.png")
-    chest_tex, chest_icon = computer_chest_textures()
+    monitor_icon(CODE, CODE_GREEN).save(RP / "textures/items/ai_computer.png")   # the AI Computer
+    chest_tex, _ = computer_chest_textures()
     chest_tex.save(RP / "textures/entity/computer_chest.png")
-    chest_icon.save(RP / "textures/items/computer_chest.png")
+    chest_item_icon().save(RP / "textures/items/computer_chest.png")
     for kind in SLOT_SHAPES:
-        slot_icon(kind).save(RP / f"textures/items/slot_{kind}.png")
-    egg_icon((200, 50, 50), (255, 210, 70), 1).save(RP / "textures/items/fighter_egg.png")
-    egg_icon((70, 160, 70), (79, 224, 255), 2).save(RP / "textures/items/resource_egg.png")
-    egg_icon((120, 200, 230), (255, 255, 255), 3).save(RP / "textures/items/ai_capsule.png")
+        slot_screen_icon(kind).save(RP / f"textures/items/slot_{kind}.png")
+    pod_icon(SWORD, (255, 90, 90)).save(RP / "textures/items/fighter_egg.png")
+    pod_icon(PICK, (120, 200, 255)).save(RP / "textures/items/resource_egg.png")
+    pod_icon(DOT, CODE_GREEN).save(RP / "textures/items/ai_capsule.png")
     # The Remotes (item ids still say "robot" so old ones keep working): black with green Matrix code.
-    remote_icon(31).save(RP / "textures/items/fighter_robot.png")
-    remote_icon(32).save(RP / "textures/items/resource_robot.png")
+    remote_screen_icon().save(RP / "textures/items/fighter_robot.png")
+    remote_screen_icon().save(RP / "textures/items/resource_robot.png")
 
     # Pack icon: four of the AI players' faces in a grid
     pack = Image.new("RGBA", (128, 128), (15, 20, 30, 255))

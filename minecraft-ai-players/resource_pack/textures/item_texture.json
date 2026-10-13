@@ -48,7 +48,7 @@
       "textures": "textures/items/computer_chest"
     },
     "aip_slot_water": {
-      "textures": "textures/items/bucket_water"
+      "textures": "textures/items/slot_water"
     }
   }
 }
