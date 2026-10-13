@@ -63,7 +63,8 @@ can't reach on a tree are skipped for 10 minutes and it moves on. Leaves, dirt, 
 are broken; a 1-block step it can't jump, it hops up onto. It never jumps or hops up onto trees.
 
 **Chopping:** it chops logs from up to **11 blocks away**, so it rarely has to climb or squeeze into trunks: it
-picks the closest tree, chops every log it can reach (lowest first), walks closer once if some are still too far,
+picks the closest tree, chops every log it can reach (lowest first), walks closer once if some are still too far
+(finding a way **around** leaves and other obstacles; it only breaks leaves when there's no way around, or it's stuck),
 then goes to the next tree. If it stays in the same spot for 30 seconds without getting anything (Trees or the
 farm), it skips what's around there and moves on.
 

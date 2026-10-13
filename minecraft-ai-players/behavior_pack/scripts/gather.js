@@ -537,14 +537,89 @@ function startTree(ai, state, log) {
   let base = { ...log };
   while (isLog(dim.getBlock({ ...base, y: base.y - 1 })?.typeId)) base = { ...base, y: base.y - 1 };
   const logs = treeLogs(dim, base);
-  // In reach already (11 blocks): it chops from where it is. Otherwise it walks next to the trunk.
+  // In reach already (11 blocks): it chops from where it is. Otherwise it walks (around leaves and
+  // anything else) to the closest spot it can chop it from. Only if there's no way around does it
+  // head straight for the trunk and break through leaves.
   const inReach = dist(center(base), eyeOf(ai)) <= TREE_REACH;
-  const stand = inReach ? undefined : standSpot(dim, base, ai.location, true) ?? clearStand(dim, base);
-  if (!inReach && !stand) {
-    avoidTree(state, logs);
-    return;
+  /** @type {Vector3 | undefined} */
+  let stand;
+  if (!inReach) {
+    const path = findPath(dim, floor(ai.location), (c) => dist({ x: c.x + 0.5, y: c.y + 1.6, z: c.z + 0.5 }, center(base)) <= TREE_REACH - 1);
+    if (path) {
+      state.tree = { base, stand: undefined, logs, walked: true, until: Date.now() + TREE_MS };
+      if (path.length) startWalking(ai, state, path[path.length - 1], base, path, true);
+      return;
+    }
+    stand = standSpot(dim, base, ai.location, true) ?? clearStand(dim, base);
+    if (!stand) {
+      avoidTree(state, logs);
+      return;
+    }
   }
   state.tree = { base, stand, logs, walked: false, until: Date.now() + TREE_MS };
+}
+
+/**
+ * Finds a way to walk (around obstacles: leaves count as walls) from `start` to the closest spot where
+ * `goal` is true. Steps up 1, drops down up to 2. Returns the spots to walk through (empty: already
+ * there), or undefined if there's no way within about 24 blocks.
+ * @param {import("@minecraft/server").Dimension} dim @param {Vector3} start @param {(cell: Vector3) => boolean} goal
+ * @returns {Vector3[] | undefined}
+ */
+function findPath(dim, start, goal) {
+  /** @type {Map<string, boolean>} */
+  const cache = new Map();
+  const open = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => {
+    const k = `${x},${y},${z}`;
+    let v = cache.get(k);
+    if (v === undefined) {
+      const b = dim.getBlock({ x, y, z });
+      v = !!b && passable(b) && !LAVA.includes(b.typeId);
+      cache.set(k, v);
+    }
+    return v;
+  };
+  const walkable = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => {
+    if (!open(x, y, z) || !open(x, y + 1, z) || open(x, y - 1, z)) return false;
+    const below = dim.getBlock({ x, y: y - 1, z });
+    return !!below && !below.isLiquid && !LAVA.includes(below.typeId);
+  };
+  /** @type {Map<string, { p: Vector3, from: string | undefined }>} */
+  const seen = new Map([[blockKey(start), { p: start, from: undefined }]]);
+  const queue = [start];
+  while (queue.length && seen.size < 1500) {
+    const p = /** @type {Vector3} */ (queue.shift());
+    if (goal(p)) {
+      /** @type {Vector3[]} */
+      const path = [];
+      for (let c = seen.get(blockKey(p)); c && c.from !== undefined; c = seen.get(c.from)) path.unshift(c.p);
+      return path;
+    }
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = p.x + dx;
+      const z = p.z + dz;
+      if (Math.abs(x - start.x) > 24 || Math.abs(z - start.z) > 24) continue;
+      let ny;
+      if (walkable(x, p.y, z)) ny = p.y;
+      else if (open(p.x, p.y + 2, p.z) && walkable(x, p.y + 1, z)) ny = p.y + 1;
+      else if (open(x, p.y, z) && open(x, p.y + 1, z)) {
+        for (let dy = 1; dy <= 2; dy++) {
+          if (walkable(x, p.y - dy, z)) {
+            ny = p.y - dy;
+            break;
+          }
+          if (!open(x, p.y - dy, z)) break;
+        }
+      }
+      if (ny === undefined) continue;
+      const q = { x, y: ny, z };
+      const key = blockKey(q);
+      if (seen.has(key)) continue;
+      seen.set(key, { p: q, from: blockKey(p) });
+      queue.push(q);
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -604,12 +679,20 @@ function chopTree(ai, record, state) {
     .filter((p) => dist(center(p), eye) <= TREE_REACH)
     .sort((a, b) => a.y - b.y || dist(center(a), eye) - dist(center(b), eye))[0];
   if (next) return startChop(ai, record, next, TREE_REACH, state);
-  // The rest is out of reach: walk next to the trunk once, then give up on what's left.
-  const stand = t.stand ?? standSpot(dim, t.base, ai.location, true);
-  if (!t.walked && stand) {
+  // The rest is out of reach: walk (around leaves) to where it can reach it, once; then give up on what's left.
+  if (!t.walked) {
     t.walked = true;
-    startWalking(ai, state, stand, t.base);
-    return undefined;
+    const target = left[0];
+    const path = findPath(dim, floor(ai.location), (c) => dist({ x: c.x + 0.5, y: c.y + 1.6, z: c.z + 0.5 }, center(target)) <= TREE_REACH - 1);
+    if (path?.length) {
+      startWalking(ai, state, path[path.length - 1], target, path, true);
+      return undefined;
+    }
+    const stand = path ? undefined : t.stand ?? standSpot(dim, t.base, ai.location, true);
+    if (stand) {
+      startWalking(ai, state, stand, t.base);
+      return undefined;
+    }
   }
   endTree(state, t, false);
   return undefined;
@@ -1094,7 +1177,7 @@ function tunnelStep(ai, ownerId, record, state, owner) {
 /**
  * @typedef {{ source: Vector3, col: Vector3, out: Vector3 | undefined, dir: "down" | "up", endY: number, until: number }} WaterRide
  *   Swimming down or up a water column it poured: `source` is the water block, `col` the column it swims in.
- * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide, travel?: boolean, stepTicks: number, path?: Vector3[] }} Walker
+ * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide, travel?: boolean, stepTicks: number, path?: Vector3[], careful?: boolean }} Walker
  *   `path`: the rest of the way (cave paths): it walks to `stand`, then the next spot, and so on.
  */
 /** AIs walking to a block. @type {Map<string, Walker>} */
@@ -1106,12 +1189,13 @@ const walkers = new Map();
  * @param {Vector3} stand  feet position to walk to
  * @param {Vector3} block  the block it will mine
  * @param {Vector3[]} [path]  spots to walk through, in order (ending at `stand`)
+ * @param {boolean} [careful]  it found a way around: it doesn't break leaves or dig unless it gets stuck
  */
-function startWalking(ai, state, stand, block, path) {
+function startWalking(ai, state, stand, block, path, careful = false) {
   const rest = path && path.length > 1 ? path.slice(1) : undefined;
   const first = path?.[0] ?? stand;
   walkers.set(ai.id, {
-    ai, state, stand: first, block, until: Date.now() + WALK_MS + (path?.length ?? 0) * 700, stuck: 0, last: { ...ai.location }, stepTicks: 0, path: rest,
+    ai, state, stand: first, block, until: Date.now() + WALK_MS + (path?.length ?? 0) * 700, stuck: 0, last: { ...ai.location }, stepTicks: 0, path: rest, careful,
   });
   state.walking = true;
 }
@@ -1207,6 +1291,8 @@ function step(id, w) {
       if (!free(dim, up) || !room) {
         // A wall. Leaves: break through. Otherwise dig a stair step into it (climbing out of a pit
         // like a player), or straight through it if where it's going is level with it.
+        // Walking a way it found around things: it only breaks or digs if it's stuck anyway.
+        if (w.careful && w.stuck < 20) return;
         if (breakSoft(dim, ahead, w.stand.y > fy)) return;
         const dug = digStep(ai, ux, uz, w.stand.y > fy);
         if (dug !== "blocked") {
