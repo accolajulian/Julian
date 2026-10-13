@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.34.0)
+## What it does (v1.34.1)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -80,6 +80,12 @@ spot and goes back there if it wanders more than 64 blocks away.
 When it's following you (*Follow me*) it jump sprints to keep up once it's more than 4 blocks behind (never off a cliff or into lava), and if it gets more than 25 blocks away it teleports right next to you
 (a free spot with ground under it, behind or beside you), like a tamed wolf. Not while it's in a fight, and
 not while you're mid-air (it waits until you land or are swimming).
+
+### Hunger
+It has hunger like a player (20). Jump sprinting after you uses it up (0.1 exhaustion per block sprinted,
+0.2 per jump; 4 exhaustion = 1 hunger). At 6 or less it can't sprint: it stops and eats its cooked chicken
+(holding it, a bite every 1.6 s, 6 hunger each) until it's full. With no chicken it walks instead. The Remote
+menu shows its hunger.
 
 ### Water bucket drop
 To get down from a high place (following you down a cliff, or walking to something far below) it jumps

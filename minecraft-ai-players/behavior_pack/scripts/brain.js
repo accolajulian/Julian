@@ -88,6 +88,13 @@ const FOLLOW_SPRINT_FROM = 4; // following you and further than this: it jump sp
 const FOLLOW_SPRINT_UNTIL = 2.5; // ...until it's this close
 const FOLLOW_SPRINT_SPEED = 0.28; // blocks per tick (a player's sprint)
 
+/** Exhaustion built up by sprinting since the last think (4 = 1 hunger point). @type {Map<string, number>} */
+const exhaustion = new Map();
+const MAX_HUNGER = 20;
+const SPRINT_HUNGER = 6; // like a player: at 6 hunger or less it can't sprint
+const CHICKEN_HUNGER = 6; // a cooked chicken fills 6 hunger
+const BITE_MS = 1600; // eating one takes as long as a player's
+
 /** AIs jump sprinting after their owner. @type {Map<string, { ai: import("@minecraft/server").Entity, ownerId: string, speed: number, until: number }>} */
 const sprinters = new Map();
 
@@ -125,6 +132,8 @@ system.runInterval(() => {
       const speed = FOLLOW_SPRINT_SPEED * s.speed;
       const jump = s.ai.isOnGround;
       s.ai.applyImpulse({ x: ux * speed - v.x, y: jump ? 0.45 - Math.max(0, v.y) : 0, z: uz * speed - v.z });
+      // Hunger, like a player: 0.1 exhaustion per block sprinted, 0.2 per sprint-jump.
+      exhaustion.set(id, (exhaustion.get(id) ?? 0) + speed * 0.1 + (jump ? 0.2 : 0));
       s.ai.setRotation({ x: 0, y: (Math.atan2(-ux, uz) * 180) / Math.PI });
     } catch {
       sprinters.delete(id);
@@ -213,6 +222,9 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {boolean} resourcePerks  Resource AI upgrade perks: strip mining, no fall damage.
  * @property {number} level  The level its walking speed was last set for (-1: set it again).
  * @property {number} damageBonus  Extra damage from its level.
+ * @property {boolean} eatingToFull  Too hungry to sprint: eating chicken until it's full.
+ * @property {number} biteAt  When it takes its next bite.
+ * @property {number} hungryWarnedAt  Last "too hungry, no chicken" message.
  * @property {string | undefined} modeEvent  Resource AI: follow/wander/stay event applied.
  * @property {import("./stripmine.js").StripState} strip
  * @property {Map<string, { hit: boolean, jumped: boolean }>} sequences  Upgraded Fighter: enemy players within 30 blocks.
@@ -648,7 +660,7 @@ function think(ai, ownerId, role, record, brain) {
   }
   // Following and a bit behind: jump sprint to catch up (the loop below does it every tick).
   if (!boating && record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
-      distance(owner.location, ai.location) > FOLLOW_SPRINT_FROM) {
+      distance(owner.location, ai.location) > FOLLOW_SPRINT_FROM && hungerOf(record) > SPRINT_HUNGER && !brain.eatingToFull) {
     sprinters.set(ai.id, { ai, ownerId, speed: moveFactor(levelOf(record)), until: Date.now() + 700 });
   }
 
@@ -658,8 +670,49 @@ function think(ai, ownerId, role, record, brain) {
   // ---- Wear armor and a shield.
   wearGear(ai, brain, record);
 
-  // ---- Eat one of its own cooked chicken when hurt (they refill over time).
+  // ---- Hunger: sprinting uses it up. Too hungry to sprint: it eats its chicken until it's full.
   const inv = inventoryOf(record);
+  const used = exhaustion.get(ai.id) ?? 0;
+  exhaustion.delete(ai.id);
+  if (used > 0) {
+    record.exhaust = (record.exhaust ?? 0) + used;
+    while (record.exhaust >= 4) {
+      record.exhaust -= 4;
+      record.hunger = Math.max(0, hungerOf(record) - 1);
+    }
+  }
+  if (!brain.eatingToFull && hungerOf(record) <= SPRINT_HUNGER) {
+    if (inv.food > 0) {
+      brain.eatingToFull = true;
+      sprinters.delete(ai.id);
+    } else if (now - brain.hungryWarnedAt > 120000) {
+      brain.hungryWarnedAt = now;
+      owner?.sendMessage(`§e${record.name} is too hungry to sprint and has no chicken left (it makes more every 10 minutes).`);
+    }
+  }
+  if (brain.eatingToFull && now >= brain.biteAt) {
+    if (inv.food > 0 && hungerOf(record) < MAX_HUNGER) {
+      if (brain.equipped !== "minecraft:cooked_chicken") {
+        try {
+          ai.runCommand("replaceitem entity @s slot.weapon.mainhand 0 cooked_chicken");
+        } catch {
+          // no hand
+        }
+        brain.equipped = "minecraft:cooked_chicken";
+      }
+      inv.food -= 1;
+      record.hunger = Math.min(MAX_HUNGER, hungerOf(record) + CHICKEN_HUNGER);
+      ai.dimension.playSound("random.eat", ai.location);
+      brain.biteAt = now + BITE_MS;
+    } else {
+      brain.eatingToFull = false; // full (or out of chicken): back to its tool
+      brain.equipped = "unknown";
+      if (hungerOf(record) >= MAX_HUNGER) ai.dimension.playSound("random.burp", ai.location);
+    }
+  }
+  if (used > 0 || brain.eatingToFull) saveRecord(ownerId, role, record);
+
+  // ---- Eat one of its own cooked chicken when hurt (they refill over time).
   if (inv.food > 0 && health.currentValue <= health.effectiveMax - FOOD_HEALS && now >= brain.eatReadyAt) {
     inv.food -= 1;
     saveRecord(ownerId, role, record);
@@ -832,6 +885,11 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
   if (slot === undefined && record.mode !== "stay" && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
     bridgeTowards(ai, ownerId, role, record, owner.location);
   }
+}
+
+/** Its hunger, 0-20 (full until it has sprinted). @param {import("./data.js").AiRecord} record */
+export function hungerOf(record) {
+  return record.hunger ?? MAX_HUNGER;
 }
 
 /**
@@ -1088,6 +1146,7 @@ function pickMelee(melee, tools, target) {
  * @param {number} slot
  */
 function equip(ai, brain, record, slot) {
+  if (brain.eatingToFull) return; // holding its chicken while it eats
   const toolId = slotItem(record, slot)?.id;
   brain.activeSlot = toolId ? slot : -1;
   // Keep its distance only for Bow Only; "Bow and Sword" charges in with its bow out.
@@ -1296,6 +1355,9 @@ function ensureBrain(ai, role) {
     resourcePerks: false,
     level: -1,
     damageBonus: 0,
+    eatingToFull: false,
+    biteAt: 0,
+    hungryWarnedAt: 0,
     modeEvent: undefined,
     strip: createStripState(),
     sequences: new Map(),

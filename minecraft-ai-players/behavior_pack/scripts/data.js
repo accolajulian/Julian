@@ -41,6 +41,8 @@ const MAX_ENEMIES = 40;
  * @property {number} [torches]  Resource AI: torches (refill to a stack when the last is placed).
  * @property {boolean} [loot]  Fighter: break tombstones and take the loot (default on).
  * @property {({ id: string, count: number } | null)[]} [stash]  Resource AI: its AI Chest (unlocked by the upgrade).
+ * @property {number} [hunger]  0-20 (full until it sprints). At 6 or less it can't sprint and eats to full.
+ * @property {number} [exhaust]  Sprinting exhaustion towards the next hunger point (4 = 1 point)
  * @property {number} [level]  0-50, from XP (see levels.js)
  * @property {number} [xp]  XP towards the next level
  * @property {number} [xpBank]  XP earned since it last shared with its owner (every 5 levels)

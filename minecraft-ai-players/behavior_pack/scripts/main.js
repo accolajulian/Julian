@@ -37,7 +37,7 @@ import { releaseLoaded } from "./scout.js";
 import { CAVE_ORES, NETHER_ORES, oresOf, netherOresOf, startCavePlacing, isCavePlacing } from "./caves.js";
 import { levelText } from "./levels.js";
 import { sparks, isLeftClick } from "./effects.js"; // (also starts the 20-minute reports)
-import { commandAttack, toolsChanged } from "./brain.js";
+import { commandAttack, toolsChanged, hungerOf } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
 import "./chest.js"; // Computer Chest (opens the AI Chest from anywhere)
 import { FARM_FOCUS, startPlacing, isPlacing, farmProgress, giveFarmMaterials, returnFarmMaterials, removeWarp } from "./farm.js";
@@ -1078,7 +1078,7 @@ async function showCommands(player, key) {
 
   const form = new ActionFormData()
     .title(`${record.name} · ${STAGE_NAMES[stageOf(record)]}`)
-    .body(`§7Now:§r ${now}\n§7${levelText(record)}`);
+    .body(`§7Now:§r ${now}\n§7${levelText(record)} · Hunger ${hungerOf(record)}/20`);
   actions.forEach((a) => form.button(a.label));
   // On touch screens the finger that opened the menu can "press" a button as it lifts. A press in
   // the first moment after the menu opens is ignored and the menu shows again.
