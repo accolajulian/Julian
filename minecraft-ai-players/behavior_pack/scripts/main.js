@@ -1069,7 +1069,9 @@ async function showCommands(player, key) {
     ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far. Use Teleport first.`);
 
   /** @type {{ label: string, run: () => unknown }[]} */
-  const actions = [{ label: "Teleport", run: () => recallAi(player, key) }];
+  const actions = [];
+  // Jobs first: a stray tap on it only opens a menu.
+  if (canGather(record)) actions.push({ label: `${on(record.mode === "wander")}Jobs`, run: () => showJobs(player, key) });
   if (fighter) {
     actions.push({ label: `${on(record.mode === "follow")}Follow me`, run: needAi((a) => setFighterMode(player, key, a, "follow")) });
     actions.push({ label: `${on(record.mode === "guard")}Guard here`, run: needAi((a) => setFighterMode(player, key, a, "guard")) });
@@ -1077,8 +1079,9 @@ async function showCommands(player, key) {
   } else {
     actions.push({ label: `${on(record.mode !== "wander")}Follow me`, run: () => setJob(player, key, undefined) });
   }
-  if (canGather(record)) actions.push({ label: `${on(record.mode === "wander")}Jobs`, run: () => showJobs(player, key) });
   if (fighter) actions.push({ label: "Fight settings", run: () => chooseFighting(player, key) });
+  // (Not the first button: on touch screens the tap that opens the menu can land on the first one.)
+  actions.push({ label: "Teleport", run: () => recallAi(player, key) });
   if (canGather(record)) actions.push({ label: `AI Chest${resourcePerks(record) ? "" : " §8(locked)"}`, run: () => showStash(player, key) });
   actions.push({ label: "Friends & enemies", run: () => showMemory(player) });
   actions.push({ label: "§cDelete", run: () => deleteAi(player, key) });
@@ -1087,10 +1090,20 @@ async function showCommands(player, key) {
     .title(`${record.name} · ${STAGE_NAMES[stageOf(record)]}`)
     .body(`§7Now:§r ${now}\n§7${levelText(record)}`);
   actions.forEach((a) => form.button(a.label));
-  const response = await form.show(player);
-  if (response.canceled || response.selection === undefined) return;
-  await actions[response.selection].run();
+  // On touch screens the finger that opened the menu can "press" a button as it lifts. A press in
+  // the first moment after the menu opens is ignored and the menu shows again.
+  for (let tries = 0; tries < 3; tries++) {
+    const opened = Date.now();
+    const response = await form.show(player);
+    if (response.canceled || response.selection === undefined) return;
+    if (Date.now() - opened < GHOST_TAP_MS) continue;
+    await actions[response.selection].run();
+    return;
+  }
 }
+
+/** Presses this soon after the Remote's menu opens are the opening tap itself, not a choice. */
+const GHOST_TAP_MS = 800;
 
 /**
  * Sends the AI off to do a job (gathering, strip mining), or back to following (job undefined).
