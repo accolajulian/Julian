@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.28.0)
+## What it does (v1.28.1)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -72,6 +72,7 @@ automatically. (The 10 generated skins are still in the pack but unused.)
 The AI never asks you to fill its inventory: with no suitable tool it mines with its hands (slower, but it can
 mine anything), with no blocks it bridges and covers lava with its own endless cobblestone, and with no bow it
 just fights in melee. Tools and blocks you give it are still used first (tools make it faster).
+Drop a tool it can use within 10 blocks of it and it picks it up into a free tool slot.
 
 ### Levels, XP and reports (levels.js)
 - The AI earns XP: 1 per block mined/chopped/dug (iron/copper/quartz 2, redstone/lapis 3, gold 4, diamond/emerald 8,

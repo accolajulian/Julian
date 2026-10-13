@@ -79,6 +79,7 @@ const ARROW_GRAVITY = 0.05; // blocks per tick per tick
 // and ends when they leave the 30 blocks. Each sequence gets ONE of each: the sprint (until its first
 // hit), the 7-block knockback (on that first hit), and the 10-block power jump.
 const SEQUENCE_RADIUS = 30;
+const TOOL_PICKUP_RANGE = 10; // picks up tools it can use from this far away
 const SPRINT_MOVEMENT = 0.45; // normal is 0.3: 1.5x faster
 const POWER_JUMP_UP = 1.3; // upward push for about a 10-block jump
 const NO_FALL_MS = 5000; // no fall damage for this long after a power jump
@@ -1105,14 +1106,19 @@ function wearGear(ai, brain, record) {
  * @param {import("./data.js").AiRecord} record
  */
 function pickUpItems(ai, ownerId, role, record) {
-  for (const item of ai.dimension.getEntities({ location: ai.location, maxDistance: 2.5, type: "minecraft:item" })) {
+  // Tools it can use are picked up from up to 10 blocks away (e.g. one you drop for it); everything
+  // else only when it's right next to it.
+  for (const item of ai.dimension.getEntities({ location: ai.location, maxDistance: TOOL_PICKUP_RANGE, type: "minecraft:item" })) {
     const stack = item.getComponent("minecraft:item")?.itemStack;
     if (!stack) continue;
+    const isTool = toolsFor(record).has(stack.typeId) && stack.amount === 1;
+    if (!isTool && distance(item.location, ai.location) > 2.5) continue;
     let message;
-    if (toolsFor(record).has(stack.typeId) && stack.amount === 1) {
+    if (isTool) {
       const slot = addTool(record, toolFromStack(stack));
       if (slot === -1) continue;
       item.remove();
+      ai.dimension.playSound("random.pop", ai.location);
       message = `picked up a ${itemName(stack.typeId)} (slot ${slot + 1})`;
     } else if (isValuable(stack.typeId) || isPlaceableBlock(stack.typeId)) {
       const added = isValuable(stack.typeId)
