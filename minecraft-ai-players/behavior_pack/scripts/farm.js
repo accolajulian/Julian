@@ -850,6 +850,6 @@ async function confirmPlace(player, s) {
     player,
     `§a${latest.name} is collecting materials for your sugar cane farm.` +
       (warp ? ` §fIts warp point (lodestone) is at ${warp.x}, ${warp.y}, ${warp.z}.` : " §7(No land close to the farm for a warp point.)") +
-      " §7Left click it to check progress or hand it materials."
+      " §7Left click its recall robot to check progress or hand it materials."
   );
 }

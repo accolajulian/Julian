@@ -2,7 +2,7 @@
 // The fighting brain and memory live in brain.js; saved data in data.js.
 // - AI Computer: every player spawns with one. Use it to see how to craft the Coder and the prices.
 // - Coder block: the shop. Buying an AI gives you an egg; throw it to spawn your AI.
-// - Left click your AI (or its recall robot): commands (teleport, attack, follow/guard, settings, gather focus).
+// - Left click its recall robot: commands (teleport, attack, follow/guard, settings, gather focus). Clicking the AI itself does nothing.
 // - Right click your AI (or its recall robot): its inventory. That's the only way to open it.
 // - Allies can right click your AI to take spare cooked chicken from its food slot.
 // - If an AI dies it respawns next to the player who bought it, and keeps its memory.
@@ -167,7 +167,7 @@ const ROLES = {
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
-      "§a+§r Left click it (or its recall robot) and pick Attack a player to send it after someone\n" +
+      "§a+§r Left click its recall robot and pick Attack a player to send it after someone\n" +
       "§a+§r Respawns near the player who bought it 60 seconds after dying, and keeps its memory\n" +
       "§a+§r Upgrade it at the Coder (10 netherite ingots): sprint, power jump, knockback, double arrows\n\n" +
       "§7Health: 20 (same as a player)   Damage: 6 + tool",
@@ -220,15 +220,15 @@ const GUIDE_TEXT =
   "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
   "§crecall robot§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
   "§lControls§r\n" +
-  "- §eLeft click§r your AI or its recall robot: commands (teleport to you, attack a player, follow/guard, " +
-  "fighting style, targets, gather focus, allies & enemies)\n" +
+  "- §eLeft click§r its recall robot (the only way to give it commands): teleport to you, attack a player, follow/guard, " +
+  "fighting style, targets, gather focus, allies & enemies\n" +
   "- §eRight click§r your AI: its inventory, like a chest with labeled slots (right click the recall robot to bring it to you)\n" +
   "- Your AI feeds itself with its own cooked chicken when it's hurt\n\n" +
   "§lInventory§r\n" +
   "Food, tools 1-2-3 (used in order; next one when a tool breaks), armor, shield, 2 block slots " +
   "(no sand, gravel or other falling blocks; used to bridge, pillar and cover lava), 10 valuables slots, " +
   "and arrows. Drag items into the labeled slots; wrong items are handed back.\n\n" +
-  "§lFighter settings§r (left click it to change)\n" +
+  "§lFighter settings§r (left click its recall robot to change)\n" +
   "Fighting: Sword Combat, Bow Only, or Bow and Sword Combat. Targets: mobs and players, or only players.\n" +
   "Tombstones: it breaks tombstones near it and takes the most valuable loot (can be turned off).\n\n" +
   "§lFood§r\n" +
@@ -559,7 +559,7 @@ async function levelUp(player, key) {
     toolsChanged(latest.id);
     player.sendMessage(
       stage === 1
-        ? `§b${latest.name} is now a Resource AI+! §fLeft click it and pick Strip mine. §6Its AI Chest is unlocked: ${stashCount(latest)} items saved up!`
+        ? `§b${latest.name} is now a Resource AI+! §fLeft click its recall robot and pick Strip mine. §6Its AI Chest is unlocked: ${stashCount(latest)} items saved up!`
         : `§b${latest.name} is now a Fighter AI Max!`
     );
   }
@@ -602,7 +602,7 @@ function becomeFighter(player, record) {
   }
   player.sendMessage(
     `§b${record.name} is now a Fighter AI! §fIt keeps everything it could do before. ` +
-      "Left click it: fighting commands, plus §eGather & build§f for its old jobs (it still fights any enemy that shows up)."
+      "Left click its recall robot: fighting commands, plus §eGather & build§f for its old jobs (it still fights any enemy that shows up)."
   );
 }
 
@@ -1038,14 +1038,7 @@ world.beforeEvents.entityHurt.subscribe((event) => {
   }
 });
 
-// Left click your AI: commands. (openMenu makes sure only one menu opens.)
-world.afterEvents.entityHitEntity.subscribe(({ damagingEntity, hitEntity }) => {
-  if (damagingEntity.typeId !== "minecraft:player" || hitEntity.typeId !== AI_ENTITY) return;
-  const info = ownerInfo(hitEntity);
-  if (!info || info.ownerId !== damagingEntity.id) return;
-  const player = /** @type {import("@minecraft/server").Player} */ (damagingEntity);
-  system.run(() => openMenu(player, (p) => showCommands(p, info.key)));
-});
+// Commands only come from the recall robot (left click it), never from clicking the AI itself.
 
 // Right click your AI: Minecraft opens its inventory screen (owner only; see container.js).
 // Allies of the owner can't open it, but right clicking lets them take spare chicken.
