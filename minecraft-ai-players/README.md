@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.25.3)
+## What it does (v1.25.4)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -77,7 +77,7 @@ upgraded AI's own inventory instead, or to pick the chest up. Only the player wh
 |---|---|
 | Left click its Remote (the **only** way to give commands) | The Remote menu (below). **Delete** is at the bottom. Clicking the AI itself does nothing. |
 | Right click your AI | Its inventory: a 27-slot chest-style screen with labeled slots (owner only) |
-| Right click its Remote | Brings the AI next to you, so you can right click it |
+| Right click its Remote | Nothing: everything is in the left-click menu (use *Teleport* to bring the AI to you) |
 | An ally right clicks your AI | They can take spare cooked chicken |
 
 ### Inventory screen (container.js)

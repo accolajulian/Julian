@@ -3,7 +3,7 @@
 // - AI Computer: every player spawns with one. Use it to see how to craft the Coder and the prices.
 // - Coder block: the shop. Buying an AI gives you an egg; throw it to spawn your AI.
 // - Left click its Remote: commands (teleport, attack, follow/guard, settings, gather focus). Clicking the AI itself does nothing.
-// - Right click your AI (or its Remote): its inventory. That's the only way to open it.
+// - Right click your AI: its inventory. Right clicking the Remote does nothing.
 // - Allies can right click your AI to take spare cooked chicken from its food slot.
 // - If an AI dies it respawns next to the player who bought it, and keeps its memory.
 import { world, system, ItemStack, EntityDamageCause, EntitySwingSource } from "@minecraft/server";
@@ -222,7 +222,7 @@ const GUIDE_TEXT =
   "§lControls§r\n" +
   "- §eLeft click§r its Remote (the only way to give it commands): teleport to you, attack a player, follow/guard, " +
   "fighting style, targets, gather focus, allies & enemies\n" +
-  "- §eRight click§r your AI: its inventory, like a chest with labeled slots (right click the Remote to bring it to you)\n" +
+  "- §eRight click§r your AI: its inventory, like a chest with labeled slots\n" +
   "- Your AI feeds itself with its own cooked chicken when it's hurt\n\n" +
   "§lInventory§r\n" +
   "Food, tools 1-2-3 (used in order; next one when a tool breaks), armor, shield, 2 block slots " +
@@ -628,19 +628,8 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   system.run(() => openMenu(player, showComputer));
 });
 
-// Remote: right click (use) brings the AI next to you so you can right click it to open its
-// inventory (Minecraft only opens an inventory screen when you right click the AI itself)...
-world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
-  const record = robotRecord(player, itemStack);
-  if (!record) return;
-  const ai = record.id ? world.getEntity(record.id) : undefined;
-  const near = ai && ai.dimension.id === player.dimension.id &&
-    Math.hypot(ai.location.x - player.location.x, ai.location.y - player.location.y, ai.location.z - player.location.z) < 4;
-  if (!near) recallAi(player, record.key);
-  player.sendMessage(`§eRight click ${record.name} to open its inventory.`);
-});
-
-// ...and left click (an attack swing) opens its commands.
+// Remote: everything is done with LEFT click (an attack swing), which opens its menu.
+// Right clicking the Remote does nothing.
 world.afterEvents.playerSwingStart.subscribe(({ player, heldItemStack, swingSource }) => {
   if (swingSource !== EntitySwingSource.Attack || isPlacing(player.id)) return; // (placing a farm uses left click)
   const record = robotRecord(player, heldItemStack);
@@ -771,7 +760,7 @@ function hatch(egg, location, dimension) {
 function makeRecallRobot(player, record) {
   const robot = new ItemStack(ROLES[record.role].robot, 1);
   robot.nameTag = REMOTE_NAME(record);
-  robot.setLore([`§7AI: ${record.name}`, `§7Controlled by: ${player.name}`, "§7Left click: commands and teleport", "§7Right click: bring it here", "§7Give it to a friend to let them control it."]);
+  robot.setLore([`§7AI: ${record.name}`, `§7Controlled by: ${player.name}`, "§7Left click: menu"]);
   robot.setDynamicProperty("aip:key", record.key);
   robot.setDynamicProperty("aip:owner", player.id);
   return robot;
@@ -847,7 +836,11 @@ system.runInterval(() => {
         container.setItem(i, undefined); // its AI was deleted
       } else if (record.ownerId !== player.id) {
         takeControl(player, record);
-      } else if (item.nameTag !== REMOTE_NAME(record) || item.typeId !== ROLES[record.role].robot) {
+      } else if (
+        item.nameTag !== REMOTE_NAME(record) ||
+        item.typeId !== ROLES[record.role].robot ||
+        item.getLore().some((line) => line.includes("Right click"))
+      ) {
         container.setItem(i, makeRecallRobot(player, record)); // an older one: rename it "Remote" (and fix its colour)
       }
     }
