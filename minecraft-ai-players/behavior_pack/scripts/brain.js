@@ -55,7 +55,7 @@ import {
 } from "./inventory.js";
 import { handleTombs, createLootState } from "./tombs.js";
 import { stripMine, createStripState } from "./stripmine.js";
-import { bridgeTowards } from "./movement.js";
+import { bridgeTowards, isBridging } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from "./gather.js";
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 import { keepLoaded } from "./scout.js";
@@ -82,6 +82,48 @@ const ARROW_GRAVITY = 0.05; // blocks per tick per tick
 const SEQUENCE_RADIUS = 30;
 const TOOL_PICKUP_RANGE = 10; // picks up tools it can use from this far away
 const FOLLOW_TELEPORT = 25; // following you and further than this: it teleports to you
+const FOLLOW_SPRINT_FROM = 4; // following you and further than this: it jump sprints to catch up
+const FOLLOW_SPRINT_UNTIL = 2.5; // ...until it's this close
+const FOLLOW_SPRINT_SPEED = 0.28; // blocks per tick (a player's sprint)
+
+/** AIs jump sprinting after their owner. @type {Map<string, { ai: import("@minecraft/server").Entity, ownerId: string, speed: number, until: number }>} */
+const sprinters = new Map();
+
+// Every tick: push each catching-up AI toward its owner at sprint speed, jumping every time it lands
+// (like a player sprint-jumping). Never into lava.
+system.runInterval(() => {
+  for (const [id, s] of sprinters) {
+    try {
+      const owner = findPlayer(s.ownerId);
+      if (!s.ai.isValid || !owner || Date.now() > s.until || owner.dimension.id !== s.ai.dimension.id || isBridging(id)) {
+        sprinters.delete(id);
+        continue;
+      }
+      const p = s.ai.location;
+      const dx = owner.location.x - p.x;
+      const dz = owner.location.z - p.z;
+      const d = Math.hypot(dx, dz);
+      if (d < FOLLOW_SPRINT_UNTIL) {
+        sprinters.delete(id);
+        continue;
+      }
+      const ux = dx / d;
+      const uz = dz / d;
+      const ahead = { x: Math.floor(p.x + ux), y: Math.floor(p.y), z: Math.floor(p.z + uz) };
+      const dim = s.ai.dimension;
+      if ([0, -1].some((k) => /lava/.test(dim.getBlock({ ...ahead, y: ahead.y + k })?.typeId ?? ""))) continue;
+      // A deep drop ahead (a ravine): don't run off it; crouch-bridging takes over.
+      if ([1, 2, 3].every((k) => dim.getBlock({ ...ahead, y: ahead.y - k })?.isAir ?? false)) continue;
+      const v = s.ai.getVelocity();
+      const speed = FOLLOW_SPRINT_SPEED * s.speed;
+      const jump = s.ai.isOnGround;
+      s.ai.applyImpulse({ x: ux * speed - v.x, y: jump ? 0.45 - Math.max(0, v.y) : 0, z: uz * speed - v.z });
+      s.ai.setRotation({ x: 0, y: (Math.atan2(-ux, uz) * 180) / Math.PI });
+    } catch {
+      sprinters.delete(id);
+    }
+  }
+}, 1);
 const SPRINT_MOVEMENT = 0.45; // normal is 0.3: 1.5x faster
 const POWER_JUMP_UP = 1.3; // upward push for about a 10-block jump
 const NO_FALL_MS = 5000; // no fall damage for this long after a power jump
@@ -589,6 +631,11 @@ function think(ai, ownerId, role, record, brain) {
       distance(owner.location, ai.location) > FOLLOW_TELEPORT && (owner.isOnGround || owner.isInWater)) {
     ai.teleport(besideOwner(owner), { facingLocation: owner.location });
     ai.clearVelocity();
+  }
+  // Following and a bit behind: jump sprint to catch up (the loop below does it every tick).
+  if (record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
+      distance(owner.location, ai.location) > FOLLOW_SPRINT_FROM) {
+    sprinters.set(ai.id, { ai, ownerId, speed: moveFactor(levelOf(record)), until: Date.now() + 700 });
   }
 
   // ---- Lava: cover it with blocks or back away (lava proof AIs don't mind lava).

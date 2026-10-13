@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.32.0)
+## What it does (v1.32.1)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -77,7 +77,7 @@ it goes (green when OK, red when not); tap Place (or left click) to send it ther
 spot and goes back there if it wanders more than 64 blocks away.
 
 ### Follows like a dog
-When it's following you (*Follow me*) and gets more than 25 blocks away, it teleports right next to you
+When it's following you (*Follow me*) it jump sprints to keep up once it's more than 4 blocks behind (never off a cliff or into lava), and if it gets more than 25 blocks away it teleports right next to you
 (a free spot with ground under it, behind or beside you), like a tamed wolf. Not while it's in a fight, and
 not while you're mid-air (it waits until you land or are swimming).
 
