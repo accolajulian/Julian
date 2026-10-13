@@ -27,7 +27,8 @@
         "walk": "animation.aip.ai_player.walk",
         "swing": "animation.aip.ai_player.swing",
         "mine": "animation.aip.ai_player.mine",
-        "crouch": "animation.aip.ai_player.crouch"
+        "crouch": "animation.aip.ai_player.crouch",
+        "sneak": "animation.aip.ai_player.sneak"
       },
       "scripts": {
         "animate": [
@@ -35,6 +36,9 @@
           "walk",
           {
             "swing": "variable.attack_time > 0.0"
+          },
+          {
+            "sneak": "query.is_sneaking"
           }
         ]
       },

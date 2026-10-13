@@ -114,6 +114,39 @@
           ]
         }
       }
+    },
+    "animation.aip.ai_player.sneak": {
+      "bones": {
+        "root": {
+          "position": [
+            0,
+            -1.5,
+            0
+          ]
+        },
+        "body": {
+          "rotation": [
+            25,
+            0,
+            0
+          ]
+        },
+        "rightLeg": {
+          "position": [
+            0,
+            0,
+            3
+          ]
+        },
+        "leftLeg": {
+          "position": [
+            0,
+            0,
+            3
+          ]
+        }
+      },
+      "loop": true
     }
   }
 }
