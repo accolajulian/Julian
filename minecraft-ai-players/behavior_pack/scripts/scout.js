@@ -16,7 +16,7 @@ const PROBE_DIRECTIONS = 8;
 const PROBE_RADIUS = 24; // scanned around each probe (its ticking area loads 2 chunks around it)
 const PROBE_WAIT_TICKS = 40; // give the land 2 seconds to load
 const GOOD_SPOT = 6; // enough blocks in one spot to stop looking further out
-const KEEP_LOADED_FROM = 80; // keeps its own land loaded when no player is this close
+const KEEP_LOADED_FROM = 40; // keeps its own land loaded when no player is this close (well inside the smallest simulation distance, about 64 blocks)
 const MOVE_AREA_AFTER = 24;
 
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
