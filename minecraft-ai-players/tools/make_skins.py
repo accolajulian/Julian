@@ -353,39 +353,20 @@ def computer_icon():
     return img
 
 
-def remote_icon(base):
-    """16x16 handheld remote: coloured top with a glowing lens, dark body, d-pad and button rows."""
+def remote_icon(seed):
+    """16x16 handheld remote: a black body covered in green Matrix code, with a glowing green lens on top."""
     img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
     p = img.load()
-    body = (38, 42, 52)
-    edge = (20, 22, 28)
-    light = tuple(min(255, int(c * 1.35) + 40) for c in base)
-    colors = {
-        "E": edge, "D": body, "C": base, "L": (230, 250, 255), "A": light,
-        "K": (235, 235, 240), "b": (140, 148, 165), "r": (230, 70, 70), "g": (90, 210, 110),
-    }
-    shape = [
-        "................",
-        "......ECCE......",
-        ".....ECCLCE.....",
-        ".....ECCCCE.....",
-        ".....EDDDDE.....",
-        ".....EDDADE.....",
-        ".....EDAKAE.....",
-        ".....EDDADE.....",
-        ".....EDDDDE.....",
-        ".....EDrDgE.....",
-        ".....EDDDDE.....",
-        ".....EbDbDE.....",
-        ".....EDbDbE.....",
-        ".....EbDbDE.....",
-        "......EEEE......",
-        "................",
-    ]
-    for y, row in enumerate(shape):
-        for x, ch in enumerate(row):
-            if ch in colors:
-                p[x, y] = tuple(colors[ch]) + (255,)
+    edge = (8, 10, 9, 255)
+    # body: columns 6-9, rows 1-14, rounded top and bottom
+    body = [(x, y) for x in range(5, 11) for y in range(1, 15)]
+    for x, y in body:
+        p[x, y] = edge
+    code = Image.new("RGBA", (4, 12))
+    matrix_rain(code, 0, 0, 4, 12, random.Random(seed), bg=(4, 8, 5))
+    img.paste(code, (6, 2))
+    p[5, 1] = p[10, 1] = p[5, 14] = p[10, 14] = (0, 0, 0, 0)
+    p[7, 1] = p[8, 1] = (120, 255, 160, 255)   # glowing lens
     return img
 
 
@@ -553,9 +534,9 @@ def main():
     egg_icon((200, 50, 50), (255, 210, 70), 1).save(RP / "textures/items/fighter_egg.png")
     egg_icon((70, 160, 70), (79, 224, 255), 2).save(RP / "textures/items/resource_egg.png")
     egg_icon((120, 200, 230), (255, 255, 255), 3).save(RP / "textures/items/ai_capsule.png")
-    # The Remotes (item ids still say "robot" so old ones keep working): red for a Fighter, blue for a Resource AI.
-    remote_icon((210, 50, 50)).save(RP / "textures/items/fighter_robot.png")
-    remote_icon((60, 115, 235)).save(RP / "textures/items/resource_robot.png")
+    # The Remotes (item ids still say "robot" so old ones keep working): black with green Matrix code.
+    remote_icon(31).save(RP / "textures/items/fighter_robot.png")
+    remote_icon(32).save(RP / "textures/items/resource_robot.png")
 
     # Pack icon: four of the AI players' faces in a grid
     pack = Image.new("RGBA", (128, 128), (15, 20, 30, 255))

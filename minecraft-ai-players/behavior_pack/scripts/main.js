@@ -615,8 +615,8 @@ world.afterEvents.playerSwingStart.subscribe(({ player, heldItemStack, swingSour
 });
 
 
-/** The name on an AI's Remote: just "Remote" (red for a Fighter, blue for a Resource AI). @param {AiRecord} record */
-const REMOTE_NAME = (record) => `§r${ROLES[record.role].color}Remote`;
+/** The name on an AI's Remote: just "Remote", in green (matches its Matrix look). @param {AiRecord} record */
+const REMOTE_NAME = (record) => (void record, "§r§aRemote");
 
 /**
  * The AI a Remote controls. Holding someone else's robot makes you its controller.
