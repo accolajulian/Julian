@@ -2,8 +2,8 @@
 // The fighting brain and memory live in brain.js; saved data in data.js.
 // - AI Computer: every player spawns with one. Use it to see how to craft the Coder and the prices.
 // - Coder block: the shop. Buying an AI gives you an egg; throw it to spawn your AI.
-// - Left click its recall robot: commands (teleport, attack, follow/guard, settings, gather focus). Clicking the AI itself does nothing.
-// - Right click your AI (or its recall robot): its inventory. That's the only way to open it.
+// - Left click its Remote: commands (teleport, attack, follow/guard, settings, gather focus). Clicking the AI itself does nothing.
+// - Right click your AI (or its Remote): its inventory. That's the only way to open it.
 // - Allies can right click your AI to take spare cooked chicken from its food slot.
 // - If an AI dies it respawns next to the player who bought it, and keeps its memory.
 import { world, system, ItemStack, EntityDamageCause, EntitySwingSource } from "@minecraft/server";
@@ -98,7 +98,7 @@ const LEVEL_UPS = {
       "§a+§r Arrow slots; its tool slots take weapons and mining tools\n" +
       "§a+§r Breaks tombstones and takes the most valuable loot\n" +
       "§a+§r While it's gathering it still drops everything to fight any enemy that shows up\n" +
-      "§a+§r Gets a red recall robot",
+      "§a+§r Gets a red Remote",
   },
   3: {
     item: "minecraft:netherite_ingot",
@@ -134,7 +134,7 @@ const ROLES = {
       "§a+§r Its own stack of torches: places one about every 10 blocks underground (refills itself)\n" +
       "§a+§r Armor slots, a shield slot and 2 block slots (bridges over ravines and lava, pillars up)\n" +
       "§a+§r 10 slots for valuables; ores it mines go straight in\n" +
-      "§a+§r A blue recall robot to call it to you from anywhere\n" +
+      "§a+§r A blue Remote to call it to you from anywhere\n" +
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Runs away from players who attack it\n" +
       "§a+§r Respawns near the player who bought it 60 seconds after dying\n" +
@@ -163,11 +163,11 @@ const ROLES = {
       "§a+§r 2 block slots: bridges over ravines and lava, pillars up, covers lava\n" +
       "§a+§r 10 slots for valuables (diamonds, gold, coal, netherite...)\n" +
       "§a+§r Breaks tombstones and takes the most valuable loot\n" +
-      "§a+§r A red recall robot to call it to you from anywhere\n" +
+      "§a+§r A red Remote to call it to you from anywhere\n" +
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
-      "§a+§r Left click its recall robot and pick Attack a player to send it after someone\n" +
+      "§a+§r Left click its Remote and pick Attack a player to send it after someone\n" +
       "§a+§r Respawns near the player who bought it 60 seconds after dying, and keeps its memory\n" +
       "§a+§r Upgrade it at the Coder (10 netherite ingots): sprint, power jump, knockback, double arrows\n\n" +
       "§7Health: 20 (same as a player)   Damage: 6 + tool",
@@ -215,20 +215,20 @@ const GUIDE_TEXT =
   "  §b15 Diamonds§r: becomes a Fighter AI and keeps everything it could do\n" +
   "  §b10 Netherite Ingots§r: Fighter AI Max (sprint, power jump, knockback, double arrows)\n" +
   "You type its name; it starts with full health and 10 cooked chicken. " +
-  "Give your recall robot to a friend (drop it) and they control your AI; it doesn't let anyone buy extra.\n\n" +
+  "Give your Remote to a friend (drop it) and they control your AI; it doesn't let anyone buy extra.\n\n" +
   "§lStep 3: Throw the egg§r\n" +
   "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
-  "§crecall robot§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
+  "§cRemote§r (§9blue§r for the Resource AI): use it to bring your AI to you from anywhere.\n\n" +
   "§lControls§r\n" +
-  "- §eLeft click§r its recall robot (the only way to give it commands): teleport to you, attack a player, follow/guard, " +
+  "- §eLeft click§r its Remote (the only way to give it commands): teleport to you, attack a player, follow/guard, " +
   "fighting style, targets, gather focus, allies & enemies\n" +
-  "- §eRight click§r your AI: its inventory, like a chest with labeled slots (right click the recall robot to bring it to you)\n" +
+  "- §eRight click§r your AI: its inventory, like a chest with labeled slots (right click the Remote to bring it to you)\n" +
   "- Your AI feeds itself with its own cooked chicken when it's hurt\n\n" +
   "§lInventory§r\n" +
   "Food, tools 1-2-3 (used in order; next one when a tool breaks), armor, shield, 2 block slots " +
   "(no sand, gravel or other falling blocks; used to bridge, pillar and cover lava), 10 valuables slots, " +
   "and arrows. Drag items into the labeled slots; wrong items are handed back.\n\n" +
-  "§lFighter settings§r (left click its recall robot to change)\n" +
+  "§lFighter settings§r (left click its Remote to change)\n" +
   "Fighting: Sword Combat, Bow Only, or Bow and Sword Combat. Targets: mobs and players, or only players.\n" +
   "Tombstones: it breaks tombstones near it and takes the most valuable loot (can be turned off).\n\n" +
   "§lFood§r\n" +
@@ -322,7 +322,7 @@ async function showComputer(player) {
         prices.join("\n") +
         "\n\n" +
         "§lComputer Chest§r: chest + redstone + glass pane. Opens your upgraded AIs' inventories from anywhere.\n\n" +
-        "§7Each player can only buy one AI. If someone gives you their recall robot, you control their AI too."
+        "§7Each player can only buy one AI. If someone gives you their Remote, you control their AI too."
     )
     .button("More help")
     .button("Close")
@@ -354,7 +354,7 @@ async function showCoder(player) {
   /** @type {(() => Promise<unknown> | unknown)[]} */
   const runs = [];
   if (owned.length) {
-    form.body("Tap your AI to level it up, get a new egg or recall robot.");
+    form.body("Tap your AI to level it up, get a new egg or Remote.");
     for (const r of owned) {
       const stage = stageOf(r);
       const next = LEVEL_UPS[stage];
@@ -366,7 +366,7 @@ async function showCoder(player) {
       runs.push(() => manageOwned(player, r.key));
     }
   } else if (hasBoughtAny(player.id)) {
-    form.body("§7You already bought your AI (one per player). Whoever has its recall robot controls it.");
+    form.body("§7You already bought your AI (one per player). Whoever has its Remote controls it.");
   } else {
     const info = ROLES.resource;
     const enough = countItem(player, info.price.item) >= info.price.amount;
@@ -498,7 +498,7 @@ async function manageOwned(player, key) {
   if (record.state === "alive" || record.state === "respawn") {
     if (record.state === "alive") actions.push({ label: "Call it to me", run: () => recallAi(player, key) });
     actions.push({
-      label: "Get a new recall robot\n§8If you lost it",
+      label: "Get a new Remote\n§8If you lost it",
       run: () => {
         const r = mine(player, key);
         if (r) giveItem(player, makeRecallRobot(player, r));
@@ -512,7 +512,7 @@ async function manageOwned(player, key) {
     const enough = countItem(player, next.item) >= next.amount;
     actions.push({ label: `${next.title}\n${enough ? "§2" : "§c"}${next.amount} ${next.label}`, run: () => levelUp(player, key) });
   }
-  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
+  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its Remote`, run: () => deleteAi(player, key) });
 
   const form = new ActionFormData()
     .title(`${STAGE_NAMES[stageOf(record)]}: ${record.name}`)
@@ -559,7 +559,7 @@ async function levelUp(player, key) {
     toolsChanged(latest.id);
     player.sendMessage(
       stage === 1
-        ? `§b${latest.name} is now a Resource AI+! §fLeft click its recall robot and pick Strip mine. §6Its AI Chest is unlocked: ${stashCount(latest)} items saved up!`
+        ? `§b${latest.name} is now a Resource AI+! §fLeft click its Remote and pick Strip mine. §6Its AI Chest is unlocked: ${stashCount(latest)} items saved up!`
         : `§b${latest.name} is now a Fighter AI Max!`
     );
   }
@@ -587,7 +587,7 @@ function becomeFighter(player, record) {
   }
   toolsChanged(record.id);
 
-  // Its blue recall robot becomes a red one (and an egg not thrown yet becomes a Fighter egg).
+  // Its blue Remote becomes a red one (and an egg not thrown yet becomes a Fighter egg).
   const container = player.getComponent("minecraft:inventory")?.container;
   if (container) {
     for (let i = 0; i < container.size; i++) {
@@ -602,7 +602,7 @@ function becomeFighter(player, record) {
   }
   player.sendMessage(
     `§b${record.name} is now a Fighter AI! §fIt keeps everything it could do before. ` +
-      "Left click its recall robot: fighting commands, plus §eGather & build§f for its old jobs (it still fights any enemy that shows up)."
+      "Left click its Remote: fighting commands, plus §eGather & build§f for its old jobs (it still fights any enemy that shows up)."
   );
 }
 
@@ -628,7 +628,7 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   system.run(() => openMenu(player, showComputer));
 });
 
-// Recall robot: right click (use) brings the AI next to you so you can right click it to open its
+// Remote: right click (use) brings the AI next to you so you can right click it to open its
 // inventory (Minecraft only opens an inventory screen when you right click the AI itself)...
 world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   const record = robotRecord(player, itemStack);
@@ -648,8 +648,11 @@ world.afterEvents.playerSwingStart.subscribe(({ player, heldItemStack, swingSour
 });
 
 
+/** The name on an AI's Remote: just "Remote" (red for a Fighter, blue for a Resource AI). @param {AiRecord} record */
+const REMOTE_NAME = (record) => `§r${ROLES[record.role].color}Remote`;
+
 /**
- * The AI a recall robot controls. Holding someone else's robot makes you its controller.
+ * The AI a Remote controls. Holding someone else's robot makes you its controller.
  * @param {import("@minecraft/server").Player} player
  * @param {ItemStack | undefined} item
  * @returns {AiRecord | undefined}
@@ -667,7 +670,7 @@ function robotRecord(player, item) {
 }
 
 /**
- * The key stored on a recall robot (robots from before version 1.12 only know their owner).
+ * The key stored on a Remote (robots from before version 1.12 only know their owner).
  * @param {ItemStack} item
  */
 function robotKey(item) {
@@ -694,7 +697,7 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
     return;
   }
 
-  // The egg leaves the player's hand and its slot gets the AI's recall robot.
+  // The egg leaves the player's hand and its slot gets the AI's Remote.
   const container = player.getComponent("minecraft:inventory")?.container;
   if (container?.getItem(player.selectedSlotIndex)?.typeId === itemStack.typeId) {
     container.setItem(player.selectedSlotIndex, makeRecallRobot(player, record));
@@ -757,25 +760,25 @@ function hatch(egg, location, dimension) {
   spawnAi(owner, record.key, location, dimension);
 }
 
-// ================================================================ recall robots
+// ================================================================ Remotes
 
 
 /**
- * The recall robot (controller) that replaces the egg: red for the Fighter, blue for the Resource AI.
+ * The Remote (controller) that replaces the egg: red for the Fighter, blue for the Resource AI.
  * Whoever holds it controls the AI.
  * @param {import("@minecraft/server").Player} player @param {AiRecord} record
  */
 function makeRecallRobot(player, record) {
   const robot = new ItemStack(ROLES[record.role].robot, 1);
-  robot.nameTag = `§r${ROLES[record.role].color}${record.name}'s Recall Robot`;
-  robot.setLore([`§7Controlled by: ${player.name}`, "§7Left click: commands and teleport", "§7Right click: bring it here", "§7Give it to a friend to let them control it."]);
+  robot.nameTag = REMOTE_NAME(record);
+  robot.setLore([`§7AI: ${record.name}`, `§7Controlled by: ${player.name}`, "§7Left click: commands and teleport", "§7Right click: bring it here", "§7Give it to a friend to let them control it."]);
   robot.setDynamicProperty("aip:key", record.key);
   robot.setDynamicProperty("aip:owner", player.id);
   return robot;
 }
 
 /**
- * Makes a player the controller of an AI (they picked up its recall robot). The AI comes to them
+ * Makes a player the controller of an AI (they picked up its Remote). The AI comes to them
  * and follows and protects them from now on; everything it carries stays with it.
  * This does NOT count as buying: it doesn't stop either player from buying their own.
  * One AI per player: someone who already controls an AI can hold another player's robot, but it does
@@ -790,7 +793,7 @@ function takeControl(player, record) {
     if (Date.now() - (controlWarned.get(warnKey) ?? 0) > 30000) {
       controlWarned.set(warnKey, Date.now());
       player.sendMessage(
-        `§cYou already control ${already[0].name}. §fEach player can only have one AI, so ${record.name}'s recall robot does nothing for you.`
+        `§cYou already control ${already[0].name}. §fEach player can only have one AI, so ${record.name}'s Remote does nothing for you.`
       );
     }
     return false;
@@ -823,14 +826,14 @@ function takeControl(player, record) {
     }
   }
   player.sendMessage(`§aYou now control ${record.name} (${ROLES[record.role].title}).`);
-  previous?.sendMessage(`§e${player.name} picked up ${record.name}'s recall robot and now controls it.`);
+  previous?.sendMessage(`§e${player.name} picked up ${record.name}'s Remote and now controls it.`);
   return true;
 }
 
 /** "You already control an AI" warnings, so they aren't repeated every second. @type {Map<string, number>} */
 const controlWarned = new Map();
 
-// Someone picked up another player's recall robot: they become its controller.
+// Someone picked up another player's Remote: they become its controller.
 system.runInterval(() => {
   for (const player of world.getPlayers()) {
     const container = player.getComponent("minecraft:inventory")?.container;
@@ -844,6 +847,8 @@ system.runInterval(() => {
         container.setItem(i, undefined); // its AI was deleted
       } else if (record.ownerId !== player.id) {
         takeControl(player, record);
+      } else if (item.nameTag !== REMOTE_NAME(record) || item.typeId !== ROLES[record.role].robot) {
+        container.setItem(i, makeRecallRobot(player, record)); // an older one: rename it "Remote" (and fix its colour)
       }
     }
   }
@@ -877,7 +882,7 @@ function recallAi(player, key) {
 
 
 /**
- * Deletes the AI and its recall robot (after asking). Everything it carries is given back, except
+ * Deletes the AI and its Remote (after asking). Everything it carries is given back, except
  * its own 10 chicken and its torches. Whoever bought it still can't buy another one.
  * @param {import("@minecraft/server").Player} player @param {string} key
  */
@@ -888,7 +893,7 @@ async function deleteAi(player, key) {
   const confirm = await new MessageFormData()
     .title(`Delete ${record.name}?`)
     .body(
-      `${record.name} and its recall robot will be gone for good. You get back everything it carries.\n\n` +
+      `${record.name} and its Remote will be gone for good. You get back everything it carries.\n\n` +
         (canGather(record) && !resourcePerks(record) && stashCount(record) > 0
           ? `§6Its AI Chest is still locked, so the ${stashCount(record)} items in it are lost.§r\n\n`
           : "") +
@@ -907,7 +912,7 @@ async function deleteAi(player, key) {
   const ai = latest.id ? world.getEntity(latest.id) : undefined;
   ai?.remove();
 
-  // Take its recall robot (and any unthrown egg) out of the player's inventory.
+  // Take its Remote (and any unthrown egg) out of the player's inventory.
   const container = player.getComponent("minecraft:inventory")?.container;
   if (container) {
     for (let i = 0; i < container.size; i++) {
@@ -1038,7 +1043,7 @@ world.beforeEvents.entityHurt.subscribe((event) => {
   }
 });
 
-// Commands only come from the recall robot (left click it), never from clicking the AI itself.
+// Commands only come from the Remote (left click it), never from clicking the AI itself.
 
 // Right click your AI: Minecraft opens its inventory screen (owner only; see container.js).
 // Allies of the owner can't open it, but right clicking lets them take spare chicken.
@@ -1053,7 +1058,7 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target }) => {
 // ================================================================ commands (left click)
 
 /**
- * Everything you can tell your AI to do. Opened by left clicking the AI or its recall robot.
+ * Everything you can tell your AI to do. Opened by left clicking the AI or its Remote.
  * @param {import("@minecraft/server").Player} player
  * @param {string} key
  */
@@ -1094,7 +1099,7 @@ async function showCommands(player, key) {
     resourceChoices(player, key, record, ai, actions, true);
   }
   actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
-  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
+  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its Remote`, run: () => deleteAi(player, key) });
 
   const form = new ActionFormData()
     .title(`${ROLES[role].color}${record.name}§r (${STAGE_NAMES[stageOf(record)]})`)

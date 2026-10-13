@@ -107,7 +107,7 @@ function layout(role, evolved = false) {
       {
         kind: "info",
         text: (r) => `${r.name} (Fighter AI${r.upgraded ? " Max" : ""}) - ${levelText(r)} - AI Chest: ${stashCount(r)}`,
-        lore: ["§7Tools are used in order 1, 2, 3: weapons for", "§7fighting, pickaxes/axes/shovels for gathering.", "§7Left click its recall robot for commands."],
+        lore: ["§7Tools are used in order 1, 2, 3: weapons for", "§7fighting, pickaxes/axes/shovels for gathering.", "§7Left click its Remote for commands."],
       },
       torchInfo,
       waterInfo,
@@ -127,7 +127,7 @@ function layout(role, evolved = false) {
         text: (r) => `${r.name} (Resource AI${r.upgraded ? "+" : ""}) - ${levelText(r)} - AI Chest: ${stashCount(r)}`,
         lore: ["§7Tools are used in order 1, 2, 3.", "§7When its valuables fill up, half goes in its", "§7AI Chest. Unlocked by the upgrade."],
       },
-      { kind: "info", text: (r) => (r.mode === "wander" ? `Wandering: ${r.focus}` : "Following you"), lore: ["§7Left click its recall robot to change."] },
+      { kind: "info", text: (r) => (r.mode === "wander" ? `Wandering: ${r.focus}` : "Following you"), lore: ["§7Left click its Remote to change."] },
       waterInfo,
       { kind: "info", text: () => "Mining/harvesting tools only", lore: ["§7Pickaxes, axes, shovels, hoes, shears."] },
       // Row 2: armor, blocks, food, first valuable
@@ -141,7 +141,7 @@ function layout(role, evolved = false) {
     ...tools, ...arrows, { kind: "shield" },
     { kind: "info", text: (r) => `${r.name} (Fighter AI) - ${levelText(r)}`, lore: ["§7Tools are used in order 1, 2, 3.", "§7When one breaks it uses the next."] },
     { kind: "info", text: () => "Weapons go in the tool slots", lore: ["§7Swords, axes, trident, mace, bow, crossbow."] },
-    { kind: "info", text: () => "Left click its recall robot for commands", lore: ["§7Teleport, attack, follow, guard, settings."] },
+    { kind: "info", text: () => "Left click its Remote for commands", lore: ["§7Teleport, attack, follow, guard, settings."] },
     // Row 2: armor, blocks, food, first valuable
     ...armor, ...blocks, foodInfo, { kind: "food" }, valuables[0],
     // Row 3: valuables 2-10

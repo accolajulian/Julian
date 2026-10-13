@@ -8,9 +8,9 @@ const MAX_ENEMIES = 40;
 /** @typedef {"resource" | "fighter"} RoleId */
 /**
  * @typedef {Object} AiRecord  Saved per AI. Survives the AI dying.
- * @property {string} key  This AI's own ID (also stored on its egg, its recall robot and the AI itself).
+ * @property {string} key  This AI's own ID (also stored on its egg, its Remote and the AI itself).
  * @property {RoleId} role
- * @property {string} ownerId  Who controls it now: whoever has its recall robot (controller).
+ * @property {string} ownerId  Who controls it now: whoever has its Remote (controller).
  * @property {string} buyerId  Who bought it. Never changes.
  * @property {string} name
  * @property {number} look
@@ -63,7 +63,7 @@ export function isRole(value) {
 
 // ---------------------------------------------------------------- AI records
 // Every AI has its own record (key "aip:rec:<key>"). Who controls it can change (by passing its
-// recall robot to another player); who bought it never does. Each player can BUY one AI of each kind,
+// Remote to another player); who bought it never does. Each player can BUY one AI of each kind,
 // ever ("aip:bought:<player>:<role>"), but can control any number of AIs others hand them.
 
 /** @param {string} key @returns {AiRecord | undefined} */
