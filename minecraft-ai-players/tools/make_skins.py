@@ -667,6 +667,249 @@ def pack_icon():
     return img.resize((256, 256), Image.NEAREST)
 
 
+# ---------------------------------------------------------------- 2000s computer look
+# Everything looks like a computer from the 2000s: beige plastic (bevelled: light top/left edges, dark
+# bottom/right), chunky CRT monitors with blue desktop screens (sky and a green hill), tower PCs with
+# CD and floppy drives, floppy disks, and a silver TV-style remote with rubber buttons.
+BEIGE = (221, 213, 190)
+BEIGE_HI = (242, 237, 220)
+BEIGE_MID = (196, 187, 160)
+BEIGE_DK = (152, 142, 116)
+BEIGE_EDGE = (98, 90, 72)
+SKY_TOP = (34, 82, 180)
+SKY_LOW = (96, 150, 225)
+HILL = (72, 152, 58)
+HILL_DK = (52, 118, 44)
+LED_GREEN = (70, 235, 95)
+LED_AMBER = (255, 172, 40)
+WHITE = (250, 250, 250)
+
+
+def _fill(p, x0, y0, x1, y1, c):
+    for x in range(x0, x1 + 1):
+        for y in range(y0, y1 + 1):
+            p[x, y] = c + (255,)
+
+
+def _bevel(p, x0, y0, x1, y1, base=BEIGE, hi=BEIGE_HI, dk=BEIGE_DK, edge=BEIGE_EDGE):
+    """A bevelled plastic box (inclusive corners) with a dark outline."""
+    _fill(p, x0, y0, x1, y1, base)
+    for x in range(x0, x1 + 1):
+        p[x, y0 + 1 if y1 - y0 > 2 else y0] = hi + (255,)
+        p[x, y1 - 1 if y1 - y0 > 2 else y1] = dk + (255,)
+    for y in range(y0, y1 + 1):
+        p[x0 + 1 if x1 - x0 > 2 else x0, y] = hi + (255,)
+        p[x1 - 1 if x1 - x0 > 2 else x1, y] = dk + (255,)
+    for x in range(x0, x1 + 1):
+        p[x, y0] = p[x, y1] = edge + (255,)
+    for y in range(y0, y1 + 1):
+        p[x0, y] = p[x1, y] = edge + (255,)
+
+
+def _desktop(p, x0, y0, x1, y1, hill=True):
+    """A blue 2000s desktop screen: sky fading down, a green hill along the bottom, a glare pixel."""
+    h = max(1, y1 - y0)
+    for y in range(y0, y1 + 1):
+        t = (y - y0) / h
+        sky = tuple(int(SKY_TOP[i] + (SKY_LOW[i] - SKY_TOP[i]) * t) for i in range(3))
+        for x in range(x0, x1 + 1):
+            p[x, y] = sky + (255,)
+    if hill:
+        w = max(1, x1 - x0)
+        for x in range(x0, x1 + 1):
+            u = (x - x0) / w
+            top = y1 - int(round((h * 0.45) * (1 - (2 * u - 0.8) ** 2)))
+            for y in range(max(y0, top), y1 + 1):
+                p[x, y] = (HILL if y > top else HILL_DK) + (255,)
+    p[x0, y0] = WHITE + (255,)
+
+
+def _symbol(p, rows, left, top, color, clip=None):
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            if ch != "X":
+                continue
+            px, py = left + x, top + y
+            if clip and not (clip[0] <= px <= clip[2] and clip[1] <= py <= clip[3]):
+                continue
+            p[px, py] = color + (255,)
+
+
+def crt_icon(symbol=None):
+    """16x16 beige CRT monitor (desktop screen, optional white symbol) with a stand and keyboard."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    _bevel(p, 1, 0, 14, 11)
+    _desktop(p, 3, 2, 12, 8, hill=symbol is None)
+    if symbol:
+        w = max(len(r) for r in symbol)
+        _symbol(p, symbol, 3 + (10 - w) // 2, 2 + (7 - len(symbol)) // 2, WHITE)
+    p[12, 10] = LED_GREEN + (255,)
+    _fill(p, 5, 12, 10, 12, BEIGE_DK)            # stand
+    _bevel(p, 1, 13, 14, 15)                      # keyboard
+    for x in range(3, 13, 2):
+        p[x, 14] = BEIGE_HI + (255,)
+    return img
+
+
+def remote_2000s():
+    """16x16 silver TV-style remote: a little green LCD and colored rubber buttons."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    _bevel(p, 5, 0, 10, 15, base=(178, 182, 190), hi=(222, 225, 232), dk=(128, 132, 140), edge=(70, 72, 80))
+    _fill(p, 6, 2, 9, 4, (150, 182, 120))         # LCD
+    p[7, 3] = p[8, 3] = (60, 80, 50, 255)
+    for x, c in zip(range(6, 10), ((220, 50, 50), (60, 190, 70), (240, 200, 40), (60, 110, 230))):
+        p[x, 6] = c + (255,)                      # red, green, yellow, blue buttons
+    for y in (8, 10, 12):
+        p[6, y] = p[7, y] = p[8, y] = p[9, y] = (95, 98, 106, 255)
+        p[7, y] = (120, 124, 132, 255)
+    p[7, 0] = p[8, 0] = (230, 40, 40, 255)        # IR light
+    return img
+
+
+def floppy_icon(color, symbol, ink):
+    """16x16 floppy disk: colored plastic, silver metal shutter on top, white label with a symbol."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    dark = tuple(int(c * 0.55) for c in color)
+    light = tuple(min(255, int(c * 1.25) + 20) for c in color)
+    _bevel(p, 1, 1, 14, 14, base=color, hi=light, dk=dark, edge=tuple(int(c * 0.35) for c in color))
+    p[14, 1] = (0, 0, 0, 0)                       # the cut corner
+    _fill(p, 4, 1, 11, 5, (190, 194, 202))        # metal shutter
+    _fill(p, 9, 2, 10, 4, (90, 94, 102))          # its window
+    _fill(p, 3, 8, 12, 14, (244, 242, 232))       # label
+    w = max(len(r) for r in symbol)
+    _symbol(p, symbol, 3 + (10 - w) // 2, 9, ink, clip=(3, 8, 12, 14))
+    return img
+
+
+def tower_icon():
+    """16x16 beige tower PC: CD drives, a floppy drive, power button and LED, vents."""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    _bevel(p, 3, 0, 12, 15)
+    for y in (2, 4):
+        _fill(p, 5, y, 10, y, BEIGE_MID)          # CD drive trays
+        p[9, y] = BEIGE_EDGE + (255,)
+    _fill(p, 6, 6, 9, 6, BEIGE_EDGE)              # floppy slot
+    p[7, 9] = p[8, 9] = BEIGE_DK + (255,)         # power button
+    p[7, 10] = p[8, 10] = BEIGE_DK + (255,)
+    p[10, 10] = LED_GREEN + (255,)
+    p[10, 11] = LED_AMBER + (255,)
+    for x in range(5, 11, 2):
+        p[x, 13] = BEIGE_DK + (255,)              # vents
+    return img
+
+
+def chest_2000s_texture():
+    """64x64 Computer Chest texture (base 16x10x16 at the top, lid 16x6x16 below): beige plastic with
+    vents, a dark seam where the lid closes, and a few LEDs."""
+    rng = random.Random(2000)
+    tex = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    p = tex.load()
+    for x in range(64):
+        for y in range(48):
+            n = rng.randint(-5, 5)
+            p[x, y] = tuple(max(0, min(255, c + n)) for c in BEIGE) + (255,)
+    for x in range(0, 64, 2):
+        for y in (19, 20, 21, 22):                # vents along the base's sides
+            p[x, y] = BEIGE_DK + (255,)
+    for x in range(64):
+        p[x, 16] = BEIGE_EDGE + (255,)            # top edge of the base's sides (the seam)
+        p[x, 47] = BEIGE_EDGE + (255,)            # bottom edge of the lid's sides
+        p[x, 42] = BEIGE_HI + (255,)              # light edge along the lid
+    for x in range(4, 64, 16):
+        p[x, 24] = LED_GREEN + (255,)
+        p[x + 2, 24] = LED_AMBER + (255,)
+    return tex
+
+
+def coder_2000s_textures():
+    """16x16 Coder block: the sides are CRT screens full of code, the top a 3x3 grid of keyboard keys
+    (it's a crafting table), the bottom plain beige with vents."""
+    rng = random.Random(2001)
+    side = Image.new("RGBA", (16, 16))
+    p = side.load()
+    _bevel(p, 0, 0, 15, 15)
+    _fill(p, 2, 2, 13, 11, (16, 36, 96))          # dark blue code editor
+    colors = (WHITE, (120, 220, 255), (255, 220, 90), (130, 240, 130))
+    for y in range(3, 11, 2):
+        indent = rng.choice((0, 0, 1, 2))
+        length = rng.randint(3, 9 - indent)
+        c = rng.choice(colors)
+        for x in range(3 + indent, min(13, 3 + indent + length)):
+            p[x, y] = c + (255,)
+    p[2, 2] = (120, 150, 230, 255)                # glare
+    p[12, 13] = LED_GREEN + (255,)
+    _fill(p, 3, 13, 7, 13, BEIGE_DK)              # brand badge
+    top = Image.new("RGBA", (16, 16))
+    q = top.load()
+    _bevel(q, 0, 0, 15, 15)
+    for kx in range(3):
+        for ky in range(3):
+            x0, y0 = 1 + kx * 5, 1 + ky * 5
+            _bevel(q, x0, y0, x0 + 3, y0 + 3, base=BEIGE_HI, hi=WHITE, dk=BEIGE_MID, edge=BEIGE_DK)
+    bottom = Image.new("RGBA", (16, 16))
+    r = bottom.load()
+    _bevel(r, 0, 0, 15, 15)
+    for y in range(4, 12, 2):
+        _fill(r, 4, y, 11, y, BEIGE_DK)
+    return side, top, bottom
+
+
+def slot_2000s_icon(kind):
+    """16x16 slot label: a little beige-framed blue screen showing the outline of what goes in the slot."""
+    shape = SLOT_SHAPES[kind]
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    p = img.load()
+    _fill(p, 0, 0, 15, 15, BEIGE)
+    for i in range(16):
+        p[i, 0] = p[0, i] = BEIGE_HI + (255,)
+        p[i, 15] = p[15, i] = BEIGE_DK + (255,)
+    _desktop(p, 1, 1, 14, 14, hill=False)
+    top = (16 - len(shape)) // 2
+    _symbol(p, shape, 0, top, WHITE, clip=(1, 1, 14, 14))
+    return img
+
+
+def pack_2000s_icon():
+    """256x256 pack icon: a 2000s desk setup (beige CRT with a blue desktop, tower, keyboard, mouse),
+    drawn as 64x64 pixel art and scaled up."""
+    img = Image.new("RGBA", (64, 64), (28, 52, 70, 255))
+    p = img.load()
+    _fill(p, 0, 50, 63, 63, (92, 66, 44))         # desk
+    _fill(p, 0, 50, 63, 50, (120, 88, 60))
+    _bevel(p, 4, 6, 41, 40)                       # CRT monitor
+    _fill(p, 9, 41, 36, 43, BEIGE_MID)            # its deep back
+    _desktop(p, 8, 10, 37, 33)
+    for x in range(12, 16):                       # desktop icons
+        for y in range(12, 15):
+            p[x, y] = WHITE + (255,)
+    for x in range(12, 16):
+        for y in range(17, 20):
+            p[x, y] = (255, 220, 90, 255)
+    _fill(p, 8, 33, 37, 34, (36, 80, 200))        # taskbar
+    _fill(p, 8, 33, 12, 34, (60, 170, 60))        # start button
+    p[36, 38] = p[37, 38] = LED_GREEN + (255,)
+    _fill(p, 16, 44, 29, 47, BEIGE_DK)            # stand
+    _fill(p, 12, 48, 33, 49, BEIGE_MID)
+    _bevel(p, 45, 12, 59, 49)                     # tower
+    for y in (16, 20):
+        _fill(p, 47, y, 57, y + 1, BEIGE_MID)
+        p[55, y + 1] = BEIGE_EDGE + (255,)
+    _fill(p, 49, 25, 55, 25, BEIGE_EDGE)          # floppy
+    _fill(p, 51, 32, 53, 34, BEIGE_DK)            # power
+    p[56, 36] = LED_GREEN + (255,)
+    _bevel(p, 6, 53, 39, 59)                      # keyboard
+    for y in (55, 57):
+        for x in range(8, 38, 2):
+            p[x, y] = BEIGE_HI + (255,)
+    _bevel(p, 44, 54, 49, 60)                     # mouse
+    p[46, 55] = p[47, 55] = BEIGE_EDGE + (255,)
+    return img.resize((256, 256), Image.NEAREST)
+
+
 def main():
     skins = []
     for i, paint in enumerate(AI):
@@ -676,23 +919,23 @@ def main():
         s.img.save(RP / f"textures/entity/ai_player/skin_{i}.png")
         head_icon(s.img, 64).save(RP / f"textures/aip/icons/{i}.png")
 
-    for name, img in zip(("side", "top", "bottom"), coder_textures()):
+    # Blocks and items: the 2000s computer look.
+    for name, img in zip(("side", "top", "bottom"), coder_2000s_textures()):
         img.save(RP / f"textures/blocks/coder_{name}.png")
-    monitor_icon(CODE, CODE_GREEN).save(RP / "textures/items/ai_computer.png")   # the AI Computer
-    chest_tex, _ = computer_chest_textures()
-    chest_tex.save(RP / "textures/entity/computer_chest.png")
-    chest_item_icon().save(RP / "textures/items/computer_chest.png")
+    crt_icon(CODE).save(RP / "textures/items/ai_computer.png")   # the AI Computer
+    chest_2000s_texture().save(RP / "textures/entity/computer_chest.png")
+    tower_icon().save(RP / "textures/items/computer_chest.png")
     for kind in SLOT_SHAPES:
-        slot_screen_icon(kind).save(RP / f"textures/items/slot_{kind}.png")
-    pod_icon(SWORD, (255, 90, 90)).save(RP / "textures/items/fighter_egg.png")
-    pod_icon(PICK, (120, 200, 255)).save(RP / "textures/items/resource_egg.png")
-    pod_icon(DOT, CODE_GREEN).save(RP / "textures/items/ai_capsule.png")
-    # The Remotes (item ids still say "robot" so old ones keep working): black with green Matrix code.
-    remote_screen_icon().save(RP / "textures/items/fighter_robot.png")
-    remote_screen_icon().save(RP / "textures/items/resource_robot.png")
+        slot_2000s_icon(kind).save(RP / f"textures/items/slot_{kind}.png")
+    floppy_icon((200, 50, 50), SWORD, (200, 40, 40)).save(RP / "textures/items/fighter_egg.png")
+    floppy_icon((50, 90, 200), PICK, (40, 70, 190)).save(RP / "textures/items/resource_egg.png")
+    floppy_icon((60, 60, 66), DOT, (40, 150, 60)).save(RP / "textures/items/ai_capsule.png")
+    # The Remotes (item ids still say "robot" so old ones keep working): a silver TV-style remote.
+    remote_2000s().save(RP / "textures/items/fighter_robot.png")
+    remote_2000s().save(RP / "textures/items/resource_robot.png")
 
-    # Pack icon: a computer
-    icon = pack_icon()
+    # Pack icon: a 2000s computer desk
+    icon = pack_2000s_icon()
     for p in ("behavior_pack", "resource_pack"):
         icon.save(ROOT / p / "pack_icon.png")
 
