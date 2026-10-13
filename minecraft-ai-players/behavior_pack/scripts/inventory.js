@@ -4,9 +4,9 @@
 import { world, ItemStack, EnchantmentType, BlockTypes } from "@minecraft/server";
 
 export const FOOD_ITEM = "minecraft:cooked_chicken";
-export const FOOD_BATCH = 10; // made every FOOD_EVERY_TICKS
-export const FOOD_CAP = 30;
-export const FOOD_RESERVED = 10; // the AI's own; players can never take these
+export const FOOD_BATCH = 15; // made every FOOD_EVERY_TICKS
+export const FOOD_CAP = 45;
+export const FOOD_RESERVED = 30; // the AI's own; players can never take these
 export const FOOD_EVERY_TICKS = 12000; // 10 minutes of game time
 export const TOOL_SLOTS = 3;
 export const ARROW_ITEM = "minecraft:arrow";
@@ -188,14 +188,14 @@ export function inventoryOf(record) {
 
 // ---------------------------------------------------------------- food
 
-/** How many cooked chicken players may take (everything above the AI's own 10). */
+/** How many cooked chicken players may take (everything above the AI's own 30). */
 /** @param {import("./data.js").AiRecord} record */
 export function takeableFood(record) {
   return Math.max(0, inventoryOf(record).food - FOOD_RESERVED);
 }
 
 /**
- * Adds 10 cooked chicken for every 10 minutes that passed, up to 30.
+ * Adds 15 cooked chicken for every 10 minutes that passed, up to 45.
  * @param {import("./data.js").AiRecord} record
  * @returns {number} how many were added
  */

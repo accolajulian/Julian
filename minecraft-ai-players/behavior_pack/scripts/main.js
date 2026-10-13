@@ -44,6 +44,7 @@ import { FARM_FOCUS, startPlacing, isPlacing, farmProgress, giveFarmMaterials, r
 import {
   FOOD_ITEM,
   FOOD_RESERVED,
+  FOOD_BATCH,
   FOOD_CAP,
   ARROW_ITEM,
   inventoryOf,
@@ -66,7 +67,7 @@ import { FOCUSES } from "./gather_data.js";
 const COMPUTER_ITEM = "aip:ai_computer";
 const MAX_NAME_LENGTH = 20;
 const RESPAWN_SECONDS = 60;
-const START_FOOD = 10; // cooked chicken every AI comes with (it eats them to heal itself)
+const START_FOOD = 15; // cooked chicken every AI comes with (it eats them to heal itself and when hungry)
 
 /** What each stage is called (see data.js stageOf). */
 /** @type {Record<number, string>} */
@@ -137,7 +138,7 @@ const ROLES = {
       "§a+§r Armor slots, a shield slot and 2 block slots (bridges over ravines and lava, pillars up)\n" +
       "§a+§r 10 slots for valuables; ores it mines go straight in\n" +
       "§a+§r A blue Remote to call it to you from anywhere\n" +
-      "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
+      "§a+§r Makes 15 cooked chicken every 10 minutes (up to 45); keeps 30 for itself, you take the rest\n" +
       "§a+§r Runs away from players who attack it\n" +
       "§a+§r Respawns near the player who bought it 60 seconds after dying\n" +
       "§a+§r Level it up at the Coder: §b10 diamonds§r (strip mining, lava/fall proof, AI Chest), then\n" +
@@ -166,7 +167,7 @@ const ROLES = {
       "§a+§r 10 slots for valuables (diamonds, gold, coal, netherite...)\n" +
       "§a+§r Breaks tombstones and takes the most valuable loot\n" +
       "§a+§r A red Remote to call it to you from anywhere\n" +
-      "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
+      "§a+§r Makes 15 cooked chicken every 10 minutes (up to 45); keeps 30 for itself, you take the rest\n" +
       "§a+§r Remembers players who attacked you, and never attacks your allies\n" +
       "§a+§r Can guard a spot and attack any other player who comes near\n" +
       "§a+§r Left click its Remote and pick Attack a player to send it after someone\n" +
@@ -203,7 +204,7 @@ const GUIDE_TEXT =
   "  §b10 Diamonds§r: Resource AI+ (strip mining, lava/fall proof, AI Chest unlocked)\n" +
   "  §b15 Diamonds§r: becomes a Fighter AI and keeps everything it could do\n" +
   "  §b10 Netherite Ingots§r: Fighter AI Max (sprint, power jump, knockback, double arrows)\n" +
-  "You type its name; it starts with full health and 10 cooked chicken. " +
+  "You type its name; it starts with full health and 15 cooked chicken. " +
   "Give your Remote to a friend (drop it) and they control your AI; it doesn't let anyone buy extra.\n\n" +
   "§lStep 3: Throw the egg§r\n" +
   "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
@@ -221,8 +222,8 @@ const GUIDE_TEXT =
   "Style: Sword, Bow, or Bow + Sword. Targets: mobs + players, or players only.\n" +
   "Tombstones: it breaks tombstones near it and takes the most valuable loot (can be turned off).\n\n" +
   "§lFood§r\n" +
-  `Each AI makes ${FOOD_RESERVED} cooked chicken every 10 minutes, up to ${FOOD_CAP}. ` +
-  `The first ${FOOD_RESERVED} are its own (it eats them to heal); you and your allies can take the rest.\n\n` +
+  `Each AI makes ${FOOD_BATCH} cooked chicken every 10 minutes, up to ${FOOD_CAP}. ` +
+  `The first ${FOOD_RESERVED} are its own (it eats them to heal and when hungry); you and your allies can take the rest.\n\n` +
   "§lIf your AI dies§r\n" +
   `It respawns near the player who bought it after ${RESPAWN_SECONDS} seconds, and still remembers its enemies and allies.\n\n` +
   "§7Lost your egg? Open the Coder and pick your AI to get a new one.";
@@ -872,7 +873,7 @@ function recallAi(player, key) {
 
 /**
  * Deletes the AI and its Remote (after asking). Everything it carries is given back, except
- * its own 10 chicken and its torches. Whoever bought it still can't buy another one.
+ * its own 30 chicken and its torches. Whoever bought it still can't buy another one.
  * @param {import("@minecraft/server").Player} player @param {string} key
  */
 async function deleteAi(player, key) {
@@ -1342,7 +1343,7 @@ function setMode(player, key, ai, mode) {
 
 
 /**
- * Take cooked chicken from an AI's food slot (only what's above its own 10).
+ * Take cooked chicken from an AI's food slot (only what's above its own 30).
  * @param {import("@minecraft/server").Player} player
  * @param {string} key
  */
@@ -1413,7 +1414,7 @@ function giveArrows(player, total) {
   }
 }
 
-/** When an AI is dismissed: everything it carries goes back to the owner (except its own 10 chicken and its torches). */
+/** When an AI is dismissed: everything it carries goes back to the owner (except its own 30 chicken and its torches). */
 /** @param {import("@minecraft/server").Player} player @param {AiRecord} record */
 function returnEverything(player, record) {
   const inv = inventoryOf(record);
@@ -1590,7 +1591,7 @@ async function forgiveEnemy(player) {
 
 // ================================================================ food
 
-// Every 10 seconds: each AI makes 10 cooked chicken per 10 minutes of game time, up to 30.
+// Every 10 seconds: each AI makes 15 cooked chicken per 10 minutes of game time, up to 45.
 system.runInterval(() => {
   for (const record of allAis()) {
     if (record.state === "respawn") {
@@ -1603,13 +1604,8 @@ system.runInterval(() => {
       saveRecord(record.ownerId, record.role, record);
       continue;
     }
-    const added = generateFood(record);
+    generateFood(record); // quietly (no message)
     saveRecord(record.ownerId, record.role, record);
-    if (added > 0) {
-      findPlayer(record.ownerId)?.sendMessage(
-        `§7${record.name} made ${added} cooked chicken (${inventoryOf(record).food}/${FOOD_CAP}, §a${takeableFood(record)} you can take§7).`
-      );
-    }
   }
 }, 200);
 

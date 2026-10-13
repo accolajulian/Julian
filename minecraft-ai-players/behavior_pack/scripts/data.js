@@ -27,7 +27,7 @@ const MAX_ENEMIES = 40;
  * @property {{ x: number, y: number, z: number, dim: string }} [post]  Guard spot.
  * @property {(import("./inventory.js").ToolData | null)[]} [tools]  3 tool slots, used in order.
  * @property {number[]} [arrows]  2 arrow slots.
- * @property {number} [food]  Cooked chicken it has (the first 10 are its own).
+ * @property {number} [food]  Cooked chicken it has (the first 30 are its own).
  * @property {number} [foodAt]  Game time of the last food batch.
  * @property {Record<"head" | "chest" | "legs" | "feet", import("./inventory.js").ToolData | null>} [armor]
  * @property {import("./inventory.js").ToolData | null} [shield]

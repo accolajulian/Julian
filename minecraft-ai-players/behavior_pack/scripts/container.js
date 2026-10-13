@@ -6,7 +6,7 @@
 //   item is allowed in that slot (anything else is handed back to the owner);
 // - writes the record back into the inventory (so tool wear, arrows used, ores mined, chicken
 //   made... show up), and puts the labels back in empty slots.
-// The AI's own 10 chicken, its torches and its water bucket are shown on info labels, so they can't be taken.
+// The AI's own 30 chicken, its torches and its water bucket are shown on info labels, so they can't be taken.
 import { world, system, ItemStack } from "@minecraft/server";
 import { AI_ENTITY, getAi, saveRecord, findPlayer, knownAis, giveItem } from "./data.js";
 import { levelText } from "./levels.js";
@@ -191,7 +191,7 @@ function expected(record, role, s) {
       return inv.shield ? stackFromTool(inv.shield) : label("shield", "Shield");
     case "food": {
       const spare = Math.max(0, inv.food - FOOD_RESERVED);
-      return spare > 0 ? new ItemStack(FOOD_ITEM, spare) : label("food", "Spare chicken (none yet)", ["§710 more every 10 minutes, up to 20 spare."]);
+      return spare > 0 ? new ItemStack(FOOD_ITEM, spare) : label("food", "Spare chicken (none yet)", ["§715 more every 10 minutes, up to 15 spare."]);
     }
     case "arrows":
       return inv.arrows[s.i] > 0 ? new ItemStack(ARROW_ITEM, inv.arrows[s.i]) : label("arrows", `Arrows ${s.i + 1}`);

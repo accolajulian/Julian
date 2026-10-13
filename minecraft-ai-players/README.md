@@ -18,7 +18,7 @@ An original add-on with AI companions that look like players. It's kept separate
   ```
 - Each player buys **one AI, ever**: a **Resource AI** for 30 gold ingots. It then levels up at the Coder (see *Stages*). (Players who bought both AIs in older versions keep them.)
 - Prices show in red until you have enough. Trying to buy without enough only tells you how many more you need.
-- Buying: type a name (required). The look is picked automatically (add-ons can't copy a player's skin). Every AI starts with full health and 10 cooked chicken. You get an **AI Egg**; use it to throw it,
+- Buying: type a name (required). The look is picked automatically (add-ons can't copy a player's skin). Every AI starts with full health and 15 cooked chicken. You get an **AI Egg**; use it to throw it,
   and your AI appears where it lands.
 - Lost the egg? Open the Coder and pick your AI to get a new one (the old egg stops working).
 - **Remote:** when you throw the egg, its hotbar slot gets a Remote (black with green Matrix code; it used to be **red** for the Fighter,
@@ -133,7 +133,7 @@ upgraded AI's own inventory instead, or to pick the chest up. Only the player wh
 
 ### Inventory screen (container.js)
 Every slot has a job; empty slots show a gray label icon saying what goes there. Drag items in or out like
-a chest. Items that aren't allowed in a slot are handed back. The AI's own 10 chicken and its torches are
+a chest. Items that aren't allowed in a slot are handed back. The AI's own 30 chicken and its torches are
 shown on info labels and can't be taken.
 
 | Row | Resource AI | Fighter AI |
@@ -189,7 +189,7 @@ from its block slots and tells you when it runs out.
 ### Inventory (inventory.js)
 | Slot | Rules |
 |---|---|
-| **Food** | Makes 10 cooked chicken every 10 minutes of game time, up to 30. The first 10 are the AI's own and can never be taken (it eats them to heal); players (owner and allies) can take anything above 10. The timer starts when the AI first joins the world. |
+| **Food** | Makes 15 cooked chicken every 10 minutes of game time, up to 45. The first 30 are the AI's own and can never be taken (it eats them to heal and when it's hungry); players (owner and allies) can take anything above 30. The timer starts when the AI first joins the world. |
 | **Tools 1, 2, 3** | Used in order. When a tool breaks, it moves on to the next slot. Tools wear like a player's (Unbreaking counts) and keep their enchantments and names. Fighter: swords, axes, trident, mace, bow, crossbow. Resource AI: pickaxes, axes, shovels, hoes, shears. No TNT or explosives. |
 | **Arrows 1, 2** | Both AIs. 64 each. Used for a bow/crossbow; one arrow per shot. |
 | **Armor** | Helmet, chestplate, leggings, boots (any armor material). Shown on the AI, protects it, wears down when it gets hurt. |
