@@ -720,10 +720,21 @@ function color(red, green, blue) {
   molang.setColorRGB("variable.color", { red, green, blue });
   return molang;
 }
-const PLANK_COLOR = color(0.75, 0.58, 0.36);
-const SAND_COLOR = color(0.98, 0.92, 0.62);
-const CANE_COLOR = color(0.45, 0.95, 0.35);
-const BAD_COLOR = color(1, 0.15, 0.15);
+/**
+ * The outline colors. Made the first time they're needed: Minecraft doesn't allow making them while
+ * the add-on is still starting up ("cannot be used in early execution").
+ * @type {{ plank: MolangVariableMap, sand: MolangVariableMap, cane: MolangVariableMap, bad: MolangVariableMap } | undefined}
+ */
+let colors;
+function outlineColors() {
+  colors ??= {
+    plank: color(0.75, 0.58, 0.36),
+    sand: color(0.98, 0.92, 0.62),
+    cane: color(0.45, 0.95, 0.35),
+    bad: color(1, 0.15, 0.15),
+  };
+  return colors;
+}
 
 /**
  * Shows the finished farm as colored dots (only to the placing player): the plank floor's edge
@@ -738,6 +749,7 @@ function draw(player, pv) {
   );
   const g = pv.spot;
   if (!g) return;
+  const c = outlineColors();
   const dot = (/** @type {Vector3} */ p, /** @type {number} */ y, /** @type {MolangVariableMap} */ c) => {
     try {
       player.spawnParticle("minecraft:colored_flame_particle", { x: p.x + 0.5, y: p.y + y, z: p.z + 0.5 }, c);
@@ -748,10 +760,10 @@ function draw(player, pv) {
   for (let w = 0; w < WIDTH; w++) {
     for (let l = 0; l < LENGTH; l++) {
       const edge = w === 0 || w === WIDTH - 1 || l === 0 || l === LENGTH - 1;
-      if (edge) dot(at(g, w, l, 0), 0.05, pv.valid ? PLANK_COLOR : BAD_COLOR); // top of the planks
+      if (edge) dot(at(g, w, l, 0), 0.05, pv.valid ? c.plank : c.bad); // top of the planks
       if (!pv.valid || !isLine(w, l) || l % 2 === 1) continue;
-      dot(at(g, w, l, 0), 0.95, SAND_COLOR); // top of the sand (at the water surface)
-      if (l % 4 === 0) dot(at(g, w, l, 1), 0.7, CANE_COLOR); // sugar cane
+      dot(at(g, w, l, 0), 0.95, c.sand); // top of the sand (at the water surface)
+      if (l % 4 === 0) dot(at(g, w, l, 1), 0.7, c.cane); // sugar cane
     }
   }
 }
