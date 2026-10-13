@@ -2,13 +2,14 @@
 // every Computer Chest you place opens the same AI Chest, the one your AI fills with half of a material
 // whenever its slots are full of it. (The AI Chest unlocks when the AI is upgraded at the Coder.)
 // Place it like a block (it's really a small entity, so right clicking it opens an inventory screen).
-// - Right click it: your AI's AI Chest (only the player who placed it can open it).
-// - Left click it: switch to an upgraded AI's own inventory instead, or pick the chest back up.
+// - Right click it: your AI's AI Chest: only materials it mined (never its torches or chicken).
+//   Only the player who placed it can open it.
+// - Left click it: pick it back up (or choose which AI's chest, if you control more than one).
 import { world, system, ItemStack } from "@minecraft/server";
 import { ActionFormData } from "@minecraft/server-ui";
-import { getAi, controlledBy, giveItem, takeOneFromHand, chestReady, canGather, resourcePerks } from "./data.js";
+import { getAi, controlledBy, giveItem, takeOneFromHand, canGather, resourcePerks } from "./data.js";
 import { stashCount } from "./inventory.js";
-import { sync, syncEmpty, syncStash } from "./container.js";
+import { syncEmpty, syncStash } from "./container.js";
 
 export const CHEST_ENTITY = "aip:computer_chest";
 const CHEST_ITEM = "aip:computer_chest";
@@ -72,7 +73,6 @@ async function chestMenu(player, chest) {
           about: resourcePerks(r) ? `${stashCount(r)} items` : `Locked: ${stashCount(r)} items saved`,
         });
       }
-      if (chestReady(r)) views.push({ view: r.key, name: `${r.name}'s inventory`, about: "Its slots" });
     }
     const showing = chest.getDynamicProperty("aip:view");
     const current = typeof showing === "string" ? views.find((v) => v.view === showing) : undefined;
@@ -80,9 +80,7 @@ async function chestMenu(player, chest) {
       .title("Computer Chest")
       .body(
         `Showing: §e${current ? current.name : "nothing"}§r\n\n` +
-          (views.length
-            ? "Choose what it shows, then right click the chest to open it."
-            : "§cYou don't have an AI yet.§r Buy one at the Coder.")
+          (views.length ? "Right click the chest to open the AI Chest." : "§cYou don't have an AI yet.§r Buy one at the Coder.")
       );
     views.forEach((v) => form.button(`${v.name}\n§8${v.about}`));
     form.button("§cPick up the chest");
@@ -115,10 +113,11 @@ system.runInterval(() => {
           syncEmpty(chest, ownerId, `${record.name}'s AI Chest is locked (${stashCount(record)} items saved). Level it up at the Coder to unlock it.`);
         } else if (stash && record && canGather(record) && record.ownerId === ownerId) {
           syncStash(chest, ownerId, record.key);
-        } else if (record && chestReady(record) && record.ownerId === ownerId) {
-          sync(chest, ownerId, record.role, record.key);
         } else {
-          syncEmpty(chest, ownerId, record ? `${record.name} isn't yours or isn't upgraded` : "No AI chosen");
+          // Not showing an AI Chest (an older chest showed the AI's own slots): switch to its owner's AI Chest.
+          const mine = record && canGather(record) && record.ownerId === ownerId ? record : controlledBy(ownerId).find(canGather);
+          if (mine) chest.setDynamicProperty("aip:view", `stash:${mine.key}`);
+          else syncEmpty(chest, ownerId, "No AI Chest yet");
         }
       } catch (error) {
         console.warn(`[AI Players] Computer Chest error: ${error}`);

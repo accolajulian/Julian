@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.28.1)
+## What it does (v1.29.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -68,6 +68,14 @@ skin, supplied by the owner of this add-on). The AI model has the player's outer
 pants), so the whole skin shows. To change it, replace that PNG. AIs from before it was added switch to it
 automatically. (The 10 generated skins are still in the pack but unused.)
 
+### Caves
+Remote → *Jobs* → *Caves*: *Choose ores* (switch each on/off any time: Iron, Gold, Diamond, Lapis Lazuli,
+Redstone, Coal; stone and deepslate versions both count. In the Nether it only mines Ancient Debris, Nether
+Gold Ore and Nether Quartz Ore, each switchable too) and *Pick cave spot*: a laser from your eyes shows where
+it goes (green when OK, red when not); tap Place (or left click) to send it there. The spot must be underground:
+10+ blocks above it, or deep down (y 20 or lower) with a roof of 3+ blocks. It mines the chosen ores around that
+spot and goes back there if it wanders more than 64 blocks away.
+
 ### Self-sufficient
 The AI never asks you to fill its inventory: with no suitable tool it mines with its hands (slower, but it can
 mine anything), with no blocks it bridges and covers lava with its own endless cobblestone, and with no bow it
@@ -85,7 +93,7 @@ Drop a tool it can use within 10 blocks of it and it picks it up into a free too
 - Messages and shared XP for an owner who's offline are kept and given when they're back.
 
 ### Computer Chest (chest.js)
-Craft: chest + redstone + glass pane. The **player** places it (AIs never place one). It works like an **ender chest**:
+Craft: chest + redstone + glass pane. The **player** places it (AIs never place one). It only ever holds materials the AI mined (never its torches or chicken). It works like an **ender chest**:
 every Computer Chest you place opens the same **AI Chest**, the one your AI fills. **Right click** it to open your AI's
 AI Chest (locked until the AI is upgraded at the Coder; it shows how much is saved). **Left click** it to switch to an
 upgraded AI's own inventory instead, or to pick the chest up. Only the player who placed it can use it.

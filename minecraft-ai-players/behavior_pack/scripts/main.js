@@ -34,10 +34,11 @@ import {
   SKIN_LOOK,
 } from "./data.js";
 import { releaseLoaded } from "./scout.js";
+import { CAVE_ORES, NETHER_ORES, oresOf, netherOresOf, startCavePlacing, isCavePlacing } from "./caves.js";
 import { levelText } from "./levels.js"; // (also starts the 20-minute reports)
 import { commandAttack, toolsChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
-import "./chest.js"; // Computer Chest (upgraded AIs' inventories from anywhere)
+import "./chest.js"; // Computer Chest (opens the AI Chest from anywhere)
 import { FARM_FOCUS, startPlacing, isPlacing, farmProgress, giveFarmMaterials, returnFarmMaterials, removeWarp } from "./farm.js";
 import {
   FOOD_ITEM,
@@ -81,8 +82,7 @@ const LEVEL_UPS = {
     about:
       "§a+§r Strip mining: it digs a tunnel straight to diamonds (or netherite in the Nether) and mines them\n" +
       "§a+§r Can't be hurt by lava or fire (no potion bubbles), and takes no fall damage\n" +
-      "§a+§r Its AI Chest unlocks (everything it saved up is yours)\n" +
-      "§a+§r Its inventory can be opened from a Computer Chest",
+      "§a+§r Its AI Chest unlocks: everything it saved up is yours (open it from a Computer Chest)",
   },
   2: {
     item: "minecraft:diamond",
@@ -309,7 +309,7 @@ async function showComputer(player) {
         "§lPlace the Coder and tap it to buy an AI§r\n" +
         prices.join("\n") +
         "\n\n" +
-        "§lComputer Chest§r: chest + redstone + glass pane. Opens your upgraded AIs' inventories from anywhere.\n\n" +
+        "§lComputer Chest§r: chest + redstone + glass pane. Opens your AI Chest (materials it mined) from anywhere.\n\n" +
         "§7Each player can only buy one AI. If someone gives you their Remote, you control their AI too."
     )
     .button("More help")
@@ -609,7 +609,7 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
 // Remote: everything is done with LEFT click (an attack swing), which opens its menu.
 // Right clicking the Remote does nothing.
 world.afterEvents.playerSwingStart.subscribe(({ player, heldItemStack, swingSource }) => {
-  if (swingSource !== EntitySwingSource.Attack || isPlacing(player.id)) return; // (placing a farm uses left click)
+  if (swingSource !== EntitySwingSource.Attack || isPlacing(player.id) || isCavePlacing(player.id)) return; // (placing uses left click)
   const record = robotRecord(player, heldItemStack);
   if (record) system.run(() => openMenu(player, (p) => showCommands(p, record.key)));
 });
@@ -1117,7 +1117,7 @@ async function showJobs(player, key) {
   /** @type {{ label: string, run: () => unknown }[]} */
   const actions = jobs.map((job) => ({
     label: `${working && record.focus === job ? "§2" : ""}${job}`,
-    run: () => setJob(player, key, job),
+    run: () => (job === "Caves" ? showCaves(player, key) : setJob(player, key, job)),
   }));
   actions.push({
     label: `${working && record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm §8(In Water Only)${record.farm ? " - in progress" : ""}`,
@@ -1128,6 +1128,84 @@ async function showJobs(player, key) {
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
   await actions[response.selection].run();
+}
+
+/**
+ * Caves: which ores to mine (on/off) and where to work (a cave spot picked with a laser).
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+async function showCaves(player, key) {
+  const record = mine(player, key);
+  if (!record) return;
+  const ores = oresOf(record);
+  const nether = netherOresOf(record);
+  const working = record.mode === "wander" && record.focus === "Caves";
+  const spot = record.cave ? `${record.cave.x}, ${record.cave.y}, ${record.cave.z}` : "§cnot picked";
+  /** @type {{ label: string, run: () => unknown }[]} */
+  const actions = [
+    { label: "Choose ores", run: () => chooseOres(player, key) },
+    { label: "Pick cave spot", run: () => pickCave(player, key) },
+  ];
+  if (record.cave && !working) actions.push({ label: "§2Go mine", run: () => setJob(player, key, "Caves") });
+  const form = new ActionFormData()
+    .title("Caves")
+    .body(
+      `§7Ores:§r ${CAVE_ORES.filter((o) => ores.includes(o.key)).map((o) => o.label.replace(" ore", "")).join(", ")}\n` +
+        `§7Nether:§r ${NETHER_ORES.filter((o) => nether.includes(o.key)).map((o) => o.label).join(", ")}\n§7Spot:§r ${spot}`
+    );
+  actions.forEach((a) => form.button(a.label));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  await actions[response.selection].run();
+}
+
+/**
+ * Switch each ore on or off (stone and deepslate versions both count).
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+async function chooseOres(player, key) {
+  const record = mine(player, key);
+  if (!record) return;
+  const ores = oresOf(record);
+  const nether = netherOresOf(record);
+  const form = new ModalFormData().title("Ores to mine");
+  CAVE_ORES.forEach((o) => form.toggle(o.label, { defaultValue: ores.includes(o.key) }));
+  NETHER_ORES.forEach((o) => form.toggle(`Nether: ${o.label}`, { defaultValue: nether.includes(o.key) }));
+  const response = await form.show(player);
+  if (response.canceled || !response.formValues) return;
+  const values = response.formValues;
+  const chosen = CAVE_ORES.filter((_, i) => values[i] === true).map((o) => o.key);
+  const chosenNether = NETHER_ORES.filter((_, i) => values[CAVE_ORES.length + i] === true).map((o) => o.key);
+  if (chosen.length === 0 && chosenNether.length === 0) {
+    player.sendMessage("§cPick at least one ore.");
+    return;
+  }
+  const latest = mine(player, key);
+  if (!latest) return;
+  latest.ores = chosen;
+  latest.netherOres = chosenNether;
+  saveRecord(player.id, latest.role, latest);
+  toolsChanged(latest.id);
+  player.sendMessage(`§e${latest.name} mines: ${CAVE_ORES.filter((o) => chosen.includes(o.key)).map((o) => o.label.replace(" ore", "")).join(", ")}`);
+  if (!latest.cave) await pickCave(player, key);
+}
+
+/**
+ * The laser: pick a cave spot and the AI is sent there to mine.
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+function pickCave(player, key) {
+  startCavePlacing(player, key, (spot) => {
+    const record = mine(player, key);
+    if (!record) return;
+    const dimension = world.getDimension(spot.dim);
+    const location = { x: spot.x + 0.5, y: spot.y, z: spot.z + 0.5 };
+    const ai = record.id ? world.getEntity(record.id) : undefined;
+    if (record.state === "alive" && ai) ai.teleport(location, { dimension });
+    else if (record.state === "alive") spawnAi(player, key, location, dimension, true);
+    setJob(player, key, "Caves");
+    player.onScreenDisplay.setTitle("§aSent to the cave", { subtitle: `${record.name} is mining`, fadeInDuration: 5, stayDuration: 40, fadeOutDuration: 10 });
+  });
 }
 
 /**

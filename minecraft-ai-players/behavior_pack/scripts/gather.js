@@ -14,6 +14,7 @@ import { system, BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER, FOCUS_TYPES } from "./gather_data.js";
 import { FARM_FOCUS, farmKinds, farmCollect } from "./farm.js";
 import { createScoutState, scout } from "./scout.js";
+import { caveBlocks } from "./caves.js";
 import { addXp, countCollected, miningFactor, moveFactor, levelOf, blockXp } from "./levels.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
@@ -521,7 +522,8 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
   // Sugar cane farm: whatever it still needs (logs, sand, sugar cane).
   const farming = record.focus === FARM_FOCUS;
   const kinds = farming ? farmKinds(record) : [FOCUS_TYPES[record.focus]];
-  const types = Object.keys(GATHER).filter((id) => kinds.includes(GATHER[id].focus));
+  // Caves: only the ores you chose (stone and deepslate versions).
+  const types = record.focus === "Caves" ? caveBlocks(record, dim.id) : Object.keys(GATHER).filter((id) => kinds.includes(GATHER[id].focus));
   if (types.length === 0) return undefined;
   const r = Math.ceil(radius);
   // In caves it looks further up and down (ravines, cave walls).

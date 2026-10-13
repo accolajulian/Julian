@@ -47,6 +47,9 @@ const MAX_ENEMIES = 40;
  * @property {number} [pendingXp]  XP to give its owner when they're online
  * @property {import("./levels.js").Report} [report]  What it did since the last 20-minute report
  * @property {string[]} [notes]  Messages for its owner while they're offline
+ * @property {string[]} [ores]  Caves: which ores it mines (keys from caves.js; all until chosen)
+ * @property {string[]} [netherOres]  Caves in the Nether: which Nether ores it mines
+ * @property {import("./caves.js").CaveSpot} [cave]  Caves: where it was sent to work
  * @property {import("./farm.js").FarmPlan} [farm]  Resource AI: the sugar cane farm it's collecting for / building.
  */
 /**

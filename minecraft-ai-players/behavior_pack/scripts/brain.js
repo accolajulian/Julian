@@ -59,6 +59,7 @@ import { bridgeTowards } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from "./gather.js";
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 import { keepLoaded } from "./scout.js";
+import { CAVE_LEASH } from "./caves.js";
 import { moveFactor, damageBonus, levelOf } from "./levels.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
@@ -725,6 +726,12 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
   // ---- Gather only while wandering, and not while being attacked or near lava.
   const safe = wandering && !lavaClose && now - lastHit > RECENT_MS;
   setGatherBehavior(ai, brain.gather, stripping ? "Nothing" : record.focus, safe && !stripping);
+  // Caves: it stays around the cave spot you picked (goes back if it wanders too far off).
+  const cave = record.cave;
+  if (wandering && record.focus === "Caves" && cave && cave.dim === ai.dimension.id && !isBusy(brain.gather) &&
+      distance(ai.location, cave) > CAVE_LEASH) {
+    ai.teleport({ x: cave.x + 0.5, y: cave.y, z: cave.z + 0.5 });
+  }
   // Sugar cane farm: collect the materials (normal gathering), then build it.
   const building = wandering && farmBuilding(record);
   let slot = fleeSlot;
