@@ -16,7 +16,7 @@ import { FARM_FOCUS, farmKinds, farmCollect } from "./farm.js";
 import { createScoutState, scout } from "./scout.js";
 import { caveBlocks } from "./caves.js";
 import { isDropping, startDrop } from "./mlg.js";
-import { addXp, countCollected, miningFactor, moveFactor, levelOf, blockXp } from "./levels.js";
+import { countCollected } from "./levels.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
   inventoryOf,
@@ -31,6 +31,7 @@ import {
   isWood,
   addWood,
   canTakeWood,
+  takeWood,
 } from "./inventory.js";
 
 const LAVA = ["minecraft:lava", "minecraft:flowing_lava"];
@@ -69,6 +70,9 @@ const CLEARABLE = /leaves|dirt|grass_block|podzol|mycelium|mud|moss|snow|vine|ro
 /** Blocks it can walk through (plants, torches, snow...). */
 const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers/;
 const WARN_MS = 30000; // don't repeat the same chat warning more often than this
+const TOOL_WARN_MS = 300000; // "needs a pickaxe" at most every 5 minutes
+const AXE_LOGS = 2; // a wooden axe: 3 planks + 2 sticks = 5 planks = 2 logs
+const PICKAXE_LOGS = 1; // a stone pickaxe: its own cobblestone + 2 sticks (1 log)
 /** Natural ground it may dig through to climb out of a pit (never anything built, never ores). */
 const DIGGABLE = /leaves|^minecraft:(dirt|coarse_dirt|grass_block|dirt_with_roots|podzol|mycelium|mud|rooted_dirt|clay|gravel|sand|red_sand|stone|deepslate|tuff|granite|diorite|andesite|calcite|dripstone_block|netherrack|soul_sand|soul_soil|moss_block|snow|snow_layer|terracotta|\w+_terracotta|sandstone|red_sandstone|blackstone|basalt|end_stone)$/;
 const DIG_TICKS = 8; // one block every this many ticks when digging out
@@ -232,7 +236,15 @@ export function gather(ai, ownerId, record, state, owner) {
   const dim = ai.dimension;
   const farming = record.focus === FARM_FOCUS;
   state.sprint = farming;
-  state.speed = moveFactor(levelOf(record));
+  state.speed = 1;
+  // The right tool for the job: an axe for trees (it crafts a wooden one once it has wood; until then
+  // it chops by hand), a pickaxe for caves (it crafts a stone one from its cobblestone and a log).
+  if (record.focus === "Trees") craftTool(record, ownerId, "axe", state);
+  if (record.focus === "Caves" && !craftTool(record, ownerId, "pickaxe", state)) {
+    state.mining = undefined;
+    state.pausedUntil = now + 10000;
+    return undefined;
+  }
   const m = state.mining;
   if (m) {
     const block = dim.getBlock(m);
@@ -241,6 +253,7 @@ export function gather(ai, ownerId, record, state, owner) {
       return undefined;
     }
     if (system.currentTick < m.until) {
+      face(ai, center(m)); // looks at what it's mining, nothing else
       ai.playAnimation("animation.aip.ai_player.mine");
       return m.slot;
     }
@@ -316,7 +329,46 @@ export function gather(ai, ownerId, record, state, owner) {
   }
   state.stuckSince = 0;
   state.mining = { ...target.location, id: target.id, slot: target.slot, until: system.currentTick + target.ticks, reach: REACH };
+  face(ai, center(target.location));
   return target.slot;
+}
+
+/**
+ * Makes sure it has the tool for its job, crafting one if it can. Returns true if it has one.
+ * - axe: a wooden axe from 2 logs (no logs yet: false, and it chops by hand).
+ * - pickaxe: a stone pickaxe from its own cobblestone and 1 log (no logs: it tells you it needs one).
+ * @param {import("./data.js").AiRecord} record @param {string} ownerId @param {"axe" | "pickaxe"} kind
+ * @param {{ warned: Map<string, number> }} state
+ */
+export function craftTool(record, ownerId, kind, state) {
+  const tools = inventoryOf(record).tools;
+  if (tools.some((t) => t && new RegExp(`_${kind}$`).test(t.id))) return true;
+  const free = tools.findIndex((t) => !t);
+  const logs = kind === "axe" ? AXE_LOGS : PICKAXE_LOGS;
+  if (free !== -1 && takeWood(record, logs)) {
+    const id = kind === "axe" ? "minecraft:wooden_axe" : "minecraft:stone_pickaxe";
+    tools[free] = { id, damage: 0 };
+    saveRecord(ownerId, record.role, record);
+    findPlayer(ownerId)?.sendMessage(`§a${record.name} crafted a ${itemName(id)} (tool slot ${free + 1}).`);
+    return true;
+  }
+  if (kind === "pickaxe") {
+    warn(state, ownerId, "pickaxe", free === -1
+      ? `§e${record.name} needs a pickaxe to mine, but its tool slots are full. Swap one for a pickaxe.`
+      : `§e${record.name} needs a pickaxe to mine. Give it one, or a log (wood slot) so it can craft a stone pickaxe.`, TOOL_WARN_MS);
+  }
+  return false;
+}
+
+/**
+ * The tool slot it holds for its job while it isn't mining: its axe on Trees, its pickaxe in caves.
+ * undefined: no job tool (it uses its first tool).
+ * @param {import("./data.js").AiRecord} record
+ */
+export function jobToolSlot(record) {
+  const kind = record.focus === "Trees" ? "axe" : record.focus === "Caves" || record.focus === "Strip mine" ? "pickaxe" : undefined;
+  if (!kind) return undefined;
+  return inventoryOf(record).tools.findIndex((t) => t && new RegExp(`_${kind}$`).test(t.id));
 }
 
 // ================================================================ trees
@@ -472,8 +524,8 @@ function chopTree(ai, record, state) {
 function startChop(ai, record, p, reach, state) {
   const id = /** @type {string} */ (ai.dimension.getBlock(p)?.typeId);
   const info = GATHER[id];
-  const tool = toolFor(record, info);
-  const ticks = Math.min(400, Math.max(4, Math.ceil(((info.hardness * 30) / tool.speed) * miningFactor(levelOf(record)))));
+  const tool = toolFor(record, info) ?? { slot: -1, speed: 1 };
+  const ticks = Math.min(400, Math.max(4, Math.ceil(((info.hardness * 30) / tool.speed))));
   state.mining = { ...p, id, slot: tool.slot, until: system.currentTick + ticks, reach };
   face(ai, center(p));
   return tool.slot;
@@ -570,12 +622,17 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
     // Leave the bottom of each sugar cane so it grows back.
     if (info.focus === "Cane" && dim.getBlock({ ...p, y: p.y - 1 })?.typeId !== id) continue;
     const tool = toolFor(record, info);
+    if (!tool) {
+      // Its pickaxe isn't strong enough for this ore: leave it (and say so now and then).
+      warn(state, ownerId, "tier", `§e${record.name} needs a better pickaxe for ${itemName(id)} (it leaves those alone).`, TOOL_WARN_MS);
+      continue;
+    }
     // Never mine next to lava.
     if (lavaNextTo(dim, p).length > 0) {
       state.avoid.set(key, now + 120000);
       continue;
     }
-    const ticks = Math.min(400, Math.max(4, Math.ceil(((info.hardness * 30) / tool.speed) * miningFactor(levelOf(record)))));
+    const ticks = Math.min(400, Math.max(4, Math.ceil(((info.hardness * 30) / tool.speed))));
     best = { location: p, id, slot: tool.slot, ticks, d };
   }
 
@@ -625,8 +682,7 @@ function finishMining(ai, ownerId, record, state, m, owner) {
   const amount = (info.min !== undefined && info.max !== undefined
     ? info.min + Math.floor(Math.random() * (info.max - info.min + 1))
     : 1) + extra;
-  // XP, and a line in its 20-minute report.
-  addXp(record, blockXp(info.drop) * (1 + extra));
+  // A line in its 20-minute report.
   countCollected(record, info.drop, amount);
   // Collecting for a sugar cane farm: it keeps it for the farm.
   if (farmCollect(record, info.drop, amount)) {
@@ -683,7 +739,9 @@ function toolFor(record, info) {
     const speed = (MATERIAL_SPEED[material] ?? 1) + (efficiency > 0 ? efficiency * efficiency + 1 : 0);
     return { slot, speed };
   }
-  // No suitable tool: it mines with its hands (slower, but it can mine anything). It never needs you to give it tools.
+  // Ores and stone need a pickaxe (strong enough): no hands.
+  if (info.tool === "pickaxe") return undefined;
+  // Logs, sand...: no suitable tool, so its hands (slower).
   return { slot: -1, speed: 1 };
 }
 
@@ -1182,14 +1240,15 @@ function passable(block) {
 // ================================================================ helpers
 
 /**
- * @param {GatherState} state
+ * @param {{ warned: Map<string, number> }} state
  * @param {string} ownerId
  * @param {string} kind
  * @param {string} message
+ * @param {number} [every]  ms between repeats
  */
-function warn(state, ownerId, kind, message) {
+function warn(state, ownerId, kind, message, every = WARN_MS) {
   const now = Date.now();
-  if (now - (state.warned.get(kind) ?? 0) < WARN_MS) return;
+  if (now - (state.warned.get(kind) ?? 0) < every) return;
   state.warned.set(kind, now);
   findPlayer(ownerId)?.sendMessage(message);
 }
@@ -1215,7 +1274,7 @@ function eyeOf(ai) {
 }
 
 /** Turns the AI to look at a point. @param {import("@minecraft/server").Entity} ai @param {Vector3} p */
-function face(ai, p) {
+export function face(ai, p) {
   const eye = eyeOf(ai);
   const dx = p.x - eye.x;
   const dz = p.z - eye.z;

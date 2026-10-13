@@ -612,6 +612,29 @@ export function canTakeWood(record, id) {
   return !woodDone(record, id);
 }
 
+/** How many logs it has (wood slots). @param {import("./data.js").AiRecord} record */
+export function woodCount(record) {
+  return inventoryOf(record).wood.reduce((sum, w) => sum + (w?.count ?? 0), 0);
+}
+
+/**
+ * Uses up logs (from its fullest wood slot first). Returns false if it doesn't have that many.
+ * @param {import("./data.js").AiRecord} record @param {number} n
+ */
+export function takeWood(record, n) {
+  const wood = inventoryOf(record).wood;
+  if (woodCount(record) < n) return false;
+  while (n > 0) {
+    const i = wood.reduce((best, w, j) => ((w?.count ?? 0) > (wood[best]?.count ?? 0) ? j : best), 0);
+    const slot = /** @type {{ id: string, count: number }} */ (wood[i]);
+    const used = Math.min(n, slot.count);
+    slot.count -= used;
+    n -= used;
+    if (slot.count <= 0) wood[i] = null;
+  }
+  return true;
+}
+
 /** All 3 wood slots are full (and the AI Chest has its stack of each): the Trees job is done. @param {import("./data.js").AiRecord} record */
 export function woodFull(record) {
   return inventoryOf(record).wood.every((w) => w && woodDone(record, w.id));

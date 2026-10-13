@@ -59,13 +59,12 @@ import {
 import { handleTombs, createLootState } from "./tombs.js";
 import { stripMine, createStripState } from "./stripmine.js";
 import { bridgeTowards, isBridging } from "./movement.js";
-import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy, digStep } from "./gather.js";
+import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy, digStep, jobToolSlot } from "./gather.js";
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 import { keepLoaded } from "./scout.js";
 import { boatThink } from "./boats.js";
 import { isDropping, takeHandChanged, startDrop } from "./mlg.js";
 import { CAVE_LEASH } from "./caves.js";
-import { moveFactor, damageBonus, levelOf } from "./levels.js";
 
 const SLOTS = 16; // must match tools/make_entity_targets.py
 const THINK_TICKS = 10; // the brain thinks twice a second
@@ -223,8 +222,8 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {boolean} upgraded  Fighter's final (netherite) upgrade: the 30-block sequence and volley.
  * @property {boolean} lavaProof  Lava and fire can't hurt it.
  * @property {boolean} resourcePerks  Resource AI upgrade perks: strip mining, no fall damage.
- * @property {number} level  The level its walking speed was last set for (-1: set it again).
- * @property {number} damageBonus  Extra damage from its level.
+ * @property {number} level  0 once its walking speed is back to normal (-1: set it again).
+ * @property {string | undefined} lookEvent  aip:look_on / aip:look_off applied (it never looks at players on a job).
  * @property {boolean} eatingToFull  Too hungry to sprint: eating chicken until it's full.
  * @property {number} biteAt  When it takes its next bite.
  * @property {number} hungryWarnedAt  Last "too hungry, no chicken" message.
@@ -279,6 +278,19 @@ export function toolsChanged(aiId) {
   brain.equipped = "unknown";
   brain.gear = {};
   brain.gather.pausedUntil = 0; // e.g. new blocks or a pickaxe: try gathering again now
+}
+
+/**
+ * Call when an AI is given a new job: it forgets what it was doing and starts fresh (the closest tree first).
+ * @param {string | undefined} aiId
+ */
+export function jobChanged(aiId) {
+  const brain = aiId ? brains.get(aiId) : undefined;
+  const ai = aiId ? world.getEntity(aiId) : undefined;
+  if (!brain || !ai) return;
+  setGatherBehavior(ai, brain.gather, "Nothing", false);
+  brain.gather = createGatherState();
+  brain.strip = createStripState();
 }
 
 // ================================================================ memory
@@ -435,7 +447,6 @@ world.beforeEvents.entityHurt.subscribe((event) => {
     event.damage += Math.max(0, (TOOL_DAMAGE[brain.equipped] ?? 0) - 3);
   }
   // Stronger with levels: +1 damage every 10 levels.
-  if (brain && event.damageSource.cause === EntityDamageCause.entityAttack) event.damage += brain.damageBonus;
 });
 
 // Upgraded Fighter: its first hit on an enemy player in a sequence knocks them back about 7 blocks.
@@ -635,12 +646,17 @@ function think(ai, ownerId, role, record, brain) {
   brain.resourcePerks = resourcePerks(record);
   brain.upgraded = fighterPerks(record);
 
-  // ---- Its level: a bit faster for every level (sprinting uses its own speed), and stronger.
-  brain.damageBonus = damageBonus(levelOf(record));
-  if (brain.level !== levelOf(record) && !brain.sprinting) {
+  // (No levels any more: AIs that had extra speed from levels go back to normal speed.)
+  if (brain.level !== 0 && !brain.sprinting) {
     const movement = ai.getComponent("minecraft:movement");
-    movement?.setCurrentValue(movement.defaultValue * moveFactor(levelOf(record)));
-    brain.level = levelOf(record);
+    movement?.setCurrentValue(movement.defaultValue);
+    brain.level = 0;
+  }
+  // ---- On a job it never looks at players, only at its work.
+  const lookEvent = record.mode === "wander" ? "aip:look_off" : "aip:look_on";
+  if (brain.lookEvent !== lookEvent) {
+    ai.triggerEvent(lookEvent);
+    brain.lookEvent = lookEvent;
   }
 
   // ---- Working far from every player (gathering, building, guarding): keep its land loaded so it
@@ -664,7 +680,7 @@ function think(ai, ownerId, role, record, brain) {
   // Following and a bit behind: jump sprint to catch up (the loop below does it every tick).
   if (!boating && record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
       distance(owner.location, ai.location) > FOLLOW_SPRINT_FROM && hungerOf(record) > SPRINT_HUNGER && !brain.eatingToFull) {
-    sprinters.set(ai.id, { ai, ownerId, speed: moveFactor(levelOf(record)), until: Date.now() + 700 });
+    sprinters.set(ai.id, { ai, ownerId, speed: 1, until: Date.now() + 700 });
   }
 
   // ---- Following you but stuck down in a pit (you're above it and it isn't moving): it digs a
@@ -904,7 +920,8 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
     ai.triggerEvent(modeEvent);
     brain.modeEvent = modeEvent;
   }
-  equip(ai, brain, record, slot ?? firstTool(record, false));
+  // Holds the tool for its job (axe on Trees, pickaxe in caves; nothing = its hands).
+  equip(ai, brain, record, slot ?? (wandering ? jobToolSlot(record) : undefined) ?? firstTool(record, false));
   if (safe) placeTorch(ai, ownerId, record, brain, now);
   // Following you (never while on a job) and you're away: bridge/pillar to catch up.
   if (slot === undefined && record.mode === "follow" && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
@@ -1089,7 +1106,7 @@ function stopSprint(ai, brain) {
   if (!brain.sprinting) return;
   brain.sprinting = false;
   ai.getComponent("minecraft:movement")?.resetToDefaultValue();
-  brain.level = -1; // the next think puts back its level speed
+  brain.level = -1; // the next think puts back its normal speed
   ai.removeEffect("jump_boost");
 }
 
@@ -1400,7 +1417,7 @@ function ensureBrain(ai, role) {
     lavaProof: false,
     resourcePerks: false,
     level: -1,
-    damageBonus: 0,
+    lookEvent: undefined,
     eatingToFull: false,
     biteAt: 0,
     hungryWarnedAt: 0,

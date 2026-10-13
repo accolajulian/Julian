@@ -1002,6 +1002,16 @@
         "minecraft:variant": {
           "value": 10
         }
+      },
+      "aip:look_around": {
+        "minecraft:behavior.look_at_player": {
+          "priority": 8,
+          "look_distance": 8,
+          "probability": 0.05
+        },
+        "minecraft:behavior.random_look_around": {
+          "priority": 9
+        }
       }
     },
     "components": {
@@ -1332,14 +1342,6 @@
         "priority": 6,
         "close_door_after": true
       },
-      "minecraft:behavior.look_at_player": {
-        "priority": 8,
-        "look_distance": 8,
-        "probability": 0.05
-      },
-      "minecraft:behavior.random_look_around": {
-        "priority": 9
-      },
       "minecraft:tameable": {
         "probability": 1.0,
         "tame_items": "minecraft:emerald",
@@ -1599,6 +1601,20 @@
         "add": {
           "component_groups": [
             "aip:skin_10"
+          ]
+        }
+      },
+      "aip:look_on": {
+        "add": {
+          "component_groups": [
+            "aip:look_around"
+          ]
+        }
+      },
+      "aip:look_off": {
+        "remove": {
+          "component_groups": [
+            "aip:look_around"
           ]
         }
       }

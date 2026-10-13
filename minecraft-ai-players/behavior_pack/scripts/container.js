@@ -9,7 +9,6 @@
 // The AI's own 30 chicken, its torches and its water bucket are shown on info labels, so they can't be taken.
 import { world, system, ItemStack } from "@minecraft/server";
 import { AI_ENTITY, getAi, saveRecord, findPlayer, knownAis, giveItem } from "./data.js";
-import { levelText } from "./levels.js";
 import {
   inventoryOf,
   toolFromStack,
@@ -89,7 +88,7 @@ function layout(role, evolved = false) {
   /** Name, level, and everything it has of its own (AI Chest, chicken, torches, water bucket). */
   const nameInfo = (/** @type {(r: import("./data.js").AiRecord) => string} */ stage) => /** @type {Slot} */ ({
     kind: "info",
-    text: (r) => `${r.name} (${stage(r)}) - ${levelText(r)}`,
+    text: (r) => `${r.name} (${stage(r)})`,
     lore: (r) => [
       `§7${r.mode === "wander" ? `Working: ${r.focus}` : r.mode === "stay" ? "Staying put" : "Following you"}`,
       `§7AI Chest: ${stashCount(r)} items${r.role === "resource" && !r.upgraded ? " (locked until upgraded)" : ""}`,
@@ -142,7 +141,7 @@ function layout(role, evolved = false) {
   return [
     // Row 1: tools 1-2-3 (weapons), arrows, shield, info
     ...tools, ...arrows, { kind: "shield" },
-    { kind: "info", text: (r) => `${r.name} (Fighter AI) - ${levelText(r)}`, lore: ["§7Tools are used in order 1, 2, 3.", "§7When one breaks it uses the next."] },
+    { kind: "info", text: (r) => `${r.name} (Fighter AI)`, lore: ["§7Tools are used in order 1, 2, 3.", "§7When one breaks it uses the next."] },
     { kind: "info", text: () => "Weapons go in the tool slots", lore: ["§7Swords, axes, trident, mace, bow, crossbow."] },
     { kind: "info", text: () => "Left click its Remote for commands", lore: ["§7Teleport, attack, follow, guard, settings."] },
     // Row 2: armor, blocks, food, first valuable

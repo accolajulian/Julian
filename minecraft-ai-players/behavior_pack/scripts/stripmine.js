@@ -1,4 +1,6 @@
 // Upgraded Resource AI: strip mining.
+// It only mines with a pickaxe (it crafts a stone one from its cobblestone and a log if it has none),
+// and leaves ores its pickaxe isn't strong enough for.
 // It looks for the nearest diamond ore (or ancient debris in the Nether) and digs a 1x2 tunnel
 // straight to it, going down or up in steps like stairs, then mines it. If there's none nearby,
 // it goes down to diamond level and digs a straight tunnel until it finds some.
@@ -7,7 +9,8 @@
 import { BlockVolume, ItemStack } from "@minecraft/server";
 import { GATHER } from "./gather_data.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
-import { addXp, countCollected, blockXp } from "./levels.js";
+import { countCollected } from "./levels.js";
+import { craftTool, face } from "./gather.js";
 import { inventoryOf, wearTool, enchantLevel, itemName, isValuable, addValuables, addBlocks, isPlaceableBlock } from "./inventory.js";
 
 const TARGETS = {
@@ -29,11 +32,12 @@ const PICK_TIER = { wooden: 0, golden: 0, stone: 1, iron: 2, diamond: 3, netheri
  * @property {{ x: number, z: number }} dir  Tunnel direction when it has no target.
  * @property {number} scannedAt
  * @property {number} warnedAt
+ * @property {Map<string, number>} warned  chat warning -> last time
  */
 
 /** @returns {StripState} */
 export function createStripState() {
-  return { target: undefined, dir: { x: 1, z: 0 }, scannedAt: 0, warnedAt: 0 };
+  return { target: undefined, dir: { x: 1, z: 0 }, scannedAt: 0, warnedAt: 0, warned: new Map() };
 }
 
 /**
@@ -47,11 +51,15 @@ export function createStripState() {
  */
 export function stripMine(ai, ownerId, record, state, placeTorch) {
   const dim = ai.dimension;
-  const targets = TARGETS[/** @type {keyof typeof TARGETS} */ (dim.id)];
-  if (!targets) return undefined; // not in the Overworld or the Nether
+  const all = TARGETS[/** @type {keyof typeof TARGETS} */ (dim.id)];
+  if (!all) return undefined; // not in the Overworld or the Nether
 
-  // Its best pickaxe, or its hands (slower, but they can mine anything): it never needs you to give it one.
-  const pick = bestPickaxe(record) ?? HANDS;
+  // Only with a pickaxe (crafted if it has none and has a log).
+  if (!craftTool(record, ownerId, "pickaxe", state)) return undefined;
+  const pick = bestPickaxe(record);
+  if (!pick) return undefined;
+  // Only ores its pickaxe can mine.
+  const targets = all.filter((id) => (GATHER[id]?.tier ?? 0) <= pick.tier);
 
   // Look for ore every few seconds (or when it reached the last one).
   const now = Date.now();
@@ -72,10 +80,9 @@ export function stripMine(ai, ownerId, record, state, placeTorch) {
 
   // Next to the ore: mine it.
   if (target && dist(center(target), { ...ai.location, y: ai.location.y + 1.5 }) <= 3) {
-    const info = GATHER[dim.getBlock(target)?.typeId ?? ""];
-    const use = info && info.tier > pick.tier ? HANDS : pick; // its pickaxe is too weak: hands
+    face(ai, center(target)); // looks at the ore, nothing else
     ai.playAnimation("animation.aip.ai_player.mine");
-    breakBlock(ai, ownerId, record, target, use.slot);
+    breakBlock(ai, ownerId, record, target, pick.slot);
     state.target = undefined;
     state.scannedAt = 0; // look for the next one right away
     return pick.slot;
@@ -103,12 +110,13 @@ export function stripMine(ai, ownerId, record, state, placeTorch) {
   for (const cell of cells) {
     const block = dim.getBlock(cell);
     if (!block || block.isAir || block.isLiquid) continue;
-    if (PROTECTED.test(block.typeId)) {
+    if (PROTECTED.test(block.typeId) || (GATHER[block.typeId]?.tier ?? 0) > pick.tier) {
       // Can't dig here: turn and try another way.
       state.dir = { x: -state.dir.z, z: state.dir.x };
       state.target = undefined;
       return pick.slot;
     }
+    face(ai, center(cell));
     ai.playAnimation("animation.aip.ai_player.mine");
     breakBlock(ai, ownerId, record, cell, pick.slot);
     return pick.slot; // one block per step
@@ -171,7 +179,6 @@ function breakBlock(ai, ownerId, record, p, slot) {
       if (owner && owner.dimension.id === dim.id && dist(owner.location, ai.location) <= 32) giveItem(owner, stack);
       else dim.spawnItem(stack, center(p));
     }
-    addXp(record, blockXp(info.drop));
     countCollected(record, info.drop, amount); // (it's in the 20-minute report)
   }
 
@@ -182,9 +189,6 @@ function breakBlock(ai, ownerId, record, p, slot) {
   }
   saveRecord(ownerId, "resource", record);
 }
-
-/** Mining with its hands: slot -1, can mine anything. */
-const HANDS = { slot: -1, tier: 4, score: 0 };
 
 /** The best pickaxe in its tool slots. @param {import("./data.js").AiRecord} record */
 function bestPickaxe(record) {

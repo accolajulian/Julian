@@ -115,20 +115,21 @@ If you get into the same boat, you swap seats so you steer. Back on land, it get
 disappears; yours is left alone).
 
 ### Self-sufficient
-The AI never asks you to fill its inventory: with no suitable tool it mines with its hands (slower, but it can
-mine anything), with no blocks it bridges and covers lava with its own endless cobblestone, and with no bow it
+The AI never asks you to fill its inventory (except a pickaxe for mining, see below), with no blocks it bridges and covers lava with its own endless cobblestone, and with no bow it
 just fights in melee. Tools and blocks you give it are still used first (tools make it faster).
 Drop a tool it can use within 10 blocks of it and it picks it up into a free tool slot.
 
-### Levels, XP and reports (levels.js)
-- The AI earns XP: 1 per block mined/chopped/dug (iron/copper/quartz 2, redstone/lapis 3, gold 4, diamond/emerald 8,
-  ancient debris 10), 5 per mob it defeats, 25 per player, 50 for finishing a sugar cane farm.
-- Levels 0-50 (level n needs 20 + 10n XP). Every level: +1% walking speed (up to +25%), 1% faster mining (up to 30%);
-  +1 damage every 10 levels.
-- **Every 5 levels it shares the XP it earned over those levels with its owner** (normal player XP).
-- **Every 20 minutes** its owner gets a report: *Max (last 20 min) collected: 12 raw iron, 30 oak log | defeated: 3 zombie | +54 XP, Level 4 (12/60 XP)*. Then it starts counting again.
+**Tools for its jobs:** on *Trees* it always uses an axe. With no axe it chops by hand until it has 2 logs, then
+crafts a wooden axe. Mining (*Caves*, *Strip mine*) is done **only with a pickaxe**: with no pickaxe it crafts a
+stone pickaxe from its own cobblestone and 1 log; with no log it tells you it needs a pickaxe (every 5 minutes at
+most). Ores its pickaxe isn't strong enough for are left alone. While mining it looks only at the block it's
+mining, and while it's on any job it never looks at players.
+
+### Reports (levels.js)
+The AI doesn't level up on its own; it only gets stronger at the Coder (see *Stages*).
+- **Every 20 minutes** its owner gets a report: *Max (last 20 min) collected: 12 raw iron, 30 oak log | defeated: 3 zombie*. Then it starts counting again.
 - Finishing a sugar cane farm is announced the moment it's done.
-- Messages and shared XP for an owner who's offline are kept and given when they're back.
+- Messages for an owner who's offline are kept and given when they're back.
 
 ### Computer Chest (chest.js)
 Craft: chest + redstone + glass pane. Tap Place with it on a block to put it down (it places itself like an armor stand). It's a black box covered in green Matrix code with a glowing seam; when you open it the lid slides straight up like a shulker box's (no spinning) and closes when you look away. The **player** places it (AIs never place one). It only ever holds materials the AI mined (never its torches or chicken). It works like an **ender chest**:
@@ -184,9 +185,9 @@ from its block slots and tells you when it runs out.
 ### Gathering (gather.js, Resource AI)
 - Finds the nearest block of its focus within 12 blocks of you, walks to a free spot next to it (stepping up
   blocks, never into lava or off a cliff) and mines it.
-- Uses the first tool slot that can mine the block; pickaxe tiers apply like for players (stone for iron,
-  lapis and copper; iron for gold, redstone, diamonds and emeralds; diamond for ancient debris). Logs can be
-  chopped by hand, slower. Mining takes as long as it would for a player (Efficiency counts).
+- Uses its axe for logs (or its hands until it crafts one) and only a pickaxe for ores; pickaxe tiers apply like
+  for players (stone for iron, lapis and copper; iron for gold, redstone, diamonds and emeralds; diamond for
+  ancient debris). Mining takes as long as it would for a player (Efficiency counts).
 - **Trees:** chops whole trees (see below). **Caves:** finds ores in caves and ravines and mines them, placing a torch about every 10 blocks.
 - **Sugar cane farm:** pick it and look at water. A colored outline shows the finished farm (planks edge 1 block under the water, sand lines, sugar cane); the 22-long side points away from you. It can only go in water (the action bar says so in red). Tap Place (or left click) to place, sneak to cancel. The AI then collects **84 logs** (335 planks: 330 floor + 5 boat), **108 sand** and **108 sugar cane** (leaving the bottom of each cane to regrow; you can also hand it materials from its menu), crafts the planks and a boat, rides the boat to lay a 15 x 22 plank floor 1 block below the water surface (replacing anything there), then wades along the channels putting sand on the 6 lines of 18 and planting sugar cane on each. When it's done, its boat is parked next to the farm.
   - While collecting it **jump sprints** and uses **map awareness**: it scans all loaded land around it (48 blocks) for the best spot (most of what it still needs, closest first). If there's nothing loaded nearby it briefly loads land further out with ticking areas (rings at 96/160/224 blocks), scans it, and jump sprints there, hopping over walls, cliffs and lava. Far from every player it keeps its own land loaded so it doesn't freeze.
