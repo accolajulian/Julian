@@ -39,22 +39,25 @@ function typesFor(kinds) {
 
 /**
  * Where to go for these kinds of blocks. Returns a spot, "searching" while it's still looking
- * further out, or undefined when there's nowhere better to go.
+ * further out, "none" when it looked everywhere and found nothing, or undefined when there's nothing
+ * new (it looked a moment ago, or it's already at the best spot).
  * @param {import("@minecraft/server").Entity} ai
  * @param {string[]} kinds
  * @param {ScoutState} state
- * @returns {Vector3 | "searching" | undefined}
+ * @param {Map<string, number>} [avoid]  blocks to ignore ("x,y,z" -> until when)
+ * @returns {Vector3 | "searching" | "none" | undefined}
  */
-export function scout(ai, kinds, state) {
+export function scout(ai, kinds, state, avoid) {
   const types = typesFor(kinds);
   if (types.length === 0) return undefined;
-  if (state.probe) return continueProbe(ai, types, state);
+  const skip = avoidCheck(avoid);
+  if (state.probe) return continueProbe(ai, types, state, skip);
   const now = system.currentTick;
   if (now < state.nextAt) return undefined;
   state.nextAt = now + 200;
 
   const here = ai.location;
-  const local = bestCluster(ai.dimension, here, LOCAL_RADIUS, here.y - 16, here.y + 16, types, here);
+  const local = bestCluster(ai.dimension, here, LOCAL_RADIUS, here.y - 16, here.y + 16, types, here, skip);
   if (local) return Math.hypot(local.spot.x - here.x, local.spot.z - here.z) > 6 ? local.spot : undefined;
 
   // Nothing loaded nearby: look further out.
@@ -67,14 +70,21 @@ export function scout(ai, kinds, state) {
     }
   }
   state.probe = { points, i: 0, readyAt: 0, best: undefined };
-  return continueProbe(ai, types, state);
+  return continueProbe(ai, types, state, skip);
+}
+
+/** @param {Map<string, number> | undefined} avoid */
+function avoidCheck(avoid) {
+  const now = Date.now();
+  return (/** @type {Vector3} */ p) => (avoid?.get(`${p.x},${p.y},${p.z}`) ?? 0) > now;
 }
 
 /**
  * @param {import("@minecraft/server").Entity} ai @param {string[]} types @param {ScoutState} state
- * @returns {Vector3 | "searching" | undefined}
+ * @param {(p: Vector3) => boolean} skip
+ * @returns {Vector3 | "searching" | "none" | undefined}
  */
-function continueProbe(ai, types, state) {
+function continueProbe(ai, types, state, skip) {
   const probe = /** @type {NonNullable<ScoutState["probe"]>} */ (state.probe);
   const dim = ai.dimension;
   const now = system.currentTick;
@@ -91,7 +101,7 @@ function continueProbe(ai, types, state) {
   const range = dim.heightRange;
   const low = Math.max(range.min, dim.id === "minecraft:overworld" ? 50 : p.y - 24);
   const high = Math.min(range.max - 1, dim.id === "minecraft:overworld" ? 120 : p.y + 24);
-  const found = bestCluster(dim, p, PROBE_RADIUS, low, high, types, ai.location);
+  const found = bestCluster(dim, p, PROBE_RADIUS, low, high, types, ai.location, skip);
   if (found && (!probe.best || found.score > probe.best.score)) probe.best = found;
   command(dim, `tickingarea remove ${name}`);
   probe.i++;
@@ -102,7 +112,7 @@ function continueProbe(ai, types, state) {
     const best = probe.best;
     state.probe = undefined;
     state.nextAt = now + (best ? 200 : 1200); // found nothing at all: try again in a minute
-    return best?.spot;
+    return best ? best.spot : "none";
   }
   return "searching";
 }
@@ -112,9 +122,10 @@ function continueProbe(ai, types, state) {
  * @param {import("@minecraft/server").Dimension} dim
  * @param {Vector3} center @param {number} radius @param {number} yLow @param {number} yHigh
  * @param {string[]} types @param {Vector3} from
+ * @param {(p: Vector3) => boolean} skip  blocks to ignore
  * @returns {Cluster | undefined}
  */
-function bestCluster(dim, center, radius, yLow, yHigh, types, from) {
+function bestCluster(dim, center, radius, yLow, yHigh, types, from, skip) {
   const range = dim.heightRange;
   const volume = new BlockVolume(
     { x: Math.floor(center.x - radius), y: Math.max(range.min, Math.floor(yLow)), z: Math.floor(center.z - radius) },
@@ -130,6 +141,7 @@ function bestCluster(dim, center, radius, yLow, yHigh, types, from) {
   /** @type {Map<string, { n: number, x: number, y: number, z: number }>} */
   const columns = new Map();
   for (const p of found) {
+    if (skip(p)) continue;
     const k = `${Math.floor(p.x / 8)},${Math.floor(p.z / 8)}`;
     const c = columns.get(k) ?? { n: 0, x: 0, y: 0, z: 0 };
     c.n++;

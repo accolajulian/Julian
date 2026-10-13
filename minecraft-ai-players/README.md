@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.26.1)
+## What it does (v1.27.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -55,6 +55,12 @@ When an enemy player comes within 30 blocks, the upgraded Fighter gets each of t
 
 When the player leaves the 30 blocks and comes back, the sequence starts again. Faster arrows do the same
 damage as a normal full-power arrow.
+
+### Trees: tree to tree
+On *Trees* it locks on to one tree after another instead of strolling around: when no tree is close it scouts
+the map and jump sprints to the nearest trees (only strolling if there are no trees anywhere near). Logs it
+can't reach on a tree are skipped for 10 minutes and it moves on. Leaves, dirt, sand, snow and vines in its way
+are broken; a 1-block step it can't jump, it hops up onto.
 
 ### Self-sufficient
 The AI never asks you to fill its inventory: with no suitable tool it mines with its hands (slower, but it can

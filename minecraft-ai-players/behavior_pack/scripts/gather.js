@@ -47,7 +47,11 @@ const WALK_SPEED = 0.2; // blocks per tick (about a player's walking speed)
 const SPRINT_SPEED = 0.28; // jump sprinting (collecting for a sugar cane farm)
 const TRAVEL_ARRIVED = 4; // close enough to a scouted spot
 const HOP_AFTER = 30; // ticks stuck on a long trip before it hops over the obstacle
-const JUMP = 0.42; // jump strength for stepping up one block
+const JUMP = 0.5; // jump strength for stepping up one block
+const STEP_UP_AFTER = 6; // ticks against a 1-block step before it just hops up onto it
+const TREE_DONE_MS = 600000; // logs it couldn't reach on a tree it finished: skipped for 10 minutes
+/** Blocks it breaks through when they're in its way (instead of giving up). */
+const SOFT = /leaves|^minecraft:(dirt|coarse_dirt|grass_block|podzol|mycelium|mud|rooted_dirt|sand|red_sand|gravel|snow|snow_layer|vine|moss_block|clay)$/;
 const STUCK_TICKS = 40; // no progress for this long: give up the walk
 const WALK_MS = 15000; // gives up on a walk after this long
 const TREE_REACH = 6; // from inside the trunk it reaches logs this far away
@@ -74,6 +78,8 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
  * @property {boolean} sprint  Jump sprint (collecting for a sugar cane farm).
  * @property {import("./scout.js").ScoutState} scout  Looking around the map for the best spot.
  * @property {number} speed  Walking speed multiplier from its level.
+ * @property {boolean} lost  It scouted and found nothing anywhere: it may stroll around to explore.
+ * @property {number} stuckSince  When scouting stopped giving it anywhere new to go (0: it isn't stuck).
  */
 
 /**
@@ -90,7 +96,7 @@ const WARN_MS = 30000; // don't repeat the same chat warning more often than thi
 export function createGatherState() {
   return {
     mining: undefined, tree: undefined, pausedUntil: 0, idleSince: Date.now(), avoid: new Map(), warned: new Map(),
-    walking: false, sprint: false, scout: createScoutState(), speed: 1,
+    walking: false, sprint: false, scout: createScoutState(), speed: 1, lost: false, stuckSince: 0,
   };
 }
 
@@ -241,6 +247,8 @@ export function gather(ai, ownerId, record, state, owner) {
   // Find the closest gatherable block in reach.
   const target = findTarget(ai, record, state, ownerId, REACH, owner);
   if (target && isLog(target.id)) {
+    state.lost = false;
+    state.stuckSince = 0;
     startTree(ai, state, target.location);
     return undefined;
   }
@@ -248,6 +256,8 @@ export function gather(ai, ownerId, record, state, owner) {
     // Nothing in reach: walk to the nearest one further away (a tree gets the tree routine).
     const far = findTarget(ai, record, state, ownerId, WALK_RADIUS, owner);
     if (far && isLog(far.id)) {
+      state.lost = false;
+      state.stuckSince = 0;
       startTree(ai, state, far.location);
       state.idleSince = now;
       return undefined;
@@ -261,14 +271,30 @@ export function gather(ai, ownerId, record, state, owner) {
       }
       state.avoid.set(`${far.location.x},${far.location.y},${far.location.z}`, now + 60000);
     }
-    if (farming && !far) {
-      // Map awareness: find the best spot for what the farm still needs and jump sprint there.
-      const spot = scout(ai, farmKinds(record), state.scout);
+    if ((farming || record.focus === "Trees") && !far) {
+      // Map awareness: find the best spot for what it needs (the next trees, or the farm's materials)
+      // and jump sprint there, instead of strolling around.
+      const kinds = farming ? farmKinds(record) : ["Wood"];
+      const spot = scout(ai, kinds, state.scout, state.avoid);
       state.idleSince = now;
       if (spot === "searching") {
-        warn(state, ownerId, "scout", `§7${record.name} is scouting the map for ${farmKinds(record).map((k) => KIND_NAMES[k] ?? k).join(", ")}...`);
+        state.lost = false;
+        warn(state, ownerId, "scout", `§7${record.name} is scouting for ${kinds.map((k) => KIND_NAMES[k] ?? k).join(", ")}...`);
+      } else if (spot === "none") {
+        state.lost = true; // nothing anywhere near: it may stroll around to explore
       } else if (spot) {
+        state.lost = false;
+        state.stuckSince = 0;
         startTravel(ai, state, spot);
+      } else if (!state.scout.probe) {
+        // Scouting keeps pointing here but there's nothing it can take (e.g. a log house, not trees):
+        // after 20 seconds, skip what's around here so it looks somewhere else.
+        state.stuckSince ||= now;
+        if (now - state.stuckSince > 20000) {
+          skipNearby(ai, state, kinds);
+          state.stuckSince = 0;
+          state.scout.nextAt = 0;
+        }
       }
       return undefined;
     }
@@ -279,11 +305,29 @@ export function gather(ai, ownerId, record, state, owner) {
     }
     return undefined;
   }
+  state.stuckSince = 0;
   state.mining = { ...target.location, id: target.id, slot: target.slot, until: system.currentTick + target.ticks, reach: REACH };
   return target.slot;
 }
 
 // ================================================================ trees
+
+/**
+ * Skips (for 10 minutes) every block of these kinds near the AI.
+ * @param {import("@minecraft/server").Entity} ai @param {GatherState} state @param {string[]} kinds
+ */
+function skipNearby(ai, state, kinds) {
+  const types = Object.keys(GATHER).filter((id) => kinds.includes(GATHER[id].focus));
+  const f = floor(ai.location);
+  const volume = new BlockVolume({ x: f.x - 12, y: f.y - 8, z: f.z - 12 }, { x: f.x + 12, y: f.y + 12, z: f.z + 12 });
+  try {
+    for (const p of ai.dimension.getBlocks(volume, { includeTypes: types }).getBlockLocationIterator()) {
+      state.avoid.set(`${p.x},${p.y},${p.z}`, Date.now() + TREE_DONE_MS);
+    }
+  } catch {
+    // partly unloaded
+  }
+}
 
 /** @type {Record<string, string>} */
 const KIND_NAMES = { Wood: "logs", Sand: "sand", Cane: "sugar cane" };
@@ -304,7 +348,7 @@ function startTree(ai, state, log) {
   let base = { ...log };
   while (isLog(dim.getBlock({ ...base, y: base.y - 1 })?.typeId)) base = { ...base, y: base.y - 1 };
   const logs = treeLogs(dim, base);
-  const stand = standSpot(dim, base, ai.location, true);
+  const stand = standSpot(dim, base, ai.location, true) ?? clearStand(dim, base);
   if (!stand) {
     avoidTree(state, logs);
     return;
@@ -449,15 +493,17 @@ function clearGap(dim, record, base) {
 
 /** @param {GatherState} state @param {TreeJob} t @param {boolean} failed */
 function endTree(state, t, failed) {
-  if (failed) avoidTree(state, t.logs);
+  // Couldn't get to it: skip it for a minute. Finished: any logs left were out of reach, so skip
+  // them for 10 minutes and go to the next tree.
+  avoidTree(state, t.logs, failed ? 60000 : TREE_DONE_MS);
   state.tree = undefined;
   state.mining = undefined;
   state.idleSince = Date.now();
 }
 
-/** Skip this tree for a minute. @param {GatherState} state @param {Vector3[]} logs */
-function avoidTree(state, logs) {
-  const until = Date.now() + 60000;
+/** Skip this tree for a while. @param {GatherState} state @param {Vector3[]} logs @param {number} [ms] */
+function avoidTree(state, logs, ms = 60000) {
+  const until = Date.now() + ms;
   for (const p of logs) state.avoid.set(blockKey(p), until);
 }
 
@@ -641,7 +687,7 @@ function hasLeavesAbove(dim, p) {
 /**
  * @typedef {{ source: Vector3, col: Vector3, out: Vector3 | undefined, dir: "down" | "up", endY: number, until: number }} WaterRide
  *   Swimming down or up a water column it poured: `source` is the water block, `col` the column it swims in.
- * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide, travel?: boolean }} Walker
+ * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide, travel?: boolean, stepTicks: number }} Walker
  */
 /** AIs walking to a block. @type {Map<string, Walker>} */
 const walkers = new Map();
@@ -653,7 +699,7 @@ const walkers = new Map();
  * @param {Vector3} block  the block it will mine
  */
 function startWalking(ai, state, stand, block) {
-  walkers.set(ai.id, { ai, state, stand, block, until: Date.now() + WALK_MS, stuck: 0, last: { ...ai.location } });
+  walkers.set(ai.id, { ai, state, stand, block, until: Date.now() + WALK_MS, stuck: 0, last: { ...ai.location }, stepTicks: 0 });
   state.walking = true;
 }
 
@@ -665,7 +711,7 @@ function startTravel(ai, state, spot) {
   const target = floor(spot);
   const distance = Math.hypot(target.x - ai.location.x, target.z - ai.location.z);
   walkers.set(ai.id, {
-    ai, state, stand: target, block: target, until: Date.now() + 20000 + (distance / 4) * 1000, stuck: 0, last: { ...ai.location }, travel: true,
+    ai, state, stand: target, block: target, until: Date.now() + 20000 + (distance / 4) * 1000, stuck: 0, last: { ...ai.location }, travel: true, stepTicks: 0,
   });
   state.walking = true;
 }
@@ -723,6 +769,7 @@ function step(id, w) {
   if (Math.hypot(p.x - w.last.x, p.z - w.last.z) > 0.05 || Math.abs(p.y - w.last.y) > 0.3) {
     w.last = { ...p };
     w.stuck = 0;
+    w.stepTicks = 0;
   } else if (++w.stuck > STUCK_TICKS) {
     giveUp(id, w);
     return;
@@ -736,15 +783,22 @@ function step(id, w) {
   let jump = false;
   if (ahead.x !== Math.floor(p.x) || ahead.z !== Math.floor(p.z)) {
     if (!free(dim, ahead)) {
-      if (breakLeaves(dim, ahead)) return; // leaves in the way: break through
       const up = { ...ahead, y: fy + 1 };
       const room = passable(dim.getBlock({ x: Math.floor(p.x), y: fy + 2, z: Math.floor(p.z) }));
       if (!free(dim, up) || !room) {
-        // A wall. If where it's going is up there, swim up it with its water bucket.
+        // A wall. Leaves or dirt: break through. Where it's going is up there: swim up it with its water bucket.
+        if (breakSoft(dim, ahead, w.stand.y > fy)) return;
         if (w.stand.y > fy + 1 && ai.isOnGround) waterUp(w, { x: Math.floor(p.x), y: fy, z: Math.floor(p.z) }, ahead);
         return; // otherwise wait (gives up if it stays stuck)
       }
+      // A 1-block step: jump it, and if that doesn't get it up, just hop up onto it.
       jump = ai.isOnGround;
+      if (++w.stepTicks > STEP_UP_AFTER) {
+        ai.teleport({ x: p.x + ux * 0.6, y: fy + 1, z: p.z + uz * 0.6 });
+        w.stepTicks = 0;
+        w.stuck = 0;
+        return;
+      }
     } else if (w.state.sprint && ai.isOnGround && d > 2.5 && free(dim, { ...ahead, y: fy - 1 }) === false) {
       jump = true; // jump sprinting (only onto solid ground)
     } else {
@@ -949,19 +1003,44 @@ function swim(id, w) {
 }
 
 /**
- * Breaks leaves at the feet and head height of a spot. Returns true if it broke any.
- * @param {import("@minecraft/server").Dimension} dim
- * @param {Vector3} cell
+ * Breaks leaves, dirt, sand, snow and vines at the feet and head height of a spot (and the block above
+ * that when it's heading upwards). Returns true if it broke any.
+ * @param {import("@minecraft/server").Dimension} dim @param {Vector3} cell @param {boolean} upwards
  */
-function breakLeaves(dim, cell) {
+function breakSoft(dim, cell, upwards) {
   let broke = false;
-  for (const p of [cell, { ...cell, y: cell.y + 1 }]) {
-    if (!LEAVES.includes(dim.getBlock(p)?.typeId ?? "")) continue;
+  const cells = [cell, { ...cell, y: cell.y + 1 }];
+  if (upwards) cells.push({ ...cell, y: cell.y + 2 });
+  for (const p of cells) {
+    const id = dim.getBlock(p)?.typeId ?? "";
+    if (!SOFT.test(id)) continue;
     dim.setBlockType(p, "minecraft:air");
-    dim.playSound("dig.grass", p);
+    dim.playSound(/leaves|vine/.test(id) ? "dig.grass" : /sand|gravel/.test(id) ? "dig.sand" : "dig.gravel", p);
     broke = true;
   }
   return broke;
+}
+
+/**
+ * Every side of a tree trunk is blocked by leaves or dirt: clear one side so it can stand there.
+ * @param {import("@minecraft/server").Dimension} dim @param {Vector3} base
+ * @returns {Vector3 | undefined}
+ */
+function clearStand(dim, base) {
+  for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const feet = { x: base.x + sx, y: base.y, z: base.z + sz };
+    const floorBlock = dim.getBlock({ ...feet, y: feet.y - 1 });
+    if (!floorBlock || passable(floorBlock) || LAVA.includes(floorBlock.typeId)) continue;
+    const head = { ...feet, y: feet.y + 1 };
+    const ok = [feet, head].every((p) => {
+      const b = dim.getBlock(p);
+      return !!b && (passable(b) || SOFT.test(b.typeId));
+    });
+    if (!ok) continue;
+    breakSoft(dim, feet, false);
+    return feet;
+  }
+  return undefined;
 }
 
 /** Can't get there: skip that block for a minute. */

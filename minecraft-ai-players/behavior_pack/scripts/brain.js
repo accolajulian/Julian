@@ -730,7 +730,10 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
     }
   }
   // While it's walking to or chopping/mining something it stands still instead of strolling off.
-  const working = wandering && !stripping && (isBusy(brain.gather) || building);
+  // On Trees it goes from tree to tree (scouting for the next ones) and only strolls around when there
+  // are no trees anywhere near.
+  const lockedOn = record.focus === "Trees" && !brain.gather.lost;
+  const working = wandering && !stripping && (isBusy(brain.gather) || building || lockedOn);
   const modeEvent = stripping || working ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
   if (brain.modeEvent !== modeEvent) {
     ai.triggerEvent(modeEvent);
