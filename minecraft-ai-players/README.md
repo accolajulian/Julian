@@ -102,7 +102,7 @@ shown on info labels and can't be taken.
 | 2 | Helmet, Chestplate, Leggings, Boots, Blocks 1-2, Own chicken (info), Spare chicken, Valuables 1 | same |
 | 3 | Valuables 2-10 | Valuables 2-10 |
 
-**Remote menu (Fighter):** *Jobs* (if it was a Resource AI), *Follow me*, *Guard here*, *Attack a player*, *Fight settings* (Style, Targets, Loot tombstones, Teach a tombstone: tap to change), *AI Chest*, *Friends & enemies*, *Delete*.
+**Remote menu (Fighter):** *Jobs* (if it was a Resource AI), *Follow me*, *Guard here*, *Attack a player*, *Fight settings* (Style, Targets, Loot tombstones, Teach a tombstone: tap to change), *Teleport* (to whoever uses the Remote), *AI Chest*, *Friends & enemies*, *Delete*.
 
 | Fighting | What it does |
 |---|---|
@@ -118,7 +118,7 @@ worse pieces), a shield, better tools, arrows, blocks. Anything it can't use sta
 "grave", "tomb", "headstone" or "corpse" are found automatically; others can be taught in its menu
 (*Tombstones > Teach*, standing next to one). Looting can be turned off. **Targets:** *Mob killing and player killing*, or *Only player
 killing* (it still defends against mobs that attack, and attacks whatever you attack).
-**Remote menu (Resource AI):** *Jobs* (*Trees*, *Caves*, *Strip mine* when upgraded, *Sugar cane farm*: picking one starts it), *AI Chest*, *Friends & enemies*, *Delete*.
+**Remote menu (Resource AI):** *Jobs* (*Trees*, *Caves*, *Strip mine* when upgraded, *Sugar cane farm*: picking one starts it), *Follow me*, *Teleport* (to whoever uses the Remote), *AI Chest*, *Friends & enemies*, *Delete*.
 
 Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
 
