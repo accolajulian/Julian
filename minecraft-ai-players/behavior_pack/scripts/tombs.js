@@ -19,6 +19,8 @@ import {
   addValuables,
   addArrows,
   addBlocks,
+  addWood,
+  isWood,
   isPlaceableBlock,
   itemName,
 } from "./inventory.js";
@@ -289,6 +291,7 @@ function store(record, stack) {
     }
     return { taken: 0, dropped };
   }
+  if (isWood(id)) return { taken: addWood(record, id, stack.amount), dropped };
   if (isPlaceableBlock(id)) return { taken: addBlocks(record, id, stack.amount), dropped };
   return { taken: 0, dropped }; // not something it carries: left for players
 }

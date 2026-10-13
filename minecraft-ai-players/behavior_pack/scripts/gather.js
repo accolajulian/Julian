@@ -28,6 +28,9 @@ import {
   isPlaceableBlock,
   isValuable,
   addValuables,
+  isWood,
+  addWood,
+  canTakeWood,
 } from "./inventory.js";
 
 const LAVA = ["minecraft:lava", "minecraft:flowing_lava"];
@@ -66,6 +69,9 @@ const CLEARABLE = /leaves|dirt|grass_block|podzol|mycelium|mud|moss|snow|vine|ro
 /** Blocks it can walk through (plants, torches, snow...). */
 const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers/;
 const WARN_MS = 30000; // don't repeat the same chat warning more often than this
+/** Natural ground it may dig through to climb out of a pit (never anything built, never ores). */
+const DIGGABLE = /leaves|^minecraft:(dirt|coarse_dirt|grass_block|dirt_with_roots|podzol|mycelium|mud|rooted_dirt|clay|gravel|sand|red_sand|stone|deepslate|tuff|granite|diorite|andesite|calcite|dripstone_block|netherrack|soul_sand|soul_soil|moss_block|snow|snow_layer|terracotta|\w+_terracotta|sandstone|red_sandstone|blackstone|basalt|end_stone)$/;
+const DIG_TICKS = 8; // one block every this many ticks when digging out
 
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
 /**
@@ -278,7 +284,7 @@ export function gather(ai, ownerId, record, state, owner) {
       // Map awareness: find the best spot for what it needs (the next trees, or the farm's materials)
       // and jump sprint there, instead of strolling around.
       const kinds = farming ? farmKinds(record) : ["Wood"];
-      const spot = scout(ai, kinds, state.scout, state.avoid);
+      const spot = scout(ai, kinds, state.scout, state.avoid, farming ? undefined : (id) => canTakeWood(record, GATHER[id].drop));
       state.idleSince = now;
       if (spot === "searching") {
         state.lost = false;
@@ -488,7 +494,8 @@ function clearGap(dim, record, base) {
     dim.setBlockType(p, "minecraft:air");
     dim.playSound(/leaves/.test(id) ? "dig.grass" : "dig.gravel", p);
     const drop = /grass_block|podzol|mycelium/.test(id) ? "minecraft:dirt" : id;
-    if (!/leaves|vine|snow/.test(id) && isPlaceableBlock(drop)) addBlocks(record, drop, 1);
+    if (isWood(drop)) addWood(record, drop, 1);
+    else if (!/leaves|vine|snow/.test(id) && isPlaceableBlock(drop)) addBlocks(record, drop, 1);
     broke = true;
   }
   return broke;
@@ -526,6 +533,8 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
   const kinds = farming ? farmKinds(record) : [FOCUS_TYPES[record.focus]];
   // Caves: only the ores you chose (stone and deepslate versions).
   const types = record.focus === "Caves" ? caveBlocks(record, dim.id) : Object.keys(GATHER).filter((id) => kinds.includes(GATHER[id].focus));
+  // Trees: only the kinds of wood it still has room for (once its 3 wood slots are used, just those kinds).
+  if (record.focus === "Trees") types.splice(0, types.length, ...types.filter((id) => canTakeWood(record, GATHER[id].drop)));
   if (types.length === 0) return undefined;
   const r = Math.ceil(radius);
   // In caves it looks further up and down (ravines, cave walls).
@@ -627,9 +636,11 @@ function finishMining(ai, ownerId, record, state, m, owner) {
   }
 
   // Drops go to its valuables / block slots; anything that doesn't fit goes to its owner (or is dropped).
+  // Wood goes in its 3 wood slots (one kind each).
   let left = amount;
-  if (isValuable(info.drop)) left -= addValuables(record, info.drop, left);
-  if (isPlaceableBlock(info.drop)) left -= addBlocks(record, info.drop, left);
+  if (isWood(info.drop)) left -= addWood(record, info.drop, left);
+  else if (isValuable(info.drop)) left -= addValuables(record, info.drop, left);
+  else if (isPlaceableBlock(info.drop)) left -= addBlocks(record, info.drop, left);
   if (left > 0) {
     const stack = new ItemStack(info.drop, left);
     const ownerClose = owner && owner.dimension.id === dim.id && dist(owner.location, ai.location) <= 32;
@@ -790,8 +801,15 @@ function step(id, w) {
       const up = { ...ahead, y: fy + 1 };
       const room = passable(dim.getBlock({ x: Math.floor(p.x), y: fy + 2, z: Math.floor(p.z) }));
       if (!free(dim, up) || !room) {
-        // A wall. Leaves or dirt: break through. Where it's going is up there: swim up it with its water bucket.
+        // A wall. Leaves: break through. Otherwise dig a stair step into it (climbing out of a pit
+        // like a player), or straight through it if where it's going is level with it.
         if (breakSoft(dim, ahead, w.stand.y > fy)) return;
+        const dug = digStep(ai, ux, uz, w.stand.y > fy);
+        if (dug !== "blocked") {
+          w.stuck = 0;
+          return;
+        }
+        // Can't dig it (something built, ore, lava): swim up it with its water bucket instead.
         if (w.stand.y > fy + 1 && ai.isOnGround) waterUp(w, { x: Math.floor(p.x), y: fy, z: Math.floor(p.z) }, ahead);
         return; // otherwise wait (gives up if it stays stuck)
       }
@@ -857,8 +875,16 @@ function travel(id, w) {
   } else {
     w.stuck++;
   }
+  // Stuck against a wall: dig a stair step up it.
+  if (!lavaAhead && w.stuck > 10 && digStep(ai, ux, uz, true) !== "blocked") {
+    w.stuck = Math.min(w.stuck, 10);
+    return;
+  }
   if (lavaAhead || w.stuck > HOP_AFTER) {
-    hop(ai, ux, uz);
+    if (!hop(ai, ux, uz)) {
+      giveUp(id, w);
+      return;
+    }
     w.last = { ...ai.location };
     w.stuck = 0;
     return;
@@ -870,12 +896,13 @@ function travel(id, w) {
 }
 
 /**
- * Teleports a few blocks ahead onto the ground (never into lava).
+ * Hops a few blocks ahead onto the ground: never into lava, never up onto trees, and never much
+ * higher or lower than it is (no big jumps). Returns false if there's nowhere to hop.
  * @param {import("@minecraft/server").Entity} ai @param {number} ux @param {number} uz
  */
 function hop(ai, ux, uz) {
   const dim = ai.dimension;
-  for (const k of [6, 10, 3, 14]) {
+  for (const k of [3, 6]) {
     const x = ai.location.x + ux * k;
     const z = ai.location.z + uz * k;
     let top;
@@ -884,10 +911,61 @@ function hop(ai, ux, uz) {
     } catch {
       continue;
     }
-    if (!top || LAVA.includes(top.typeId)) continue;
-    ai.teleport({ x, y: top.location.y + 1, z });
-    return;
+    if (!top) continue;
+    // Down through any tree to the real ground.
+    let y = top.location.y;
+    for (let i = 0; i < 40; i++) {
+      const b = dim.getBlock({ x, y, z });
+      if (!b || !(passable(b) || /leaves|_log$|_stem$/.test(b.typeId))) break;
+      y--;
+    }
+    const ground = dim.getBlock({ x, y, z });
+    if (!ground || LAVA.includes(ground.typeId) || ground.isLiquid) continue;
+    const feet = { x: Math.floor(x), y: y + 1, z: Math.floor(z) };
+    if (!free(dim, feet) || Math.abs(feet.y - ai.location.y) > 2) continue;
+    ai.teleport({ x, y: y + 1, z });
+    return true;
   }
+  return false;
+}
+
+/** When each AI may dig its next block. @type {Map<string, number>} */
+const digReady = new Map();
+
+/**
+ * Digs its way out of a pit like a player, one block at a time: going up, it clears the block above
+ * its head and the two above the step in front of it, then steps up (a staircase). Going level, it
+ * digs through the 2 blocks in front of it. Only natural ground (dirt, stone...), never next to lava.
+ * Returns "dug" (dug or digging), "clear" (nothing in the way any more) or "blocked" (it can't dig there).
+ * @param {import("@minecraft/server").Entity} ai @param {number} ux @param {number} uz  direction
+ * @param {boolean} up  climbing up (a stair step) or going level
+ * @returns {"dug" | "clear" | "blocked"}
+ */
+export function digStep(ai, ux, uz, up) {
+  const dim = ai.dimension;
+  const p = ai.location;
+  const here = { x: Math.floor(p.x), y: Math.floor(p.y + 0.01), z: Math.floor(p.z) };
+  const ahead = { x: Math.floor(p.x + ux * 0.7), y: here.y, z: Math.floor(p.z + uz * 0.7) };
+  if (ahead.x === here.x && ahead.z === here.z) return "clear";
+  if (up && passable(dim.getBlock(ahead))) return "blocked"; // no wall to make a step in
+  const cells = up
+    ? [{ ...here, y: here.y + 2 }, { ...ahead, y: here.y + 1 }, { ...ahead, y: here.y + 2 }]
+    : [ahead, { ...ahead, y: here.y + 1 }];
+  for (const c of cells) {
+    const block = dim.getBlock(c);
+    if (!block) return "blocked";
+    if (passable(block)) continue;
+    if (!DIGGABLE.test(block.typeId) || lavaNextTo(dim, c).length > 0) return "blocked";
+    if (system.currentTick < (digReady.get(ai.id) ?? 0)) return "dug"; // still digging the last one
+    digReady.set(ai.id, system.currentTick + DIG_TICKS);
+    const id = block.typeId;
+    face(ai, center(c));
+    ai.playAnimation("animation.aip.ai_player.mine");
+    dim.setBlockType(c, "minecraft:air");
+    dim.playSound(/leaves/.test(id) ? "dig.grass" : /dirt|grass|podzol|mycelium|mud|clay|gravel|sand|snow|soul/.test(id) ? "dig.gravel" : "dig.stone", c);
+    return "dug";
+  }
+  return "clear";
 }
 
 // ================================================================ water bucket (ravines)

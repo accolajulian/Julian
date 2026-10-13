@@ -40,6 +40,7 @@ const MAX_ENEMIES = 40;
  *   Resource AI: sword slot and bow slot (bow or crossbow).
  * @property {number} [torches]  Resource AI: torches (refill to a stack when the last is placed).
  * @property {boolean} [loot]  Fighter: break tombstones and take the loot (default on).
+ * @property {({ id: string, count: number } | null)[]} [wood]  3 wood slots, one kind of wood each.
  * @property {({ id: string, count: number } | null)[]} [stash]  Resource AI: its AI Chest (unlocked by the upgrade).
  * @property {number} [hunger]  0-20 (full until it sprints). At 6 or less it can't sprint and eats to full.
  * @property {number} [exhaust]  Sprinting exhaustion towards the next hunger point (4 = 1 point)

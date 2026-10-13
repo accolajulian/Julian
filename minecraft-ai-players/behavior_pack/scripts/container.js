@@ -27,6 +27,9 @@ import {
   ARROW_ITEM,
   ARROW_SLOT_MAX,
   BLOCK_SLOT_MAX,
+  WOOD_SLOT_MAX,
+  STASH_WOOD_MAX,
+  isWood,
   VALUABLE_SLOT_MAX,
   TORCH_STACK,
   isPlaceableBlock,
@@ -46,6 +49,7 @@ const LABEL = {
   arrows: "aip:slot_arrows",
   blocks: "aip:slot_blocks",
   valuables: "aip:slot_valuables",
+  wood: "aip:slot_blocks",
   info: "aip:slot_info",
   water: "aip:slot_water",
 };
@@ -54,8 +58,8 @@ export const LABEL_ITEMS = new Set(Object.values(LABEL));
 /**
  * @typedef {{ kind: "tool", i: number } | { kind: "sword" } | { kind: "bow" } |
  *   { kind: "armor", slot: "head" | "chest" | "legs" | "feet" } | { kind: "shield" } | { kind: "food" } |
- *   { kind: "arrows", i: number } | { kind: "blocks", i: number } | { kind: "valuables", i: number } |
- *   { kind: "info", text: (record: import("./data.js").AiRecord) => string, lore?: string[], icon?: keyof typeof LABEL }} Slot
+ *   { kind: "arrows", i: number } | { kind: "blocks", i: number } | { kind: "valuables", i: number } | { kind: "wood", i: number } |
+ *   { kind: "info", text: (record: import("./data.js").AiRecord) => string, lore?: string[] | ((record: import("./data.js").AiRecord) => string[]), icon?: keyof typeof LABEL }} Slot
  */
 
 /**
@@ -80,6 +84,21 @@ function layout(role, evolved = false) {
   const blocks = [0, 1].map((i) => ({ kind: "blocks", i }));
   /** @type {Slot[]} */
   const valuables = [...Array(10).keys()].map((i) => ({ kind: "valuables", i }));
+  /** @type {Slot[]} */
+  const wood = [0, 1, 2].map((i) => ({ kind: "wood", i }));
+  /** Name, level, and everything it has of its own (AI Chest, chicken, torches, water bucket). */
+  const nameInfo = (/** @type {(r: import("./data.js").AiRecord) => string} */ stage) => /** @type {Slot} */ ({
+    kind: "info",
+    text: (r) => `${r.name} (${stage(r)}) - ${levelText(r)}`,
+    lore: (r) => [
+      `§7${r.mode === "wander" ? `Working: ${r.focus}` : r.mode === "stay" ? "Staying put" : "Following you"}`,
+      `§7AI Chest: ${stashCount(r)} items${r.role === "resource" && !r.upgraded ? " (locked until upgraded)" : ""}`,
+      `§7Own chicken: ${Math.min(inventoryOf(r).food, FOOD_RESERVED)}/${FOOD_RESERVED} (eats them; can't be taken)`,
+      `§7Torches: ${inventoryOf(r).torches}/${TORCH_STACK} (its own)`,
+      "§7Water bucket: infinite (its own)",
+      "§7Tools are used in order 1, 2, 3.",
+    ],
+  });
   /** @type {Slot} */
   const foodInfo = {
     kind: "info",
@@ -102,36 +121,20 @@ function layout(role, evolved = false) {
   };
   if (role === "fighter" && evolved) {
     return [
-      // Row 1: tools 1-2-3, arrows, shield, name + AI Chest, torches, water
-      ...tools, ...arrows, { kind: "shield" },
-      {
-        kind: "info",
-        text: (r) => `${r.name} (Fighter AI${r.upgraded ? " Max" : ""}) - ${levelText(r)} - AI Chest: ${stashCount(r)}`,
-        lore: ["§7Tools are used in order 1, 2, 3: weapons for", "§7fighting, pickaxes/axes/shovels for gathering.", "§7Left click its Remote for commands."],
-      },
-      torchInfo,
-      waterInfo,
-      // Row 2: armor, blocks, food, first valuable
-      ...armor, ...blocks, foodInfo, { kind: "food" }, valuables[0],
+      // Row 1: tools 1-2-3, arrows, shield, wood 1-2-3
+      ...tools, ...arrows, { kind: "shield" }, ...wood,
+      // Row 2: armor, blocks, name (and its own things), spare food, first valuable
+      ...armor, ...blocks, nameInfo((r) => `Fighter AI${r.upgraded ? " Max" : ""}`), { kind: "food" }, valuables[0],
       // Row 3: valuables 2-10
       ...valuables.slice(1),
     ];
   }
   if (role === "resource") {
     return [
-      // Row 1: tools 1-2-3, shield, torches, info
-      ...tools, { kind: "shield" },
-      torchInfo,
-      {
-        kind: "info",
-        text: (r) => `${r.name} (Resource AI${r.upgraded ? "+" : ""}) - ${levelText(r)} - AI Chest: ${stashCount(r)}`,
-        lore: ["§7Tools are used in order 1, 2, 3.", "§7When its valuables fill up, half goes in its", "§7AI Chest. Unlocked by the upgrade."],
-      },
-      { kind: "info", text: (r) => (r.mode === "wander" ? `Working: ${r.focus}` : r.mode === "stay" ? "Staying put" : "Following you"), lore: ["§7Left click its Remote to change."] },
-      waterInfo,
-      { kind: "info", text: () => "Mining/harvesting tools only", lore: ["§7Pickaxes, axes, shovels, hoes, shears."] },
-      // Row 2: armor, blocks, food, first valuable
-      ...armor, ...blocks, foodInfo, { kind: "food" }, valuables[0],
+      // Row 1: tools 1-2-3, shield, name (and its own things), torches, wood 1-2-3
+      ...tools, { kind: "shield" }, nameInfo((r) => `Resource AI${r.upgraded ? "+" : ""}`), torchInfo, ...wood,
+      // Row 2: armor, blocks, water, spare food, first valuable
+      ...armor, ...blocks, waterInfo, { kind: "food" }, valuables[0],
       // Row 3: valuables 2-10
       ...valuables.slice(1),
     ];
@@ -199,8 +202,14 @@ function expected(record, role, s) {
       return stack(inv.blocks[s.i]) ?? label("blocks", `Blocks ${s.i + 1}`, ["§7Solid blocks only: no sand, gravel or", "§7anything that falls. Used to bridge and cover lava."]);
     case "valuables":
       return stack(inv.valuables[s.i]) ?? label("valuables", `Valuables ${s.i + 1}`, ["§7Diamonds, gold, iron, coal, netherite..."]);
+    case "wood":
+      return stack(inv.wood[s.i]) ?? label("wood", `Wood ${s.i + 1}`, [
+        "§7One kind of wood per slot, up to a stack.",
+        `§7When full, half goes in its AI Chest (up to ${STASH_WOOD_MAX} of each).`,
+        "§7All 3 full: the Trees job is done.",
+      ]);
     case "info":
-      return label(s.icon ?? "info", s.text(record), s.lore);
+      return label(s.icon ?? "info", s.text(record), typeof s.lore === "function" ? s.lore(record) : s.lore);
   }
 }
 
@@ -250,6 +259,10 @@ function apply(record, role, s, item) {
     case "valuables":
       if (item && !(isValuable(id) && n <= VALUABLE_SLOT_MAX)) return false;
       inv.valuables[s.i] = item ? { id, count: n } : null;
+      return true;
+    case "wood":
+      if (item && !(isWood(id) && n <= WOOD_SLOT_MAX && !inv.wood.some((w, j) => j !== s.i && w?.id === id))) return false;
+      inv.wood[s.i] = item ? { id, count: n } : null;
       return true;
     case "info":
       return !item; // nothing can go on an info label
@@ -438,6 +451,8 @@ function slotHelp(s, record) {
       return "Arrow slots only take arrows.";
     case "blocks":
       return "Block slots only take solid blocks (no sand, gravel or anything that falls).";
+    case "wood":
+      return "Wood slots take logs, one kind of wood per slot.";
     case "valuables":
       return "Valuables slots take diamonds, emeralds, gold, iron, copper, coal, redstone, lapis, quartz, netherite...";
     case "info":

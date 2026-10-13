@@ -1,5 +1,5 @@
 // AI inventories: food, 3 tool slots used in order (1 -> 2 -> 3), 4 armor slots, a shield slot,
-// 2 block slots, 2 arrow slots and 10 valuables slots. (The old backpack is no longer used.)
+// 2 block slots, 2 arrow slots, 3 wood slots and 10 valuables slots. (The old backpack is no longer used.)
 // Everything is saved in the AI's record, so it is kept when the AI dies and respawns.
 import { world, ItemStack, EnchantmentType, BlockTypes } from "@minecraft/server";
 
@@ -22,6 +22,9 @@ export const SWORD_SLOT = 3;
 export const BOW_SLOT = 4;
 export const VALUABLE_SLOTS = 10;
 export const VALUABLE_SLOT_MAX = 64;
+export const WOOD_SLOTS = 3; // one kind of wood per slot
+export const WOOD_SLOT_MAX = 64;
+export const STASH_WOOD_MAX = 64; // at most a stack of each kind of wood goes in the AI Chest
 export const STASH_SLOTS = 27; // the Resource AI's AI Chest (a chest's worth of slots)
 
 /** Higher-value items for the 10 valuables slots. */
@@ -157,6 +160,7 @@ export function toolKind(record) {
  * @property {({ id: string, count: number } | null)[]} valuables
  * @property {{ sword: ToolData | null, bow: ToolData | null }} arms  Resource AI: sword and bow/crossbow slots.
  * @property {number} torches  Resource AI: its own torches (refills itself; players can't take them).
+ * @property {({ id: string, count: number } | null)[]} wood  3 wood slots, one kind of wood each.
  * @property {({ id: string, count: number } | null)[]} stash  Resource AI: its AI Chest. Locked until upgraded.
  */
 
@@ -175,6 +179,9 @@ export function inventoryOf(record) {
   if (record.shield === undefined) record.shield = null;
   if (!Array.isArray(record.blocks) || record.blocks.length !== BLOCK_SLOTS) record.blocks = [null, null];
   if (!record.bag) record.bag = {};
+  if (!Array.isArray(record.wood) || record.wood.length !== WOOD_SLOTS) {
+    record.wood = Array.from({ length: WOOD_SLOTS }, (_, i) => record.wood?.[i] ?? null);
+  }
   if (!record.arms) record.arms = { sword: null, bow: null };
   if (typeof record.torches !== "number") record.torches = TORCH_STACK;
   if (!Array.isArray(record.valuables) || record.valuables.length !== VALUABLE_SLOTS) {
@@ -531,6 +538,83 @@ export function addValuables(record, id, amount) {
     added += addStacked(inv.valuables, id, amount - added, VALUABLE_SLOT_MAX);
   }
   return added;
+}
+
+// ---------------------------------------------------------------- wood (3 slots)
+// Each wood slot holds one kind of wood (oak, birch...), up to a stack. When a slot is full, half of
+// it goes in the AI Chest, but the AI Chest only ever takes up to a stack of each kind of wood.
+// Once all 3 slots hold a kind of wood, it only chops trees of those kinds.
+
+/** Logs and stems (any kind of wood). @param {string} id */
+export function isWood(id) {
+  return /^minecraft:\w+_(log|stem)$/.test(id);
+}
+
+/**
+ * Adds wood to its slot (or an empty slot). Returns how many fit.
+ * @param {import("./data.js").AiRecord} record @param {string} id @param {number} amount
+ */
+export function addWood(record, id, amount) {
+  if (!isWood(id)) return 0;
+  const inv = inventoryOf(record);
+  const put = () => {
+    let i = inv.wood.findIndex((w) => w?.id === id);
+    if (i === -1) i = inv.wood.findIndex((w) => !w);
+    if (i === -1) return 0;
+    const slot = inv.wood[i] ?? { id, count: 0 };
+    const fit = Math.min(amount, WOOD_SLOT_MAX - slot.count);
+    if (fit <= 0) return 0;
+    slot.count += fit;
+    inv.wood[i] = slot;
+    amount -= fit;
+    return fit;
+  };
+  let added = put();
+  if (amount > 0 && (record.role === "resource" || record.evolved) && payWoodIntoStash(record, id) > 0) added += put();
+  return added;
+}
+
+/**
+ * Its slot of this wood is full: half of it goes in the AI Chest (up to a stack of it in there).
+ * @param {import("./data.js").AiRecord} record @param {string} id
+ */
+function payWoodIntoStash(record, id) {
+  const inv = inventoryOf(record);
+  const i = inv.wood.findIndex((w) => w?.id === id);
+  const slot = inv.wood[i];
+  if (!slot) return 0;
+  const room = STASH_WOOD_MAX - (stashTotals(record)[id] ?? 0);
+  const moved = addStacked(inv.stash, id, Math.max(0, Math.min(Math.floor(slot.count / 2), room)), VALUABLE_SLOT_MAX);
+  slot.count -= moved;
+  if (slot.count <= 0) inv.wood[i] = null;
+  return moved;
+}
+
+/**
+ * This kind of wood can't be taken any more: its slot is full and the AI Chest has a stack of it.
+ * @param {import("./data.js").AiRecord} record @param {string} id
+ */
+function woodDone(record, id) {
+  const slot = inventoryOf(record).wood.find((w) => w?.id === id);
+  if (!slot || slot.count < WOOD_SLOT_MAX) return false;
+  if (!(record.role === "resource" || record.evolved) || (stashTotals(record)[id] ?? 0) >= STASH_WOOD_MAX) return true;
+  // The AI Chest is packed with other things: no room for half of it either.
+  return !inventoryOf(record).stash.some((s) => !s || (s.id === id && s.count < VALUABLE_SLOT_MAX));
+}
+
+/**
+ * Can it still chop trees of this wood? Only the kinds in its 3 slots once they're all used.
+ * @param {import("./data.js").AiRecord} record @param {string} id
+ */
+export function canTakeWood(record, id) {
+  const wood = inventoryOf(record).wood;
+  if (!wood.some((w) => w?.id === id) && !wood.some((w) => !w)) return false;
+  return !woodDone(record, id);
+}
+
+/** All 3 wood slots are full (and the AI Chest has its stack of each): the Trees job is done. @param {import("./data.js").AiRecord} record */
+export function woodFull(record) {
+  return inventoryOf(record).wood.every((w) => w && woodDone(record, w.id));
 }
 
 // ---------------------------------------------------------------- AI Chest (Resource AI)

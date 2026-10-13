@@ -48,6 +48,7 @@ import {
   FOOD_CAP,
   ARROW_ITEM,
   inventoryOf,
+  woodFull,
   takeableFood,
   generateFood,
   minutesToNextFood,
@@ -867,6 +868,18 @@ function recallAi(player, key) {
   } else if (!spawnAi(player, key, player.location, player.dimension, true)) {
     return;
   }
+  // On a job: the job ends and it follows you.
+  const r = mine(player, key);
+  if (r && r.mode === "wander") {
+    r.mode = "follow";
+    delete r.post;
+    saveRecord(player.id, r.role, r);
+    const live = r.id ? world.getEntity(r.id) : undefined;
+    live?.triggerEvent(r.role === "fighter" ? "aip:fighter_follow" : "aip:resource_follow");
+    toolsChanged(r.id);
+    player.sendMessage(`§a${record.name} teleported to you. Job ended; it's following you.`);
+    return;
+  }
   player.sendMessage(`§a${record.name} teleported to you.`);
 }
 
@@ -1068,12 +1081,15 @@ async function showCommands(player, key) {
   const actions = [];
   // Jobs first: a stray tap on it only opens a menu.
   if (canGather(record)) actions.push({ label: `${record.mode === "wander" ? "§2" : ""}Jobs`, run: () => showJobs(player, key) });
-  // One button: stop following (stay here) or start following again.
+  // One button: stop following (stay here) or start following again. Not while it's on a job:
+  // then Teleport brings it back to you and ends the job.
   const following = record.mode === "follow";
-  actions.push({ label: following ? "Stay here" : "Follow me", run: needAi((a) => setMode(player, key, a, following ? "stay" : "follow")) });
+  if (record.mode !== "wander") {
+    actions.push({ label: following ? "Stay here" : "Follow me", run: needAi((a) => setMode(player, key, a, following ? "stay" : "follow")) });
+  }
   if (fighter) actions.push({ label: "Fight", run: () => showFight(player, key) });
   // (Not the first button: on touch screens the tap that opens the menu can land on the first one.)
-  actions.push({ label: "Teleport", run: () => recallAi(player, key) });
+  actions.push({ label: record.mode === "wander" ? "Teleport §8(ends job)" : "Teleport", run: () => recallAi(player, key) });
   if (canGather(record)) actions.push({ label: `AI Chest${resourcePerks(record) ? "" : " §8(locked)"}`, run: () => showStash(player, key) });
   actions.push({ label: "More", run: () => showMore(player, key) });
 
@@ -1104,6 +1120,10 @@ const GHOST_TAP_MS = 800;
 function setJob(player, key, job) {
   const r = mine(player, key);
   if (!r) return;
+  if (job === "Trees" && woodFull(r)) {
+    player.sendMessage(`§e${r.name}'s 3 wood slots are full. Right click it and take some wood first.`);
+    return;
+  }
   if (job) {
     r.focus = job;
     r.mode = "wander";
@@ -1420,7 +1440,7 @@ function returnEverything(player, record) {
   const inv = inventoryOf(record);
   for (const tool of inv.tools) if (tool) giveItem(player, stackFromTool(tool));
   for (const piece of [...ARMOR_SLOTS.map((slot) => inv.armor[slot]), inv.shield]) if (piece) giveItem(player, stackFromTool(piece));
-  for (const b of inv.blocks) if (b) giveStacks(player, b.id, b.count);
+  for (const b of [...inv.blocks, ...inv.wood]) if (b) giveStacks(player, b.id, b.count);
   for (const v of inv.valuables) if (v) giveStacks(player, v.id, v.count);
   if (resourcePerks(record)) for (const s of inv.stash) if (s) giveStacks(player, s.id, s.count); // AI Chest (unlocked)
   for (const arm of [inv.arms.sword, inv.arms.bow]) if (arm) giveItem(player, stackFromTool(arm));

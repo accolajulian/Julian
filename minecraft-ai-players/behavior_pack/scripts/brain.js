@@ -32,6 +32,9 @@ import {
   ARROW_ITEM,
   isRanged,
   inventoryOf,
+  woodFull,
+  isWood,
+  addWood,
   addTool,
   addArrows,
   totalArrows,
@@ -56,7 +59,7 @@ import {
 import { handleTombs, createLootState } from "./tombs.js";
 import { stripMine, createStripState } from "./stripmine.js";
 import { bridgeTowards, isBridging } from "./movement.js";
-import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from "./gather.js";
+import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy, digStep } from "./gather.js";
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 import { keepLoaded } from "./scout.js";
 import { boatThink } from "./boats.js";
@@ -664,6 +667,24 @@ function think(ai, ownerId, role, record, brain) {
     sprinters.set(ai.id, { ai, ownerId, speed: moveFactor(levelOf(record)), until: Date.now() + 700 });
   }
 
+  // ---- Following you but stuck down in a pit (you're above it and it isn't moving): it digs a
+  // staircase up out of it, one block at a time, like a player would.
+  if (!boating && record.mode === "follow" && owner && owner.dimension.id === ai.dimension.id && ai.isOnGround &&
+      owner.location.y > ai.location.y + 1.5 && Math.hypot(ai.getVelocity().x, ai.getVelocity().z) < 0.02) {
+    const dx = owner.location.x - ai.location.x;
+    const dz = owner.location.z - ai.location.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 0.5 && d < FOLLOW_TELEPORT) {
+      const ux = dx / d;
+      const uz = dz / d;
+      // Straight at you, or along the main direction if that's blocked.
+      if (digStep(ai, ux, uz, true) === "blocked") {
+        if (Math.abs(ux) > Math.abs(uz)) digStep(ai, Math.sign(ux), 0, true);
+        else digStep(ai, 0, Math.sign(uz), true);
+      }
+    }
+  }
+
   // ---- Lava: cover it with blocks or back away (lava proof AIs don't mind lava).
   const lavaClose = brain.lavaProof ? false : avoidLava(ai, ownerId, role, record, brain.gather);
 
@@ -866,6 +887,10 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
     } else {
       slot = gather(ai, ownerId, record, brain.gather, undefined);
       if (record.focus === FARM_FOCUS) checkCollected(ai, ownerId, record);
+      if (record.focus === "Trees" && woodFull(record)) {
+        treesDone(ai, ownerId, role, record, brain, owner);
+        return;
+      }
     }
   }
   // While it's walking to or chopping/mining something it stands still instead of strolling off.
@@ -881,9 +906,28 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
   }
   equip(ai, brain, record, slot ?? firstTool(record, false));
   if (safe) placeTorch(ai, ownerId, record, brain, now);
-  // Not mining and its owner is away: bridge/pillar to catch up.
-  if (slot === undefined && record.mode !== "stay" && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
+  // Following you (never while on a job) and you're away: bridge/pillar to catch up.
+  if (slot === undefined && record.mode === "follow" && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
     bridgeTowards(ai, ownerId, role, record, owner.location);
+  }
+}
+
+/**
+ * All 3 wood slots are full: the Trees job is done. It tells its owner, teleports to them and follows.
+ * @param {import("@minecraft/server").Entity} ai @param {string} ownerId @param {import("./data.js").RoleId} role
+ * @param {import("./data.js").AiRecord} record @param {Brain} brain @param {import("@minecraft/server").Player | undefined} owner
+ */
+function treesDone(ai, ownerId, role, record, brain, owner) {
+  setGatherBehavior(ai, brain.gather, "Nothing", false);
+  record.mode = "follow";
+  delete record.post;
+  saveRecord(ownerId, role, record);
+  ai.triggerEvent(role === "fighter" ? "aip:fighter_follow" : "aip:resource_follow");
+  brain.modeEvent = undefined;
+  if (owner) {
+    ai.teleport(besideOwner(owner), { dimension: owner.dimension, facingLocation: owner.location });
+    ai.clearVelocity();
+    owner.sendMessage(`§a${record.name}: Tree job completed! All 3 wood slots are full. Right click it to take the wood.`);
   }
 }
 
@@ -1278,7 +1322,9 @@ function pickUpItems(ai, ownerId, role, record) {
       ai.dimension.playSound("random.pop", ai.location);
       message = `picked up a ${itemName(stack.typeId)} (slot ${slot + 1})`;
     } else if (isValuable(stack.typeId) || isPlaceableBlock(stack.typeId)) {
-      const added = isValuable(stack.typeId)
+      const added = isWood(stack.typeId)
+        ? addWood(record, stack.typeId, stack.amount)
+        : isValuable(stack.typeId)
         ? addValuables(record, stack.typeId, stack.amount)
         : addBlocks(record, stack.typeId, stack.amount);
       if (added === 0) continue;

@@ -60,7 +60,20 @@ damage as a normal full-power arrow.
 On *Trees* it locks on to one tree after another instead of strolling around: when no tree is close it scouts
 the map and jump sprints to the nearest trees (only strolling if there are no trees anywhere near). Logs it
 can't reach on a tree are skipped for 10 minutes and it moves on. Leaves, dirt, sand, snow and vines in its way
-are broken; a 1-block step it can't jump, it hops up onto.
+are broken; a 1-block step it can't jump, it hops up onto. It never jumps or hops up onto trees.
+
+**Wood slots:** it has 3 wood slots, one kind of wood each (up to a stack). Once all 3 hold a kind of wood it
+only chops trees of those kinds. When a slot is full, half of it goes in its AI Chest, but the AI Chest only
+ever takes up to a stack of each kind of wood. When all 3 slots are full (and the AI Chest has its stack of
+each), it tells you **Tree job completed**, teleports to you and follows you. Right click it to take the wood.
+
+**Digging out of pits:** stuck in a pit or against a wall (dirt, stone and other natural ground), it digs a
+staircase like a player: it clears the block above its head and the two above the step in front of it, steps
+up, and repeats. It never digs anything built, ores, or next to lava. Following you, it does the same when
+you're above it and it's stuck.
+
+**Jobs and following:** while it's on a job there's no *Follow me* button; *Teleport* brings it to you, ends
+the job and it follows you. It also never pillars or bridges towards you while working.
 
 ### Skin
 Every AI wears the skin in `resource_pack/textures/entity/ai_player/skin_custom.png` (a standard 64x64 player
@@ -158,7 +171,7 @@ worse pieces), a shield, better tools, arrows, blocks. Anything it can't use sta
 "grave", "tomb", "headstone" or "corpse" are found automatically; others can be taught in its menu
 (*Tombstones > Teach*, standing next to one). Looting can be turned off. **Targets:** *Mob killing and player killing*, or *Only player
 killing* (it still defends against mobs that attack, and attacks whatever you attack).
-**Remote menu (Resource AI):** *Jobs* (*Trees*, *Caves*, *Strip mine* when upgraded, *Sugar cane farm*: picking one starts it), *Stay here* / *Follow me* (one button), *Teleport*, *AI Chest*, *More* (Friends & enemies, Delete).
+**Remote menu (Resource AI):** *Jobs* (*Trees*, *Caves*, *Strip mine* when upgraded, *Sugar cane farm*: picking one starts it), *Stay here* / *Follow me* (one button, hidden while it's on a job), *Teleport* (ends any job), *AI Chest*, *More* (Friends & enemies, Delete).
 
 Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
 
@@ -182,7 +195,7 @@ from its block slots and tells you when it runs out.
 - Carries an infinite water bucket (shown in its inventory, can't be taken). To get down into a ravine it pours water over the edge and swims down; to get back up a wall it pours water above itself and swims up. It scoops the water back up afterwards. (Not in the Nether.)
 - Only chops real trees (logs with leaves above), so it won't take apart log houses.
 - Chops trees like a player: it walks up to the trunk, stands still and chops the bottom 2 logs, steps into that gap (breaking dirt or leaves in the way), chops the rest of the tree it can reach from there, then moves on to the next tree. It really walks (with gravity and leg movement), and stands still while working instead of strolling around.
-- Drops go into its block slots first (building blocks only), then its backpack (576 items).
+- Logs go into its 3 wood slots; other drops go into its valuables or block slots (building blocks only).
 - **Lava:** it never mines a block touching lava. Lava within 2 blocks of either AI gets covered with blocks
   from its block slots; with no blocks it backs away, stops gathering for a moment and tells you.
 

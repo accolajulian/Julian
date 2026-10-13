@@ -45,10 +45,11 @@ function typesFor(kinds) {
  * @param {string[]} kinds
  * @param {ScoutState} state
  * @param {Map<string, number>} [avoid]  blocks to ignore ("x,y,z" -> until when)
+ * @param {(id: string) => boolean} [allow]  only these block types (e.g. the kinds of wood it has room for)
  * @returns {Vector3 | "searching" | "none" | undefined}
  */
-export function scout(ai, kinds, state, avoid) {
-  const types = typesFor(kinds);
+export function scout(ai, kinds, state, avoid, allow) {
+  const types = typesFor(kinds).filter((id) => !allow || allow(id));
   if (types.length === 0) return undefined;
   const skip = avoidCheck(avoid);
   if (state.probe) return continueProbe(ai, types, state, skip);
