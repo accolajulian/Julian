@@ -665,7 +665,7 @@ export function isPlacing(playerId) {
 /** @param {import("@minecraft/server").Player} player @param {string} key */
 export function startPlacing(player, key) {
   placing.set(player.id, { key, until: Date.now() + PLACING_MS, asking: false, preview: undefined });
-  player.sendMessage("§eLook at water. Left click to place, sneak to cancel.");
+  player.sendMessage("§eLook at water. Tap Place (or left click) to place it, sneak to cancel.");
 }
 
 /** @param {import("@minecraft/server").Player} player @param {string} [why] */
@@ -744,7 +744,7 @@ function outlineColors() {
 function draw(player, pv) {
   player.onScreenDisplay.setActionBar(
     pv.valid
-      ? "§aLeft click: place §7| Sneak: cancel"
+      ? "§aTap Place (or left click): place §7| Sneak: cancel"
       : `§c${pv.reason} §7| Sneak: cancel`
   );
   const g = pv.spot;
@@ -793,14 +793,19 @@ system.runInterval(() => {
   }
 }, 10);
 
-// Left click while placing: confirm.
-world.afterEvents.playerSwingStart.subscribe(({ player, swingSource }) => {
-  if (swingSource !== EntitySwingSource.Attack) return;
+// While placing, left click (Attack) OR the Place/use button confirms it. (On iPads and phones the
+// on-screen Place button counts as a "use", not a left click.)
+/** @param {import("@minecraft/server").Player} player */
+function tryConfirm(player) {
   const s = placing.get(player.id);
   if (!s || s.asking) return;
   s.asking = true;
   system.run(() => confirmPlace(player, s).finally(() => (s.asking = false)));
+}
+world.afterEvents.playerSwingStart.subscribe(({ player, swingSource }) => {
+  if (swingSource === EntitySwingSource.Attack) tryConfirm(player);
 });
+world.afterEvents.itemUse.subscribe(({ source }) => tryConfirm(source));
 
 /**
  * @param {import("@minecraft/server").Player} player
@@ -851,4 +856,6 @@ async function confirmPlace(player, s) {
   latest.mode = "wander";
   saveRecord(player.id, "resource", latest);
   stopPlacing(player, `§a${latest.name} is collecting for the farm.${warp ? ` §7Warp point: ${warp.x}, ${warp.y}, ${warp.z}` : ""}`);
+  player.onScreenDisplay.setTitle("§aFarm placed", { subtitle: `${latest.name} is collecting materials`, fadeInDuration: 5, stayDuration: 50, fadeOutDuration: 10 });
+  player.playSound("random.orb");
 }
