@@ -33,7 +33,14 @@ export function sparks(dimension, at, amount = 12) {
         const r = 0.2 + Math.random() * 0.6;
         const p = { x: at.x + Math.cos(a) * r, y: at.y + Math.random() * 0.8, z: at.z + Math.sin(a) * r };
         try {
-          dimension.spawnParticle(i % 3 === 0 ? "minecraft:electric_spark_particle" : "minecraft:colored_flame_particle", p, color);
+          if (i % 3 === 0) {
+            // Electric sparks need a direction to fly in (variable.direction).
+            const dir = new MolangVariableMap();
+            dir.setVector3("variable.direction", { x: Math.cos(a) * 0.3, y: 0.2 + Math.random() * 0.3, z: Math.sin(a) * 0.3 });
+            dimension.spawnParticle("minecraft:electric_spark_particle", p, dir);
+          } else {
+            dimension.spawnParticle("minecraft:colored_flame_particle", p, color);
+          }
         } catch {
           // unloaded or out of the world
         }

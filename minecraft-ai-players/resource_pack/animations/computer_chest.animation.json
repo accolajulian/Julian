@@ -3,7 +3,6 @@
   "animations": {
     "animation.aip.computer_chest.open": {
       "animation_length": 0.25,
-      "hold_on_last_frame": true,
       "bones": {
         "lid": {
           "position": {
