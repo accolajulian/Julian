@@ -85,6 +85,7 @@ const ARROW_GRAVITY = 0.05; // blocks per tick per tick
 // hit), the 7-block knockback (on that first hit), and the 10-block power jump.
 const SEQUENCE_RADIUS = 30;
 const TOOL_PICKUP_RANGE = 10; // picks up tools it can use from this far away
+const FOLLOW_TELEPORT = 40; // following you and further than this (or in another dimension): it teleports to you
 const FOLLOW_DIG_RANGE = 25; // stuck in a pit below you within this distance: it digs stairs up
 const TRAIL_MAX = 400; // your last 400 steps are remembered (it follows in your tracks)
 const OFF_TRAIL = 6; // further than this from your tracks: it heads straight for you
@@ -744,8 +745,17 @@ function think(ai, ownerId, role, record, brain) {
     brain.wetSince = 0;
   }
 
+  // ---- Following and more than 40 blocks away (or you went to another dimension): it teleports right
+  // next to you (once you're standing on something or swimming, not mid-air).
+  if (!boating && record.mode === "follow" && owner && (owner.isOnGround || owner.isInWater) &&
+      (owner.dimension.id !== ai.dimension.id || distance(owner.location, ai.location) > FOLLOW_TELEPORT)) {
+    ai.teleport(besideOwner(owner), { dimension: owner.dimension, facingLocation: owner.location });
+    ai.clearVelocity();
+    sprinters.delete(ai.id);
+  }
+
   // ---- Following and a bit behind: jump sprint after you in your tracks (the loop above does it every
-  // tick). It never teleports to you: it walks, sprints, builds up, crouch-bridges or takes a boat.
+  // tick). Within 40 blocks it doesn't teleport: it walks, sprints, builds up, crouch-bridges or takes a boat.
   if (!boating && record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
       distance(owner.location, ai.location) > FOLLOW_SPRINT_FROM && hungerOf(record) > SPRINT_HUNGER && !brain.eatingToFull) {
     sprinters.set(ai.id, { ai, ownerId, speed: 1, until: Date.now() + 700 });

@@ -112,9 +112,10 @@ spot and goes back there if it wanders more than 64 blocks away.
 ### Follows like a dog
 When it's following you (*Follow me*) it jump sprints to keep up once it's more than 4 blocks behind (never off a
 cliff or into lava), **in your tracks**: it remembers your last 400 steps and goes the way you went (around walls,
-up your stairs, over your bridges). Off your tracks it heads straight for you. It **never teleports to you**: where
+up your stairs, over your bridges). Off your tracks it heads straight for you. Within 40 blocks it doesn't teleport: where
 it can't walk it pillars up to you, crouch-bridges across gaps, digs stairs out of pits, or takes a boat. Far from
-every player it keeps its own land loaded so it keeps coming. (While it sprints, the game's own follow behavior is
+every player it keeps its own land loaded so it keeps coming. **More than 40 blocks away** (or you went to another dimension) it
+teleports right next to you. (While it sprints, the game's own follow behavior is
 switched off so it doesn't run sideways.)
 
 ### Hunger
