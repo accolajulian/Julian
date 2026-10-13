@@ -25,7 +25,10 @@ export const VALUABLE_SLOT_MAX = 64;
 export const WOOD_SLOTS = 3; // one kind of wood per slot
 export const WOOD_SLOT_MAX = 64;
 export const STASH_WOOD_MAX = 64; // at most a stack of each kind of wood goes in the AI Chest
-export const STASH_SLOTS = 27; // the Resource AI's AI Chest (a chest's worth of slots)
+export const STASH_SLOTS = 27;
+/** Its own crafting materials: it always has these (they never run out and can't be taken). */
+export const OWN_WOOD = 10; // logs
+export const OWN_STONE = 10; // cobblestone // the Resource AI's AI Chest (a chest's worth of slots)
 
 /** Higher-value items for the 10 valuables slots. */
 export const VALUABLES = new Set(
@@ -632,6 +635,20 @@ export function takeWood(record, n) {
     n -= used;
     if (slot.count <= 0) wood[i] = null;
   }
+  return true;
+}
+
+/**
+ * Uses up one of an item from its valuables (e.g. a diamond for a shovel). Returns false if it has none.
+ * @param {import("./data.js").AiRecord} record @param {string} id
+ */
+export function takeValuable(record, id) {
+  const vals = inventoryOf(record).valuables;
+  const i = vals.findIndex((v) => v?.id === id && v.count > 0);
+  const slot = vals[i];
+  if (!slot) return false;
+  slot.count -= 1;
+  if (slot.count <= 0) vals[i] = null;
   return true;
 }
 

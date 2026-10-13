@@ -55,7 +55,7 @@ export function stripMine(ai, ownerId, record, state, placeTorch) {
   if (!all) return undefined; // not in the Overworld or the Nether
 
   // Only with a pickaxe (crafted if it has none and has a log).
-  if (!craftTool(record, ownerId, "pickaxe", state)) return undefined;
+  if (!craftTool(ai, record, ownerId, "pickaxe", state)) return undefined;
   const pick = bestPickaxe(record);
   if (!pick) return undefined;
   // Only ores its pickaxe can mine.

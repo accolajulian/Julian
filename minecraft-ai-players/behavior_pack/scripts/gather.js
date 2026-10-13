@@ -31,7 +31,7 @@ import {
   isWood,
   addWood,
   canTakeWood,
-  takeWood,
+  takeValuable,
 } from "./inventory.js";
 
 const LAVA = ["minecraft:lava", "minecraft:flowing_lava"];
@@ -72,8 +72,7 @@ const CLEARABLE = /leaves|dirt|grass_block|podzol|mycelium|mud|moss|snow|vine|ro
 const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers|glow_lichen/;
 const WARN_MS = 30000; // don't repeat the same chat warning more often than this
 const TOOL_WARN_MS = 300000; // "needs a pickaxe" at most every 5 minutes
-const AXE_LOGS = 2; // a wooden axe: 3 planks + 2 sticks = 5 planks = 2 logs
-const PICKAXE_LOGS = 1; // a stone pickaxe: its own cobblestone + 2 sticks (1 log)
+const TABLE_TICKS = 30; // its crafting table stays out this long, then it picks it back up
 /** Natural ground it may dig through to climb out of a pit (never anything built, never ores). */
 const DIGGABLE = /leaves|^minecraft:(dirt|coarse_dirt|grass_block|dirt_with_roots|podzol|mycelium|mud|rooted_dirt|clay|gravel|sand|red_sand|stone|deepslate|tuff|granite|diorite|andesite|calcite|dripstone_block|netherrack|soul_sand|soul_soil|moss_block|snow|snow_layer|terracotta|\w+_terracotta|sandstone|red_sandstone|blackstone|basalt|end_stone)$/;
 const DIG_TICKS = 8; // one block every this many ticks when digging out
@@ -242,8 +241,9 @@ export function gather(ai, ownerId, record, state, owner) {
   state.speed = 1;
   // The right tool for the job: an axe for trees (it crafts a wooden one once it has wood; until then
   // it chops by hand), a pickaxe for caves (it crafts a stone one from its cobblestone and a log).
-  if (record.focus === "Trees") craftTool(record, ownerId, "axe", state);
-  if (record.focus === "Caves" && !craftTool(record, ownerId, "pickaxe", state)) {
+  if (record.focus === "Trees") craftTool(ai, record, ownerId, "axe", state);
+  if (farming && farmKinds(record).includes("Sand")) craftTool(ai, record, ownerId, "shovel", state);
+  if (record.focus === "Caves" && !craftTool(ai, record, ownerId, "pickaxe", state)) {
     state.mining = undefined;
     state.pausedUntil = now + 10000;
     return undefined;
@@ -351,30 +351,70 @@ export function gather(ai, ownerId, record, state, owner) {
 }
 
 /**
- * Makes sure it has the tool for its job, crafting one if it can. Returns true if it has one.
- * - axe: a wooden axe from 2 logs (no logs yet: false, and it chops by hand).
- * - pickaxe: a stone pickaxe from its own cobblestone and 1 log (no logs: it tells you it needs one).
- * @param {import("./data.js").AiRecord} record @param {string} ownerId @param {"axe" | "pickaxe"} kind
- * @param {{ warned: Map<string, number> }} state
+ * Makes sure it has the tool for its job, crafting one if it has none. Returns true if it has one.
+ * It places a crafting table next to itself, crafts on it, and picks the table back up. It always has
+ * its own 10 logs and 10 cobblestone for this (see inventory.js), so it can always craft:
+ * - axe: a wooden axe.
+ * - pickaxe: a stone pickaxe.
+ * - shovel: the best one it can make from its inventory: diamond (a diamond from its valuables), then
+ *   iron (an iron ingot), else stone.
+ * The only thing that stops it: all 3 tool slots are full.
+ * @param {import("@minecraft/server").Entity} ai @param {import("./data.js").AiRecord} record @param {string} ownerId
+ * @param {"axe" | "pickaxe" | "shovel"} kind @param {{ warned: Map<string, number> }} state
  */
-export function craftTool(record, ownerId, kind, state) {
+export function craftTool(ai, record, ownerId, kind, state) {
   const tools = inventoryOf(record).tools;
   if (tools.some((t) => t && new RegExp(`_${kind}$`).test(t.id))) return true;
   const free = tools.findIndex((t) => !t);
-  const logs = kind === "axe" ? AXE_LOGS : PICKAXE_LOGS;
-  if (free !== -1 && takeWood(record, logs)) {
-    const id = kind === "axe" ? "minecraft:wooden_axe" : "minecraft:stone_pickaxe";
-    tools[free] = { id, damage: 0 };
-    saveRecord(ownerId, record.role, record);
-    findPlayer(ownerId)?.sendMessage(`§a${record.name} crafted a ${itemName(id)} (tool slot ${free + 1}).`);
-    return true;
+  if (free === -1) {
+    if (kind === "pickaxe") warn(state, ownerId, "pickaxe", `§e${record.name} needs a pickaxe to mine, but its tool slots are full. Swap one for a pickaxe.`, TOOL_WARN_MS);
+    return false;
   }
-  if (kind === "pickaxe") {
-    warn(state, ownerId, "pickaxe", free === -1
-      ? `§e${record.name} needs a pickaxe to mine, but its tool slots are full. Swap one for a pickaxe.`
-      : `§e${record.name} needs a pickaxe to mine. Give it one, or a log (wood slot) so it can craft a stone pickaxe.`, TOOL_WARN_MS);
+  let id = kind === "axe" ? "minecraft:wooden_axe" : "minecraft:stone_pickaxe";
+  if (kind === "shovel") {
+    id = takeValuable(record, "minecraft:diamond") ? "minecraft:diamond_shovel"
+      : takeValuable(record, "minecraft:iron_ingot") ? "minecraft:iron_shovel"
+      : "minecraft:stone_shovel";
   }
-  return false;
+  craftingTable(ai);
+  tools[free] = { id, damage: 0 };
+  saveRecord(ownerId, record.role, record);
+  findPlayer(ownerId)?.sendMessage(`§a${record.name} crafted a ${itemName(id)} (tool slot ${free + 1}).`);
+  return true;
+}
+
+/**
+ * Puts a crafting table down next to the AI for a moment (as it crafts), then picks it back up.
+ * Only on an empty spot with ground under it; no room: it crafts without one.
+ * @param {import("@minecraft/server").Entity} ai
+ */
+function craftingTable(ai) {
+  const dim = ai.dimension;
+  const f = floor(ai.location);
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+    const spot = { x: f.x + dx, y: f.y, z: f.z + dz };
+    const below = dim.getBlock({ ...spot, y: spot.y - 1 });
+    if (!dim.getBlock(spot)?.isAir || !below || passable(below)) continue;
+    try {
+      dim.setBlockType(spot, "minecraft:crafting_table");
+    } catch {
+      return;
+    }
+    dim.playSound("dig.wood", spot);
+    face(ai, center(spot));
+    for (let i = 0; i < 3; i++) system.runTimeout(() => ai.isValid && ai.playAnimation("animation.aip.ai_player.mine"), i * 8);
+    system.runTimeout(() => {
+      try {
+        if (dim.getBlock(spot)?.typeId === "minecraft:crafting_table") {
+          dim.setBlockType(spot, "minecraft:air"); // picked back up
+          dim.playSound("dig.wood", spot);
+        }
+      } catch {
+        // unloaded
+      }
+    }, TABLE_TICKS);
+    return;
+  }
 }
 
 /**
@@ -383,7 +423,7 @@ export function craftTool(record, ownerId, kind, state) {
  * @param {import("./data.js").AiRecord} record
  */
 export function jobToolSlot(record) {
-  const kind = record.focus === "Trees" ? "axe" : record.focus === "Caves" || record.focus === "Strip mine" ? "pickaxe" : undefined;
+  const kind = record.focus === "Trees" ? "axe" : record.focus === "Caves" || record.focus === "Strip mine" ? "pickaxe" : record.focus === FARM_FOCUS ? "shovel" : undefined;
   if (!kind) return undefined;
   return inventoryOf(record).tools.findIndex((t) => t && new RegExp(`_${kind}$`).test(t.id));
 }

@@ -122,11 +122,14 @@ The AI never asks you to fill its inventory (except a pickaxe for mining, see be
 just fights in melee. Tools and blocks you give it are still used first (tools make it faster).
 Drop a tool it can use within 10 blocks of it and it picks it up into a free tool slot.
 
-**Tools for its jobs:** on *Trees* it always uses an axe. With no axe it chops by hand until it has 2 logs, then
-crafts a wooden axe. Mining (*Caves*, *Strip mine*) is done **only with a pickaxe**: with no pickaxe it crafts a
-stone pickaxe from its own cobblestone and 1 log; with no log it tells you it needs a pickaxe (every 5 minutes at
-most). Ores its pickaxe isn't strong enough for are left alone. While mining it looks only at the block it's
-mining, and while it's on any job it never looks at players.
+**Tools for its jobs:** on *Trees* it uses an axe, for mining (*Caves*, *Strip mine*) **only a pickaxe**, and for
+the sugar cane farm's sand a shovel. With no such tool it **crafts one**: it places a crafting table next to
+itself, crafts, and picks the table back up. It always has its own **10 logs and 10 cobblestone** for crafting
+(they never run out and can't be taken), so it can always make a wooden axe or a stone pickaxe. Shovels are the
+best it can make from its inventory: diamond (uses a diamond from its valuables), else iron (an iron ingot), else
+stone. With all 3 tool slots full it can't craft (for a pickaxe it tells you, at most every 5 minutes). Ores its
+pickaxe isn't strong enough for are left alone. While mining it looks only at the block it's mining, and while
+it's on any job it never looks at players.
 
 ### Reports (levels.js)
 The AI doesn't level up on its own; it only gets stronger at the Coder (see *Stages*).
