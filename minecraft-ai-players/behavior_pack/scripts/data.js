@@ -19,7 +19,7 @@ const MAX_ENEMIES = 40;
  * @property {"egg" | "thrown" | "alive" | "respawn"} state
  * @property {number} serial  Eggs with an older serial no longer work.
  * @property {string} [id]  Entity id while alive.
- * @property {"follow" | "guard" | "wander"} mode  Fighter: follow/guard. Resource AI: follow (strictly) or wander (gather).
+ * @property {"follow" | "guard" | "wander" | "stay"} mode  follow you, stay put, guard a spot (Fighter), or wander off on a job.
  * @property {boolean} [upgraded]  Resource AI: its first upgrade (stage 2). Fighter: the final netherite upgrade (stage 4).
  * @property {boolean} [evolved]  A Fighter that started as a Resource AI (stage 3+): it keeps everything the Resource AI could do.
  * @property {number} [diedAt]  When it died (it respawns 60 seconds later).

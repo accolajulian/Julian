@@ -127,7 +127,7 @@ function layout(role, evolved = false) {
         text: (r) => `${r.name} (Resource AI${r.upgraded ? "+" : ""}) - ${levelText(r)} - AI Chest: ${stashCount(r)}`,
         lore: ["§7Tools are used in order 1, 2, 3.", "§7When its valuables fill up, half goes in its", "§7AI Chest. Unlocked by the upgrade."],
       },
-      { kind: "info", text: (r) => (r.mode === "wander" ? `Wandering: ${r.focus}` : "Following you"), lore: ["§7Left click its Remote to change."] },
+      { kind: "info", text: (r) => (r.mode === "wander" ? `Working: ${r.focus}` : r.mode === "stay" ? "Staying put" : "Following you"), lore: ["§7Left click its Remote to change."] },
       waterInfo,
       { kind: "info", text: () => "Mining/harvesting tools only", lore: ["§7Pickaxes, axes, shovels, hoes, shears."] },
       // Row 2: armor, blocks, food, first valuable

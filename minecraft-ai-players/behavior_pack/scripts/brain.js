@@ -637,7 +637,7 @@ function think(ai, ownerId, role, record, brain) {
   }
 
   // ---- Guarding: go back to the guard spot if it chased something too far.
-  if (record.mode === "guard" && record.post && record.post.dim === ai.dimension.id) {
+  if ((record.mode === "guard" || record.mode === "stay") && record.post && record.post.dim === ai.dimension.id) {
     if (distance(ai.location, record.post) > GUARD_LEASH) {
       ai.teleport({ x: record.post.x, y: record.post.y, z: record.post.z });
       setHunt(brain, undefined);
@@ -708,7 +708,7 @@ function think(ai, ownerId, role, record, brain) {
 
   // ---- Bridge or pillar towards the target (or the owner it's following).
   if (!lavaClose) {
-    const followOwner = record.mode !== "guard" && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4;
+    const followOwner = record.mode === "follow" && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4;
     bridgeTowards(ai, ownerId, role, record, target?.location ?? (followOwner ? owner.location : undefined));
   }
 }
@@ -759,7 +759,8 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
   // are no trees anywhere near.
   const lockedOn = record.focus === "Trees" && !brain.gather.lost;
   const working = wandering && !stripping && (isBusy(brain.gather) || building || lockedOn);
-  const modeEvent = stripping || working ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
+  const staying = record.mode === "stay";
+  const modeEvent = stripping || working || staying ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
   if (brain.modeEvent !== modeEvent) {
     ai.triggerEvent(modeEvent);
     brain.modeEvent = modeEvent;
@@ -767,7 +768,7 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
   equip(ai, brain, record, slot ?? firstTool(record, false));
   if (safe) placeTorch(ai, ownerId, record, brain, now);
   // Not mining and its owner is away: bridge/pillar to catch up.
-  if (slot === undefined && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
+  if (slot === undefined && record.mode !== "stay" && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
     bridgeTowards(ai, ownerId, role, record, owner.location);
   }
 }

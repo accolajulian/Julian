@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.31.2)
+## What it does (v1.32.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -122,7 +122,7 @@ shown on info labels and can't be taken.
 | 2 | Helmet, Chestplate, Leggings, Boots, Blocks 1-2, Own chicken (info), Spare chicken, Valuables 1 | same |
 | 3 | Valuables 2-10 | Valuables 2-10 |
 
-**Remote menu (Fighter):** *Jobs* (if it was a Resource AI), *Follow me*, *Guard here*, *Attack a player*, *Fight settings* (Style, Targets, Loot tombstones, Teach a tombstone: tap to change), *Teleport* (to whoever uses the Remote), *AI Chest*, *Friends & enemies*, *Delete*.
+**Remote menu (Fighter):** *Jobs* (if it was a Resource AI), *Stay here* / *Follow me* (one button), *Fight* (Attack a player, Guard here, Style, Targets, Loot tombstones, Teach a tombstone), *Teleport*, *AI Chest*, *More* (Friends & enemies, Delete).
 
 | Fighting | What it does |
 |---|---|
@@ -138,7 +138,7 @@ worse pieces), a shield, better tools, arrows, blocks. Anything it can't use sta
 "grave", "tomb", "headstone" or "corpse" are found automatically; others can be taught in its menu
 (*Tombstones > Teach*, standing next to one). Looting can be turned off. **Targets:** *Mob killing and player killing*, or *Only player
 killing* (it still defends against mobs that attack, and attacks whatever you attack).
-**Remote menu (Resource AI):** *Jobs* (*Trees*, *Caves*, *Strip mine* when upgraded, *Sugar cane farm*: picking one starts it), *Follow me*, *Teleport* (to whoever uses the Remote), *AI Chest*, *Friends & enemies*, *Delete*.
+**Remote menu (Resource AI):** *Jobs* (*Trees*, *Caves*, *Strip mine* when upgraded, *Sugar cane farm*: picking one starts it), *Stay here* / *Follow me* (one button), *Teleport*, *AI Chest*, *More* (Friends & enemies, Delete).
 
 Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
 

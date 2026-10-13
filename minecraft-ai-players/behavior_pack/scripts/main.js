@@ -567,7 +567,7 @@ function becomeFighter(player, record) {
     ai.setDynamicProperty("aip:role", "fighter");
     knownAis.set(ai.id, { ownerId: record.ownerId, role: "fighter", key: record.key });
     ai.triggerEvent("aip:role_fighter");
-    if (record.mode !== "wander") ai.triggerEvent(record.mode === "guard" ? "aip:fighter_guard" : "aip:fighter_follow");
+    if (record.mode !== "wander") ai.triggerEvent(record.mode === "follow" ? "aip:fighter_follow" : "aip:fighter_guard");
     ai.dimension.playSound("random.levelup", ai.location);
   }
   toolsChanged(record.id);
@@ -1059,28 +1059,22 @@ async function showCommands(player, key) {
   }
   const ai = record.id ? world.getEntity(record.id) : undefined;
   const fighter = record.role === "fighter";
-  const now = record.mode === "wander" ? record.focus : record.mode === "guard" ? "Guarding" : "Following you";
-  const on = (/** @type {boolean} */ yes) => (yes ? "§2" : "");
+  const now = { wander: record.focus, guard: "Guarding", stay: "Staying put", follow: "Following you" }[record.mode] ?? "Following you";
   const needAi = (/** @type {(ai: import("@minecraft/server").Entity) => unknown} */ fn) => () =>
     ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far. Use Teleport first.`);
 
   /** @type {{ label: string, run: () => unknown }[]} */
   const actions = [];
   // Jobs first: a stray tap on it only opens a menu.
-  if (canGather(record)) actions.push({ label: `${on(record.mode === "wander")}Jobs`, run: () => showJobs(player, key) });
-  if (fighter) {
-    actions.push({ label: `${on(record.mode === "follow")}Follow me`, run: needAi((a) => setFighterMode(player, key, a, "follow")) });
-    actions.push({ label: `${on(record.mode === "guard")}Guard here`, run: needAi((a) => setFighterMode(player, key, a, "guard")) });
-    actions.push({ label: "Attack a player", run: needAi((a) => chooseAttackTarget(player, a)) });
-  } else {
-    actions.push({ label: `${on(record.mode !== "wander")}Follow me`, run: () => setJob(player, key, undefined) });
-  }
-  if (fighter) actions.push({ label: "Fight settings", run: () => chooseFighting(player, key) });
+  if (canGather(record)) actions.push({ label: `${record.mode === "wander" ? "§2" : ""}Jobs`, run: () => showJobs(player, key) });
+  // One button: stop following (stay here) or start following again.
+  const following = record.mode === "follow";
+  actions.push({ label: following ? "Stay here" : "Follow me", run: needAi((a) => setMode(player, key, a, following ? "stay" : "follow")) });
+  if (fighter) actions.push({ label: "Fight", run: () => showFight(player, key) });
   // (Not the first button: on touch screens the tap that opens the menu can land on the first one.)
   actions.push({ label: "Teleport", run: () => recallAi(player, key) });
   if (canGather(record)) actions.push({ label: `AI Chest${resourcePerks(record) ? "" : " §8(locked)"}`, run: () => showStash(player, key) });
-  actions.push({ label: "Friends & enemies", run: () => showMemory(player) });
-  actions.push({ label: "§cDelete", run: () => deleteAi(player, key) });
+  actions.push({ label: "More", run: () => showMore(player, key) });
 
   const form = new ActionFormData()
     .title(`${record.name} · ${STAGE_NAMES[stageOf(record)]}`)
@@ -1115,7 +1109,7 @@ function setJob(player, key, job) {
   } else {
     r.mode = "follow";
     const ai = r.id ? world.getEntity(r.id) : undefined;
-    if (r.role === "fighter") ai?.triggerEvent("aip:fighter_follow");
+    ai?.triggerEvent(r.role === "fighter" ? "aip:fighter_follow" : "aip:resource_follow");
   }
   saveRecord(player.id, r.role, r);
   toolsChanged(r.id);
@@ -1249,32 +1243,52 @@ async function chooseAttackTarget(player, ai) {
 }
 
 /**
- * Fight settings, on one screen. Tapping a setting switches it to the next option.
+ * Fight: everything about fighting on one screen. Settings switch to the next option when tapped.
  * @param {import("@minecraft/server").Player} player @param {string} key
  */
-async function chooseFighting(player, key) {
+async function showFight(player, key) {
   for (;;) {
     const record = mine(player, key);
     if (!record) return;
+    const ai = record.id ? world.getEntity(record.id) : undefined;
     const styleIndex = Math.max(0, COMBAT_STYLES.findIndex((c) => c.id === (record.combat ?? "archer_sword")));
     const targetIndex = Math.max(0, TARGET_MODES.findIndex((t) => t.id === (record.targets ?? "all")));
     const response = await new ActionFormData()
-      .title("Fight settings")
-      .body("§7Tap to change.")
+      .title("Fight")
+      .button("Attack a player")
+      .button(`${record.mode === "guard" ? "§2" : ""}Guard here`)
       .button(`Style: §2${COMBAT_STYLES[styleIndex].label}`)
       .button(`Targets: §2${TARGET_MODES[targetIndex].label}`)
       .button(`Loot tombstones: §2${record.loot === false ? "Off" : "On"}`)
       .button("Teach a tombstone")
-      .button("Done")
       .show(player);
-    if (response.canceled || response.selection === undefined || response.selection === 4) return;
-    if (response.selection === 3) return teachTomb(player);
-    if (response.selection === 0) record.combat = COMBAT_STYLES[(styleIndex + 1) % COMBAT_STYLES.length].id;
-    if (response.selection === 1) record.targets = TARGET_MODES[(targetIndex + 1) % TARGET_MODES.length].id;
-    if (response.selection === 2) record.loot = record.loot === false;
+    if (response.canceled || response.selection === undefined) return;
+    const pick = response.selection;
+    if (pick <= 1 && !ai?.isValid) {
+      player.sendMessage(`§e${record.name} is too far. Use Teleport first.`);
+      return;
+    }
+    if (pick === 0 && ai) return chooseAttackTarget(player, ai);
+    if (pick === 1 && ai) return setMode(player, key, ai, "guard");
+    if (pick === 5) return teachTomb(player);
+    if (pick === 2) record.combat = COMBAT_STYLES[(styleIndex + 1) % COMBAT_STYLES.length].id;
+    if (pick === 3) record.targets = TARGET_MODES[(targetIndex + 1) % TARGET_MODES.length].id;
+    if (pick === 4) record.loot = record.loot === false;
     saveRecord(player.id, "fighter", record);
     toolsChanged(record.id);
   }
+}
+
+/**
+ * More: the things you rarely need.
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+async function showMore(player, key) {
+  const record = mine(player, key);
+  if (!record) return;
+  const response = await new ActionFormData().title("More").button("Friends & enemies").button("§cDelete").show(player);
+  if (response.selection === 0) return showMemory(player);
+  if (response.selection === 1) return deleteAi(player, key);
 }
 
 /**
@@ -1301,24 +1315,27 @@ async function teachTomb(player) {
 }
 
 /**
+ * Follow you, stay where it is, or (Fighter) guard this spot.
  * @param {import("@minecraft/server").Player} player
  * @param {string} key
  * @param {import("@minecraft/server").Entity} ai
- * @param {"follow" | "guard"} mode
+ * @param {"follow" | "stay" | "guard"} mode
  */
-function setFighterMode(player, key, ai, mode) {
+function setMode(player, key, ai, mode) {
   const record = mine(player, key);
   if (!record) return;
   record.mode = mode;
-  if (mode === "guard") {
-    record.post = { x: ai.location.x, y: ai.location.y, z: ai.location.z, dim: ai.dimension.id };
-    ai.triggerEvent("aip:fighter_guard");
-  } else {
+  const fighter = record.role === "fighter";
+  if (mode === "follow") {
     delete record.post;
-    ai.triggerEvent("aip:fighter_follow");
+    ai.triggerEvent(fighter ? "aip:fighter_follow" : "aip:resource_follow");
+  } else {
+    record.post = { x: ai.location.x, y: ai.location.y, z: ai.location.z, dim: ai.dimension.id };
+    ai.triggerEvent(fighter ? "aip:fighter_guard" : "aip:resource_stay");
   }
-  player.sendMessage(`§e${record.name}: ${mode === "guard" ? "guarding here" : "following you"}`);
-  saveRecord(player.id, "fighter", record);
+  player.sendMessage(`§e${record.name}: ${{ follow: "following you", stay: "staying here", guard: "guarding here" }[mode]}`);
+  saveRecord(player.id, record.role, record);
+  toolsChanged(record.id);
 }
 
 // ================================================================ items
