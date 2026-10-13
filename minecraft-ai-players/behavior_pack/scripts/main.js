@@ -1073,10 +1073,10 @@ async function showCommands(player, key) {
   const now = record.mode === "wander" ? record.focus : record.mode === "guard" ? "Guarding" : "Following you";
   const on = (/** @type {boolean} */ yes) => (yes ? "§2" : "");
   const needAi = (/** @type {(ai: import("@minecraft/server").Entity) => unknown} */ fn) => () =>
-    ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far. Use Come here first.`);
+    ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far. Use Teleport first.`);
 
   /** @type {{ label: string, run: () => unknown }[]} */
-  const actions = [{ label: "Come here", run: () => recallAi(player, key) }];
+  const actions = [{ label: "Teleport", run: () => recallAi(player, key) }];
   if (fighter) {
     actions.push({ label: `${on(record.mode === "follow")}Follow me`, run: needAi((a) => setFighterMode(player, key, a, "follow")) });
     actions.push({ label: `${on(record.mode === "guard")}Guard here`, run: needAi((a) => setFighterMode(player, key, a, "guard")) });
