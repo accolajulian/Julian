@@ -5,7 +5,7 @@
 import { world, system, ItemStack } from "@minecraft/server";
 import { ActionFormData } from "@minecraft/server-ui";
 import { getAi, controlledBy, giveItem, takeOneFromHand } from "./data.js";
-import { sync, syncEmpty } from "./container.js";
+import { sync, syncEmpty, syncStash } from "./container.js";
 
 export const CHEST_ENTITY = "aip:computer_chest";
 const CHEST_ITEM = "aip:computer_chest";
@@ -51,8 +51,15 @@ async function chestMenu(player, chest) {
   open.add(player.id);
   try {
     const upgraded = controlledBy(player.id).filter((r) => r.upgraded);
+    // Each upgraded AI's inventory, plus each upgraded Resource AI's AI Chest.
+    /** @type {{ view: string, name: string, about: string }[]} */
+    const views = [];
+    for (const r of upgraded) {
+      views.push({ view: r.key, name: `${r.name}'s inventory`, about: r.role === "fighter" ? "Fighter AI" : "Resource AI" });
+      if (r.role === "resource") views.push({ view: `stash:${r.key}`, name: `${r.name}'s AI Chest`, about: "Saved-up valuables" });
+    }
     const showing = chest.getDynamicProperty("aip:view");
-    const current = typeof showing === "string" ? getAi(showing) : undefined;
+    const current = typeof showing === "string" ? views.find((v) => v.view === showing) : undefined;
     const form = new ActionFormData()
       .title("Computer Chest")
       .body(
@@ -61,13 +68,13 @@ async function chestMenu(player, chest) {
             ? "Choose an upgraded AI, then right click the chest to open its inventory."
             : "§cYou don't control any upgraded AIs yet.§r Upgrade one at the Coder.")
       );
-    upgraded.forEach((r) => form.button(`${r.name}\n§8${r.role === "fighter" ? "Fighter AI" : "Resource AI"}`));
+    views.forEach((v) => form.button(`${v.name}\n§8${v.about}`));
     form.button("§cPick up the chest");
     const response = await form.show(player);
     if (response.canceled || response.selection === undefined || !chest.isValid) return;
-    if (response.selection < upgraded.length) {
-      chest.setDynamicProperty("aip:view", upgraded[response.selection].key);
-      player.sendMessage(`§aThe Computer Chest now shows ${upgraded[response.selection].name}'s inventory.`);
+    if (response.selection < views.length) {
+      chest.setDynamicProperty("aip:view", views[response.selection].view);
+      player.sendMessage(`§aThe Computer Chest now shows ${views[response.selection].name}.`);
     } else {
       chest.remove();
       giveItem(player, new ItemStack(CHEST_ITEM, 1));
@@ -83,10 +90,14 @@ system.runInterval(() => {
     for (const chest of world.getDimension(dimensionId).getEntities({ type: CHEST_ENTITY })) {
       const ownerId = chest.getDynamicProperty("aip:owner");
       if (typeof ownerId !== "string") continue;
-      const key = chest.getDynamicProperty("aip:view");
-      const record = typeof key === "string" ? getAi(key) : undefined;
+      const view = chest.getDynamicProperty("aip:view");
+      const stash = typeof view === "string" && view.startsWith("stash:");
+      const key = typeof view === "string" ? view.replace(/^stash:/, "") : undefined;
+      const record = key ? getAi(key) : undefined;
       try {
-        if (record && record.upgraded && record.ownerId === ownerId) {
+        if (stash && record && record.upgraded && record.ownerId === ownerId) {
+          syncStash(chest, ownerId, record.key);
+        } else if (record && record.upgraded && record.ownerId === ownerId) {
           sync(chest, ownerId, record.role, record.key);
         } else {
           syncEmpty(chest, ownerId, record ? `${record.name} isn't yours or isn't upgraded` : "No AI chosen");

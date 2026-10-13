@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.16.0)
+## What it does (v1.17.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -108,6 +108,7 @@ from its block slots and tells you when it runs out.
   lapis and copper; iron for gold, redstone, diamonds and emeralds; diamond for ancient debris). Logs can be
   chopped by hand, slower. Mining takes as long as it would for a player (Efficiency counts).
 - **Trees:** chops whole trees (see below). **Caves:** finds ores in caves and ravines and mines them, placing a torch about every 10 blocks.
+- **AI Chest:** it always carries its own AI Chest (never placed). Whenever its 10 valuables slots fill up, half of each slot goes into the AI Chest (27 slots), like a starting-out tax. It's locked until the AI is upgraded at the Coder, so by then there's usually a lot saved up. Once upgraded: left click the AI → *AI Chest* → *Take everything*, or pick *<name>'s AI Chest* on a Computer Chest and take items out. Deleting a not-yet-upgraded AI loses what's in its locked AI Chest.
 - Carries an infinite water bucket (shown in its inventory, can't be taken). To get down into a ravine it pours water over the edge and swims down; to get back up a wall it pours water above itself and swims up. It scoops the water back up afterwards. (Not in the Nether.)
 - Only chops real trees (logs with leaves above), so it won't take apart log houses.
 - Chops trees like a player: it walks up to the trunk, stands still and chops the bottom 2 logs, steps into that gap (breaking dirt or leaves in the way), chops the rest of the tree it can reach from there, then moves on to the next tree. It really walks (with gravity and leg movement), and stands still while working instead of strolling around.

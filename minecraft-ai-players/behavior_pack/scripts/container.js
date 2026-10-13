@@ -29,6 +29,7 @@ import {
   TORCH_STACK,
   isPlaceableBlock,
   isValuable,
+  stashCount,
 } from "./inventory.js";
 
 const SYNC_TICKS = 5;
@@ -92,7 +93,11 @@ function layout(role) {
         text: (r) => `Torches: ${inventoryOf(r).torches}/${TORCH_STACK} (its own)`,
         lore: ["§7It places one about every 10 blocks underground.", "§7They refill and can't be taken."],
       },
-      { kind: "info", text: (r) => `${r.name} (Resource AI)${r.upgraded ? " - Upgraded" : ""}`, lore: ["§7Tools are used in order 1, 2, 3."] },
+      {
+        kind: "info",
+        text: (r) => `${r.name} (Resource AI)${r.upgraded ? " - Upgraded" : ""} - AI Chest: ${stashCount(r)}`,
+        lore: ["§7Tools are used in order 1, 2, 3.", "§7When its valuables fill up, half goes in its", "§7AI Chest. Unlocked by the upgrade."],
+      },
       { kind: "info", text: (r) => (r.mode === "wander" ? `Wandering: ${r.focus}` : "Following you"), lore: ["§7Left click it to change."] },
       {
         kind: "info",
@@ -245,6 +250,7 @@ const snapshots = new Map();
  * @param {string} key
  */
 export function sync(ai, ownerId, role, key) {
+  stashSnapshots.delete(ai.id);
   const container = ai.getComponent("minecraft:inventory")?.container;
   let record = getAi(key);
   if (!container || !record) return;
@@ -315,6 +321,7 @@ export function syncEmpty(chest, ownerId, message) {
   const container = chest.getComponent("minecraft:inventory")?.container;
   if (!container) return;
   snapshots.delete(chest.id);
+  stashSnapshots.delete(chest.id);
   const owner = findPlayer(ownerId);
   for (let i = 0; i < container.size; i++) {
     const item = container.getItem(i);
@@ -326,6 +333,66 @@ export function syncEmpty(chest, ownerId, message) {
       container.setItem(i, label("info", message, ["§7Left click the chest to choose an upgraded AI."]));
     }
   }
+}
+
+/** What each Computer Chest showing an AI Chest looked like last time. @type {Map<string, string[]>} */
+const stashSnapshots = new Map();
+
+/**
+ * Shows an upgraded Resource AI's AI Chest in a Computer Chest. Items can be taken out, not put in.
+ * @param {import("@minecraft/server").Entity} chest
+ * @param {string} ownerId
+ * @param {string} key
+ */
+export function syncStash(chest, ownerId, key) {
+  const container = chest.getComponent("minecraft:inventory")?.container;
+  const record = getAi(key);
+  if (!container || !record) return;
+  snapshots.delete(chest.id);
+  const stash = inventoryOf(record).stash;
+  const snap = stashSnapshots.get(chest.id);
+  const owner = findPlayer(ownerId);
+  const giveBack = (/** @type {ItemStack} */ item) => {
+    if (owner) giveItem(owner, item);
+    else chest.dimension.spawnItem(item, chest.location);
+  };
+
+  if (snap) {
+    let changed = false;
+    for (let i = 0; i < Math.min(container.size, stash.length); i++) {
+      const item = container.getItem(i);
+      if (signature(item) === snap[i]) continue;
+      const had = stash[i];
+      changed = true;
+      if (!item || LABEL_ITEMS.has(item.typeId)) {
+        stash[i] = null; // taken out
+      } else if (had && item.typeId === had.id && item.amount <= had.count) {
+        had.count = item.amount; // some taken out
+      } else if (had && item.typeId === had.id) {
+        const extra = item.clone();
+        extra.amount = item.amount - had.count;
+        giveBack(extra); // nothing can be added
+      } else {
+        // Something put in: hand it back. (Swapping means the old item was taken.)
+        giveBack(item);
+        stash[i] = null;
+        owner?.sendMessage("§cYou can only take things out of the AI Chest.");
+      }
+    }
+    if (changed) saveRecord(ownerId, "resource", record);
+  }
+
+  /** @type {ItemStack[]} */
+  const want = [];
+  for (let i = 0; i < container.size; i++) {
+    const s = stash[i];
+    want.push(s ? new ItemStack(s.id, s.count) : label("valuables", "AI Chest (empty)", ["§7Half its valuables go here when they fill up."]));
+  }
+  const wantSig = want.map(signature);
+  wantSig.forEach((sig, i) => {
+    if (sig !== signature(container.getItem(i))) container.setItem(i, want[i]);
+  });
+  stashSnapshots.set(chest.id, wantSig);
 }
 
 /** @param {Slot} s @param {import("./data.js").RoleId} role */

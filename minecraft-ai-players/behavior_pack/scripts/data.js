@@ -37,6 +37,7 @@ const MAX_ENEMIES = 40;
  *   Resource AI: sword slot and bow slot (bow or crossbow).
  * @property {number} [torches]  Resource AI: torches (refill to a stack when the last is placed).
  * @property {boolean} [loot]  Fighter: break tombstones and take the loot (default on).
+ * @property {({ id: string, count: number } | null)[]} [stash]  Resource AI: its AI Chest (unlocked by the upgrade).
  */
 /**
  * @typedef {Object} Memory  Saved per owner, shared by both of their AIs. Survives death.

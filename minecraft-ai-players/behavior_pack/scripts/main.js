@@ -44,6 +44,9 @@ import {
   stackFromTool,
   totalArrows,
   ARMOR_SLOTS,
+  stashTotals,
+  stashCount,
+  itemName,
 } from "./inventory.js";
 import { tombTypes, getTaught, setTaught, addOnThingsNear } from "./tombs.js";
 import { FOCUSES } from "./gather_data.js";
@@ -516,7 +519,9 @@ async function upgradeAi(player, key) {
   toolsChanged(latest.id);
   player.sendMessage(
     `§b${latest.name} is upgraded!` +
-      (latest.role === "resource" ? " §fLeft click it and pick Strip mine." : " §fIts inventory now works with a Computer Chest.")
+      (latest.role === "resource"
+        ? ` §fLeft click it and pick Strip mine. §6Its AI Chest is unlocked: ${stashCount(latest)} items saved up!`
+        : " §fIts inventory now works with a Computer Chest.")
   );
 }
 
@@ -785,6 +790,9 @@ async function deleteAi(player, key) {
     .title(`Delete ${record.name}?`)
     .body(
       `${record.name} and its recall robot will be gone for good. You get back everything it carries.\n\n` +
+        (record.role === "resource" && !record.upgraded && stashCount(record) > 0
+          ? `§6Its AI Chest is still locked, so the ${stashCount(record)} items in it are lost.§r\n\n`
+          : "") +
         `§cThere's no refund, and whoever bought it can't buy another ${ROLES[role].title} (one per player).`
     )
     .button1("Delete")
@@ -1000,6 +1008,11 @@ async function showCommands(player, key) {
     actions.push({ label: `${wandering ? "§2" : ""}Wander and gather\n§8Goes off to get the resource below`, run: setResource({ mode: "wander" }) });
     const resources = RESOURCE_FOCUS.filter((f) => f !== "Nothing");
     if (record.upgraded) resources.push("Strip mine");
+    const saved = stashCount(record);
+    actions.push({
+      label: `AI Chest\n§8${saved} items${record.upgraded ? "" : " - locked until upgraded"}`,
+      run: () => showStash(player, key),
+    });
     for (const focus of resources) {
       const about = focus === "Strip mine"
         ? `\n§8Tunnels to ${ai?.dimension.id === "minecraft:nether" ? "netherite" : "diamonds"}`
@@ -1220,11 +1233,48 @@ function returnEverything(player, record) {
   for (const piece of [...ARMOR_SLOTS.map((slot) => inv.armor[slot]), inv.shield]) if (piece) giveItem(player, stackFromTool(piece));
   for (const b of inv.blocks) if (b) giveStacks(player, b.id, b.count);
   for (const v of inv.valuables) if (v) giveStacks(player, v.id, v.count);
+  if (record.upgraded) for (const s of inv.stash) if (s) giveStacks(player, s.id, s.count); // AI Chest (unlocked)
   for (const arm of [inv.arms.sword, inv.arms.bow]) if (arm) giveItem(player, stackFromTool(arm));
   for (const [id, n] of Object.entries(inv.bag)) if (n > 0) giveStacks(player, id, n);
   giveArrows(player, totalArrows(record));
   const food = takeableFood(record);
   if (food > 0) giveItem(player, new ItemStack(FOOD_ITEM, food));
+}
+
+// ================================================================ AI Chest (Resource AI)
+
+/**
+ * The Resource AI's AI Chest: half its valuables go in whenever they fill up. Locked until upgraded,
+ * then everything can be taken (here, or from a Computer Chest).
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+async function showStash(player, key) {
+  const record = mine(player, key);
+  if (!record) return;
+  const lines = Object.entries(stashTotals(record))
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, n]) => `${n} ${itemName(id)}`);
+  const contents = lines.length ? lines.join("\n") : "§7Nothing yet.";
+  const about = "Whenever its valuables slots fill up, it puts half of them in here.";
+  const form = new ActionFormData().title(`${record.name}'s AI Chest`);
+  if (!record.upgraded) {
+    form.body(`${about}\n\n§6Locked.§r Upgrade ${record.name} at the Coder to unlock it.\n\n§eSaved up so far:§r\n${contents}`);
+    form.button("OK");
+    await form.show(player);
+    return;
+  }
+  form.body(`${about}\n\n§eInside:§r\n${contents}\n\n§7You can also open it from a Computer Chest.`);
+  form.button("Take everything");
+  form.button("Back");
+  const response = await form.show(player);
+  if (response.selection !== 0) return;
+  const latest = mine(player, key);
+  if (!latest || !latest.upgraded) return;
+  const stash = inventoryOf(latest).stash;
+  for (const s of stash) if (s) giveStacks(player, s.id, s.count);
+  stash.fill(null);
+  saveRecord(player.id, latest.role, latest);
+  player.sendMessage(`§aYou took everything from ${latest.name}'s AI Chest.`);
 }
 
 // ================================================================ allies & enemies

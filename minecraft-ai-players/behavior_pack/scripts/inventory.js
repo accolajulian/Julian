@@ -22,6 +22,7 @@ export const SWORD_SLOT = 3;
 export const BOW_SLOT = 4;
 export const VALUABLE_SLOTS = 10;
 export const VALUABLE_SLOT_MAX = 64;
+export const STASH_SLOTS = 27; // the Resource AI's AI Chest (a chest's worth of slots)
 
 /** Higher-value items for the 10 valuables slots. */
 export const VALUABLES = new Set(
@@ -143,6 +144,7 @@ export function toolKind(role) {
  * @property {({ id: string, count: number } | null)[]} valuables
  * @property {{ sword: ToolData | null, bow: ToolData | null }} arms  Resource AI: sword and bow/crossbow slots.
  * @property {number} torches  Resource AI: its own torches (refills itself; players can't take them).
+ * @property {({ id: string, count: number } | null)[]} stash  Resource AI: its AI Chest. Locked until upgraded.
  */
 
 /**
@@ -164,6 +166,9 @@ export function inventoryOf(record) {
   if (typeof record.torches !== "number") record.torches = TORCH_STACK;
   if (!Array.isArray(record.valuables) || record.valuables.length !== VALUABLE_SLOTS) {
     record.valuables = Array.from({ length: VALUABLE_SLOTS }, (_, i) => record.valuables?.[i] ?? null);
+  }
+  if (!Array.isArray(record.stash) || record.stash.length !== STASH_SLOTS) {
+    record.stash = Array.from({ length: STASH_SLOTS }, (_, i) => record.stash?.[i] ?? null);
   }
   return /** @type {Inventory} */ (record);
 }
@@ -500,7 +505,48 @@ export function isValuable(id) {
  */
 export function addValuables(record, id, amount) {
   if (!isValuable(id)) return 0;
-  return addStacked(inventoryOf(record).valuables, id, amount, VALUABLE_SLOT_MAX);
+  const inv = inventoryOf(record);
+  let added = addStacked(inv.valuables, id, amount, VALUABLE_SLOT_MAX);
+  // A Resource AI whose valuables are full puts half of everything in its AI Chest, then has room again.
+  if (added < amount && record.role === "resource" && payIntoStash(record) > 0) {
+    added += addStacked(inv.valuables, id, amount - added, VALUABLE_SLOT_MAX);
+  }
+  return added;
+}
+
+// ---------------------------------------------------------------- AI Chest (Resource AI)
+// It always carries its AI Chest (never placed). Whenever its valuables slots are full, half of each
+// slot goes into the AI Chest, like a starting-out tax. It's locked until the AI is upgraded at the Coder,
+// so by then there's usually a good amount saved up.
+
+/**
+ * Moves half of each valuables slot into the AI Chest. Returns how many items moved.
+ * @param {import("./data.js").AiRecord} record
+ */
+export function payIntoStash(record) {
+  const inv = inventoryOf(record);
+  let moved = 0;
+  inv.valuables.forEach((v, i) => {
+    if (!v) return;
+    const fit = addStacked(inv.stash, v.id, Math.floor(v.count / 2), VALUABLE_SLOT_MAX);
+    v.count -= fit;
+    moved += fit;
+    if (v.count <= 0) inv.valuables[i] = null;
+  });
+  return moved;
+}
+
+/** Items in the AI Chest, by item id. @param {import("./data.js").AiRecord} record */
+export function stashTotals(record) {
+  /** @type {Record<string, number>} */
+  const totals = {};
+  for (const s of inventoryOf(record).stash) if (s) totals[s.id] = (totals[s.id] ?? 0) + s.count;
+  return totals;
+}
+
+/** @param {import("./data.js").AiRecord} record */
+export function stashCount(record) {
+  return inventoryOf(record).stash.reduce((sum, s) => sum + (s?.count ?? 0), 0);
 }
 
 /** @param {import("./data.js").AiRecord} record */
