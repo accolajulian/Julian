@@ -124,9 +124,22 @@ export function itemName(id) {
   return id.replace("minecraft:", "").replace(/_/g, " ");
 }
 
-/** @param {RoleId} role */
-export function toolKind(role) {
-  return role === "fighter" ? "fighting tool (sword, axe, trident, mace, bow or crossbow)" : "harvesting or mining tool (pickaxe, axe, shovel, hoe or shears)";
+/** Every tool a Fighter that was a Resource AI may hold (it fights and gathers). */
+const BOTH_TOOLS = new Set([...ALLOWED_TOOLS.fighter, ...ALLOWED_TOOLS.resource]);
+
+/**
+ * Which tools this AI's tool slots take.
+ * @param {import("./data.js").AiRecord} record
+ */
+export function toolsFor(record) {
+  if (record.role === "fighter" && record.evolved) return BOTH_TOOLS;
+  return ALLOWED_TOOLS[record.role];
+}
+
+/** @param {import("./data.js").AiRecord} record */
+export function toolKind(record) {
+  if (record.role === "fighter" && record.evolved) return "fighting, mining or harvesting tool";
+  return record.role === "fighter" ? "fighting tool (sword, axe, trident, mace, bow or crossbow)" : "harvesting or mining tool (pickaxe, axe, shovel, hoe or shears)";
 }
 
 // ---------------------------------------------------------------- record setup
@@ -508,7 +521,7 @@ export function addValuables(record, id, amount) {
   const inv = inventoryOf(record);
   let added = addStacked(inv.valuables, id, amount, VALUABLE_SLOT_MAX);
   // A Resource AI whose valuables are full puts half of everything in its AI Chest, then has room again.
-  if (added < amount && record.role === "resource" && payIntoStash(record) > 0) {
+  if (added < amount && (record.role === "resource" || record.evolved) && payIntoStash(record) > 0) {
     added += addStacked(inv.valuables, id, amount - added, VALUABLE_SLOT_MAX);
   }
   return added;

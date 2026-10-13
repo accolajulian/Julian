@@ -18,7 +18,6 @@ import {
   newKey,
   allAis,
   controlledBy,
-  hasBought,
   markBought,
   getMemory,
   saveMemory,
@@ -28,7 +27,12 @@ import {
   countItem,
   takeItem,
   giveItem,
+  stageOf,
+  canGather,
+  resourcePerks,
+  hasBoughtAny,
 } from "./data.js";
+import { releaseLoaded } from "./scout.js";
 import { commandAttack, toolsChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
 import "./chest.js"; // Computer Chest (upgraded AIs' inventories from anywhere)
@@ -60,31 +64,53 @@ const MAX_NAME_LENGTH = 20;
 const RESPAWN_SECONDS = 60;
 const START_FOOD = 10; // cooked chicken every AI comes with (it eats them to heal itself)
 
-/** Upgrades at the Coder. */
-/** @type {Record<RoleId, { item: string, amount: number, label: string, about: string }>} */
-const UPGRADES = {
-  resource: {
+/** What each stage is called (see data.js stageOf). */
+/** @type {Record<number, string>} */
+const STAGE_NAMES = { 1: "Resource AI", 2: "Resource AI+", 3: "Fighter AI", 4: "Fighter AI Max" };
+
+/** The level-ups at the Coder: from stage 1 to 2, 2 to 3 (becomes a Fighter), and 3 to 4. */
+/** @type {Record<number, { item: string, amount: number, label: string, title: string, about: string }>} */
+const LEVEL_UPS = {
+  1: {
     item: "minecraft:diamond",
     amount: 10,
     label: "Diamonds",
+    title: "Level up to Resource AI+",
     about:
       "§a+§r Strip mining: it digs a tunnel straight to diamonds (or netherite in the Nether) and mines them\n" +
       "§a+§r Can't be hurt by lava or fire (no potion bubbles), and takes no fall damage\n" +
+      "§a+§r Its AI Chest unlocks (everything it saved up is yours)\n" +
       "§a+§r Its inventory can be opened from a Computer Chest",
   },
-  fighter: {
+  2: {
+    item: "minecraft:diamond",
+    amount: 15,
+    label: "Diamonds",
+    title: "Become a Fighter AI",
+    about:
+      "It becomes a Fighter and §ekeeps everything it could do§r: gathering, sugar cane farms, strip mining,\n" +
+      "its AI Chest, torches, water bucket, lava/fire/fall proof.\n\n" +
+      "§a+§r Follows and protects you from mobs and players, most dangerous enemy first\n" +
+      "§a+§r Attacks whatever you attack, or any player you send it after\n" +
+      "§a+§r Fighting: Sword Combat, Bow Only (25 blocks, aims ahead), or Bow and Sword Combat\n" +
+      "§a+§r Hunts mobs and players, or only players; can guard a spot\n" +
+      "§a+§r Arrow slots; its tool slots take weapons and mining tools\n" +
+      "§a+§r Breaks tombstones and takes the most valuable loot\n" +
+      "§a+§r While it's gathering it still drops everything to fight any enemy that shows up\n" +
+      "§a+§r Gets a red recall robot",
+  },
+  3: {
     item: "minecraft:netherite_ingot",
     amount: 10,
     label: "Netherite Ingots",
+    title: "Final upgrade: Fighter AI Max",
     about:
       "When an enemy player comes within 30 blocks, once each time they come back into range:\n" +
       "§a+§r Full sprint: runs and jumps 1.5x faster than a player until it lands its first hit\n" +
       "§a+§r That first hit knocks the player back about 7 blocks\n" +
       "§a+§r Power jump: jumps about 10 blocks to reach a player more than 2 blocks above it, swinging all\n" +
       "   the way up (no fall damage for 5 seconds after)\n" +
-      "§a+§r Bow and Sword Combat: 2 opening arrows at 3x speed instead of 1\n" +
-      "§a+§r Can't be hurt by lava or fire (no potion bubbles)\n" +
-      "§a+§r Its inventory can be opened from a Computer Chest",
+      "§a+§r Bow and Sword Combat: 2 opening arrows at 3x speed instead of 1",
   },
 };
 
@@ -111,7 +137,8 @@ const ROLES = {
       "§a+§r Makes 10 cooked chicken every 10 minutes (up to 30) for you to take; eats its own to heal\n" +
       "§a+§r Runs away from players who attack it\n" +
       "§a+§r Respawns near the player who bought it 60 seconds after dying\n" +
-      "§a+§r Upgrade it at the Coder (10 diamonds): strip mines to diamonds/netherite, lava and fall proof\n\n" +
+      "§a+§r Level it up at the Coder: §b10 diamonds§r (strip mining, lava/fall proof, AI Chest), then\n" +
+      "   §b15 diamonds§r to become a Fighter that keeps all of this, then §b10 netherite§r for its final upgrade\n\n" +
       "§7Health: 20 (same as a player)",
   },
   fighter: {
@@ -180,10 +207,13 @@ const GUIDE_TEXT =
   "  Iron  -  Redstone  -  Iron\n" +
   "  Iron  -  Iron  -  Iron\n" +
   "§7(Iron = Iron Ingot)§r\n\n" +
-  "§lStep 2: Buy an AI at the Coder§r\n" +
-  `- Resource AI: §6${ROLES.resource.price.amount} ${ROLES.resource.price.label}§r\n` +
-  `- Fighter AI: §b${ROLES.fighter.price.amount} ${ROLES.fighter.price.label}§r\n` +
-  "Each player can only buy one of each. You type its name; it starts with full health and 10 cooked chicken. " +
+  "§lStep 2: Buy your AI at the Coder§r\n" +
+  `Resource AI: §6${ROLES.resource.price.amount} ${ROLES.resource.price.label}§r. Each player can only buy ONE AI, ever.\n` +
+  "Then level it up at the Coder:\n" +
+  "  §b10 Diamonds§r: Resource AI+ (strip mining, lava/fall proof, AI Chest unlocked)\n" +
+  "  §b15 Diamonds§r: becomes a Fighter AI and keeps everything it could do\n" +
+  "  §b10 Netherite Ingots§r: Fighter AI Max (sprint, power jump, knockback, double arrows)\n" +
+  "You type its name; it starts with full health and 10 cooked chicken. " +
   "Give your recall robot to a friend (drop it) and they control your AI; it doesn't let anyone buy extra.\n\n" +
   "§lStep 3: Throw the egg§r\n" +
   "You get an AI Egg. Use it to throw it, and your AI appears where it lands. The egg turns into a " +
@@ -268,13 +298,17 @@ async function showGuide(player) {
  * @param {import("@minecraft/server").Player} player
  */
 async function showComputer(player) {
-  const prices = ROLE_IDS.map((role) => {
-    const { title, price } = ROLES[role];
-    if (hasBought(player.id, role)) return `- ${title}: §7you already bought one§r`;
+  const priceLine = (/** @type {string} */ title, /** @type {{ item: string, amount: number, label: string }} */ price) => {
     const have = countItem(player, price.item);
-    const color = have >= price.amount ? "§a" : "§c";
-    return `- ${title}: ${color}${price.amount} ${price.label}§r §7(you have ${have})§r`;
-  });
+    return `- ${title}: ${have >= price.amount ? "§a" : "§c"}${price.amount} ${price.label}§r §7(you have ${have})§r`;
+  };
+  const mineAis = controlledBy(player.id);
+  const prices = [
+    hasBoughtAny(player.id)
+      ? `- Your AI: ${mineAis.length ? mineAis.map((r) => `§e${r.name}§r (${STAGE_NAMES[stageOf(r)]})`).join(", ") : "§7already bought§r"}`
+      : priceLine("Buy a Resource AI", ROLES.resource.price),
+    ...[1, 2, 3].map((stage) => priceLine(LEVEL_UPS[stage].title, LEVEL_UPS[stage])),
+  ];
   const response = await new ActionFormData()
     .title("AI Computer")
     .body(
@@ -285,9 +319,9 @@ async function showComputer(player) {
         "  Iron Ingot  -  Iron Ingot  -  Iron Ingot\n\n" +
         "§lPlace the Coder and tap it to buy an AI§r\n" +
         prices.join("\n") +
-        "\n\n§lUpgrades§r (at the Coder): Resource AI §b10 Diamonds§r, Fighter AI §b10 Netherite Ingots§r\n" +
+        "\n\n" +
         "§lComputer Chest§r: chest + redstone + glass pane. Opens your upgraded AIs' inventories from anywhere.\n\n" +
-        "§7Each player can only buy one of each AI. If someone gives you their recall robot, you control their AI too."
+        "§7Each player can only buy one AI. If someone gives you their recall robot, you control their AI too."
     )
     .button("More help")
     .button("Close")
@@ -314,39 +348,37 @@ world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
 
 /** @param {import("@minecraft/server").Player} player */
 async function showCoder(player) {
-  const form = new ActionFormData().title("Coder").body("Tap an AI to see what it does and what it costs.\n§7Each player can only buy one of each.");
-  for (const role of ROLE_IDS) {
-    const info = ROLES[role];
-    const controlled = controlledBy(player.id, role);
+  const owned = controlledBy(player.id);
+  const form = new ActionFormData().title("Coder");
+  /** @type {(() => Promise<unknown> | unknown)[]} */
+  const runs = [];
+  if (owned.length) {
+    form.body("Tap your AI to level it up, get a new egg or recall robot.");
+    for (const r of owned) {
+      const stage = stageOf(r);
+      const next = LEVEL_UPS[stage];
+      const enough = next ? countItem(player, next.item) >= next.amount : false;
+      form.button(
+        `${r.name} §8(${STAGE_NAMES[stage]})\n${next ? `${enough ? "§2" : "§c"}Next: ${next.amount} ${next.label}` : "§2Fully upgraded"}`,
+        r.role === "fighter" ? ROLES.fighter.icon : ROLES.resource.icon
+      );
+      runs.push(() => manageOwned(player, r.key));
+    }
+  } else if (hasBoughtAny(player.id)) {
+    form.body("§7You already bought your AI (one per player). Whoever has its recall robot controls it.");
+  } else {
+    const info = ROLES.resource;
     const enough = countItem(player, info.price.item) >= info.price.amount;
-    const line2 = controlled.length
-      ? `§2Yours: ${controlled.map((r) => r.name).join(", ")}`
-      : hasBought(player.id, role)
-        ? "§7Already bought"
-        : `${enough ? "§2" : "§c"}${info.price.amount} ${info.price.label}`;
-    form.button(`${info.title}\n${line2}`, info.icon);
+    form.body("Buy your AI. §7Each player can only buy one, then level it up here.");
+    form.button(`${info.title}\n${enough ? "§2" : "§c"}${info.price.amount} ${info.price.label}`, info.icon);
+    runs.push(() => showRoleInfo(player, "resource"));
   }
   form.button("How it works", "textures/items/book_writable");
+  runs.push(() => showGuide(player));
 
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
-  if (response.selection >= ROLE_IDS.length) return showGuide(player);
-
-  const role = ROLE_IDS[response.selection];
-  const controlled = controlledBy(player.id, role);
-  if (controlled.length === 1) return manageOwned(player, controlled[0].key);
-  if (controlled.length > 1) {
-    const pick = new ActionFormData().title(`Your ${ROLES[role].title}s`);
-    controlled.forEach((r) => pick.button(r.name));
-    const choice = await pick.show(player);
-    if (choice.canceled || choice.selection === undefined) return;
-    return manageOwned(player, controlled[choice.selection].key);
-  }
-  if (hasBought(player.id, role)) {
-    player.sendMessage(`§cEach player can only buy one ${ROLES[role].title}, and you already bought yours.`);
-    return;
-  }
-  await showRoleInfo(player, role);
+  await runs[response.selection]();
 }
 
 /**
@@ -394,8 +426,8 @@ async function buy(player, role) {
     player.sendMessage(needMore(player, role));
     return;
   }
-  if (hasBought(player.id, role)) {
-    player.sendMessage(`§cEach player can only buy one ${info.title}.`);
+  if (hasBoughtAny(player.id)) {
+    player.sendMessage("§cEach player can only buy one AI.");
     return;
   }
 
@@ -474,16 +506,16 @@ async function manageOwned(player, key) {
   } else {
     actions.push({ label: "Get a new egg (if you lost it)", run: () => replaceEgg(player, key) });
   }
-  if (!record.upgraded) {
-    const up = UPGRADES[record.role];
-    const enough = countItem(player, up.item) >= up.amount;
-    actions.push({ label: `Upgrade\n${enough ? "§2" : "§c"}${up.amount} ${up.label}`, run: () => upgradeAi(player, key) });
+  const next = LEVEL_UPS[stageOf(record)];
+  if (next) {
+    const enough = countItem(player, next.item) >= next.amount;
+    actions.push({ label: `${next.title}\n${enough ? "§2" : "§c"}${next.amount} ${next.label}`, run: () => levelUp(player, key) });
   }
   actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
 
   const form = new ActionFormData()
-    .title(`${ROLES[record.role].title}: ${record.name}`)
-    .body(`${status}${record.upgraded ? "\n§bUpgraded" : ""}`);
+    .title(`${STAGE_NAMES[stageOf(record)]}: ${record.name}`)
+    .body(`${status}\n§bStage ${stageOf(record)} of 4: ${STAGE_NAMES[stageOf(record)]}`);
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
@@ -492,19 +524,21 @@ async function manageOwned(player, key) {
 
 
 /**
- * The upgrade at the Coder: shows what it does and its price (red until you have enough).
+ * Levels the AI up to its next stage at the Coder: shows what it gets and the price (red until you have enough).
  * @param {import("@minecraft/server").Player} player @param {string} key
  */
-async function upgradeAi(player, key) {
+async function levelUp(player, key) {
   const record = mine(player, key);
-  if (!record || record.upgraded) return;
-  const up = UPGRADES[record.role];
+  if (!record) return;
+  const stage = stageOf(record);
+  const up = LEVEL_UPS[stage];
+  if (!up) return;
   const have = countItem(player, up.item);
   const enough = have >= up.amount;
   const response = await new MessageFormData()
-    .title(`Upgrade ${record.name}`)
+    .title(up.title)
     .body(`${up.about}\n\n§rCost: ${enough ? "§a" : "§c"}${up.amount} ${up.label}§r\nYou have: ${enough ? "§a" : "§c"}${have}`)
-    .button1("Upgrade")
+    .button1("Level up")
     .button2("Back")
     .show(player);
   if (response.selection !== 0) return;
@@ -513,16 +547,61 @@ async function upgradeAi(player, key) {
     return;
   }
   const latest = mine(player, key);
-  if (!latest || latest.upgraded) return;
+  if (!latest || stageOf(latest) !== stage) return;
   takeItem(player, up.item, up.amount);
-  latest.upgraded = true;
-  saveRecord(player.id, latest.role, latest);
-  toolsChanged(latest.id);
+
+  if (stage === 2) {
+    becomeFighter(player, latest);
+  } else {
+    latest.upgraded = true;
+    saveRecord(player.id, latest.role, latest);
+    toolsChanged(latest.id);
+    player.sendMessage(
+      stage === 1
+        ? `§b${latest.name} is now a Resource AI+! §fLeft click it and pick Strip mine. §6Its AI Chest is unlocked: ${stashCount(latest)} items saved up!`
+        : `§b${latest.name} is now a Fighter AI Max!`
+    );
+  }
+}
+
+/**
+ * Stage 2 to 3: the Resource AI becomes a Fighter, keeping everything it had and could do.
+ * @param {import("@minecraft/server").Player} player @param {AiRecord} record
+ */
+function becomeFighter(player, record) {
+  record.role = "fighter";
+  record.evolved = true;
+  record.upgraded = false; // (the Fighter's final upgrade comes next)
+  record.combat = record.combat ?? "archer_sword";
+  record.targets = record.targets ?? "all";
+  saveRecord(player.id, "fighter", record);
+
+  const ai = record.id ? world.getEntity(record.id) : undefined;
+  if (ai?.isValid) {
+    ai.setDynamicProperty("aip:role", "fighter");
+    knownAis.set(ai.id, { ownerId: record.ownerId, role: "fighter", key: record.key });
+    ai.triggerEvent("aip:role_fighter");
+    if (record.mode !== "wander") ai.triggerEvent(record.mode === "guard" ? "aip:fighter_guard" : "aip:fighter_follow");
+    ai.dimension.playSound("random.levelup", ai.location);
+  }
+  toolsChanged(record.id);
+
+  // Its blue recall robot becomes a red one (and an egg not thrown yet becomes a Fighter egg).
+  const container = player.getComponent("minecraft:inventory")?.container;
+  if (container) {
+    for (let i = 0; i < container.size; i++) {
+      const item = container.getItem(i);
+      if (!item || item.getDynamicProperty("aip:key") !== record.key) continue;
+      if (item.typeId === ROLES.resource.robot) container.setItem(i, makeRecallRobot(player, record));
+      if (item.typeId === ROLES.resource.egg) {
+        container.setItem(i, undefined);
+        giveEgg(player, record);
+      }
+    }
+  }
   player.sendMessage(
-    `§b${latest.name} is upgraded!` +
-      (latest.role === "resource"
-        ? ` §fLeft click it and pick Strip mine. §6Its AI Chest is unlocked: ${stashCount(latest)} items saved up!`
-        : " §fIts inventory now works with a Computer Chest.")
+    `§b${record.name} is now a Fighter AI! §fIt keeps everything it could do before. ` +
+      "Left click it: fighting commands, plus §eGather & build§f for its old jobs (it still fights any enemy that shows up)."
   );
 }
 
@@ -628,7 +707,7 @@ world.afterEvents.itemUse.subscribe(({ source: player, itemStack }) => {
   const start = { x: head.x + view.x * 0.6, y: head.y + view.y * 0.6, z: head.z + view.z * 0.6 };
   const egg = player.dimension.spawnEntity(CAPSULE_ENTITY, start);
   egg.setDynamicProperty("aip:owner", player.id);
-  egg.setDynamicProperty("aip:role", role);
+  egg.setDynamicProperty("aip:role", record.role);
   egg.setDynamicProperty("aip:key", record.key);
   const projectile = egg.getComponent("minecraft:projectile");
   if (projectile) {
@@ -791,7 +870,7 @@ async function deleteAi(player, key) {
     .title(`Delete ${record.name}?`)
     .body(
       `${record.name} and its recall robot will be gone for good. You get back everything it carries.\n\n` +
-        (record.role === "resource" && !record.upgraded && stashCount(record) > 0
+        (canGather(record) && !resourcePerks(record) && stashCount(record) > 0
           ? `§6Its AI Chest is still locked, so the ${stashCount(record)} items in it are lost.§r\n\n`
           : "") +
         `§cThere's no refund, and whoever bought it can't buy another ${ROLES[role].title} (one per player).`
@@ -804,6 +883,7 @@ async function deleteAi(player, key) {
   const latest = mine(player, key);
   if (!latest) return;
   returnEverything(player, latest);
+  releaseLoaded(key);
   removeAi(key);
   const ai = latest.id ? world.getEntity(latest.id) : undefined;
   ai?.remove();
@@ -981,7 +1061,7 @@ async function showCommands(player, key) {
     ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far away. Teleport it to you first.`);
 
   if (role === "fighter") {
-    const mode = record.mode === "guard" ? "Guarding a spot" : "Following and protecting you";
+    const mode = record.mode === "guard" ? "Guarding a spot" : record.mode === "wander" ? `Gathering: ${record.focus}` : "Following and protecting you";
     const style = COMBAT_STYLES.find((c) => c.id === (record.combat ?? "archer_sword")) ?? COMBAT_STYLES[2];
     const targets = TARGET_MODES.find((t) => t.id === (record.targets ?? "all")) ?? TARGET_MODES[0];
     body = `Right now: §e${mode}§r\nStyle: §e${style.label}§r\nTargets: §e${targets.label}§r`;
@@ -990,8 +1070,61 @@ async function showCommands(player, key) {
     actions.push({ label: "Guard this spot\n§8Attacks any other player who comes near", run: needAi((a) => setFighterMode(player, key, a, "guard")) });
     actions.push({ label: `Fighting\n§8${style.label}, ${targets.label.toLowerCase()}`, run: () => chooseFighting(player, key) });
     actions.push({ label: `Tombstones\n§8Looting ${record.loot === false ? "off" : "on"}`, run: () => showTombs(player, key) });
-  } else {
+  }
+  if (role === "fighter" && record.evolved) {
+    actions.push({
+      label: `${record.mode === "wander" ? "§2" : ""}Gather & build\n§8${record.mode === "wander" ? `Working: ${record.focus}` : "Its Resource AI jobs"}`,
+      run: () => showGathering(player, key),
+    });
+  }
+  if (role !== "fighter") {
     body = "Choose resource";
+    resourceChoices(player, key, record, ai, actions, true);
+  }
+  actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
+  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
+
+  const form = new ActionFormData().title(`${ROLES[role].color}${record.name}§r (${STAGE_NAMES[stageOf(record)]})`).body(body);
+  actions.forEach((a) => form.button(a.label));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  await actions[response.selection].run();
+}
+
+/**
+ * A Fighter that was a Resource AI: its old jobs. Picking one sends it off to do it (it still fights).
+ * @param {import("@minecraft/server").Player} player @param {string} key
+ */
+async function showGathering(player, key) {
+  const record = mine(player, key);
+  if (!record) return;
+  const ai = record.id ? world.getEntity(record.id) : undefined;
+  /** @type {{ label: string, run: () => unknown }[]} */
+  const actions = [];
+  resourceChoices(player, key, record, ai, actions, false);
+  const form = new ActionFormData()
+    .title(`${record.name}: Gather & build`)
+    .body(
+      record.mode === "wander"
+        ? `Working on: §e${record.focus}§r\n§7It drops the work to fight any enemy, then goes back to it. Pick "Follow and protect me" in its commands to stop.`
+        : "Pick a job and it goes off to do it. §7It still fights any enemy that shows up."
+    );
+  actions.forEach((a) => form.button(a.label));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) return;
+  await actions[response.selection].run();
+}
+
+/**
+ * The gathering jobs (Resource AI menu, and a Fighter's Gather & build menu).
+ * @param {import("@minecraft/server").Player} player @param {string} key @param {AiRecord} record
+ * @param {import("@minecraft/server").Entity | undefined} ai
+ * @param {{ label: string, run: () => unknown }[]} actions
+ * @param {boolean} followChoices  Resource AI: also "Follow me" / "Wander and gather"
+ */
+function resourceChoices(player, key, record, ai, actions, followChoices) {
+  {
+    const role = record.role;
     const wandering = record.mode === "wander";
     const setResource = (/** @type {{ mode?: "follow" | "wander", focus?: string }} */ change) => () => {
       const r = mine(player, key);
@@ -1005,10 +1138,12 @@ async function showCommands(player, key) {
       toolsChanged(r.id);
       player.sendMessage(r.mode === "wander" ? `§e${r.name} will wander and get: ${r.focus}` : `§e${r.name} will follow you.`);
     };
-    actions.push({ label: `${wandering ? "" : "§2"}Follow me\n§8Strictly follows you, doesn't gather`, run: setResource({ mode: "follow" }) });
-    actions.push({ label: `${wandering ? "§2" : ""}Wander and gather\n§8Goes off to get the resource below`, run: setResource({ mode: "wander" }) });
+    if (followChoices) {
+      actions.push({ label: `${wandering ? "" : "§2"}Follow me\n§8Strictly follows you, doesn't gather`, run: setResource({ mode: "follow" }) });
+      actions.push({ label: `${wandering ? "§2" : ""}Wander and gather\n§8Goes off to get the resource below`, run: setResource({ mode: "wander" }) });
+    }
     const resources = RESOURCE_FOCUS.filter((f) => f !== "Nothing");
-    if (record.upgraded) resources.push("Strip mine");
+    if (resourcePerks(record)) resources.push("Strip mine");
     actions.push({
       label: record.farm
         ? `${record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm\n§8${farmProgress(record.farm)}`
@@ -1017,7 +1152,7 @@ async function showCommands(player, key) {
     });
     const saved = stashCount(record);
     actions.push({
-      label: `AI Chest\n§8${saved} items${record.upgraded ? "" : " - locked until upgraded"}`,
+      label: `AI Chest\n§8${saved} items${resourcePerks(record) ? "" : " - locked until upgraded"}`,
       run: () => showStash(player, key),
     });
     for (const focus of resources) {
@@ -1026,17 +1161,9 @@ async function showCommands(player, key) {
         : focus === "Trees"
           ? "\n§8Chops down whole trees"
           : "\n§8Mines ores in caves, lighting the way";
-      actions.push({ label: `${focus === record.focus ? "§2" : ""}${focus}${about}`, run: setResource({ focus }) });
+      actions.push({ label: `${wandering && focus === record.focus ? "§2" : ""}${focus}${about}`, run: setResource({ focus }) });
     }
   }
-  actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
-  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its recall robot`, run: () => deleteAi(player, key) });
-
-  const form = new ActionFormData().title(`${ROLES[role].color}${record.name}§r (${ROLES[role].title})`).body(body);
-  actions.forEach((a) => form.button(a.label));
-  const response = await form.show(player);
-  if (response.canceled || response.selection === undefined) return;
-  await actions[response.selection].run();
 }
 
 /**
@@ -1240,7 +1367,7 @@ function returnEverything(player, record) {
   for (const piece of [...ARMOR_SLOTS.map((slot) => inv.armor[slot]), inv.shield]) if (piece) giveItem(player, stackFromTool(piece));
   for (const b of inv.blocks) if (b) giveStacks(player, b.id, b.count);
   for (const v of inv.valuables) if (v) giveStacks(player, v.id, v.count);
-  if (record.upgraded) for (const s of inv.stash) if (s) giveStacks(player, s.id, s.count); // AI Chest (unlocked)
+  if (resourcePerks(record)) for (const s of inv.stash) if (s) giveStacks(player, s.id, s.count); // AI Chest (unlocked)
   for (const arm of [inv.arms.sword, inv.arms.bow]) if (arm) giveItem(player, stackFromTool(arm));
   for (const [id, n] of Object.entries(inv.bag)) if (n > 0) giveStacks(player, id, n);
   giveArrows(player, totalArrows(record));
@@ -1330,7 +1457,7 @@ async function showStash(player, key) {
   const contents = lines.length ? lines.join("\n") : "§7Nothing yet.";
   const about = "Whenever its valuables slots fill up, it puts half of them in here.";
   const form = new ActionFormData().title(`${record.name}'s AI Chest`);
-  if (!record.upgraded) {
+  if (!resourcePerks(record)) {
     form.body(`${about}\n\n§6Locked.§r Upgrade ${record.name} at the Coder to unlock it.\n\n§eSaved up so far:§r\n${contents}`);
     form.button("OK");
     await form.show(player);
@@ -1342,7 +1469,7 @@ async function showStash(player, key) {
   const response = await form.show(player);
   if (response.selection !== 0) return;
   const latest = mine(player, key);
-  if (!latest || !latest.upgraded) return;
+  if (!latest || !resourcePerks(latest)) return;
   const stash = inventoryOf(latest).stash;
   for (const s of stash) if (s) giveStacks(player, s.id, s.count);
   stash.fill(null);

@@ -13,7 +13,8 @@ import {
   inventoryOf,
   toolFromStack,
   stackFromTool,
-  ALLOWED_TOOLS,
+  toolsFor,
+  toolKind,
   SWORDS,
   RANGED,
   ARMOR_ALLOWED,
@@ -59,9 +60,10 @@ export const LABEL_ITEMS = new Set(Object.values(LABEL));
 /**
  * The 27 slots (3 rows of 9) for each kind of AI.
  * @param {import("./data.js").RoleId} role
+ * @param {boolean} [evolved]  a Fighter that was a Resource AI (it has torches, water and an AI Chest too)
  * @returns {Slot[]}
  */
-function layout(role) {
+function layout(role, evolved = false) {
   /** @type {Slot[]} */
   const tools = [0, 1, 2].map((i) => ({ kind: "tool", i }));
   /** @type {Slot[]} */
@@ -84,27 +86,48 @@ function layout(role) {
     lore: ["§7It eats these to heal. They can't be taken.", "§7The slot next to this has the spare chicken."],
   };
 
+  /** @type {Slot} */
+  const torchInfo = {
+    kind: "info",
+    text: (r) => `Torches: ${inventoryOf(r).torches}/${TORCH_STACK} (its own)`,
+    lore: ["§7It places one about every 10 blocks underground.", "§7They refill and can't be taken."],
+  };
+  /** @type {Slot} */
+  const waterInfo = {
+    kind: "info",
+    icon: "water",
+    text: () => "Water bucket (infinite, its own)",
+    lore: ["§7It pours it to get down into ravines", "§7and swim back up. It can't be taken."],
+  };
+  if (role === "fighter" && evolved) {
+    return [
+      // Row 1: tools 1-2-3, arrows, shield, name + AI Chest, torches, water
+      ...tools, ...arrows, { kind: "shield" },
+      {
+        kind: "info",
+        text: (r) => `${r.name} (Fighter AI${r.upgraded ? ", fully upgraded" : ""}) - AI Chest: ${stashCount(r)}`,
+        lore: ["§7Tools are used in order 1, 2, 3: weapons for", "§7fighting, pickaxes/axes/shovels for gathering.", "§7Left click it for commands."],
+      },
+      torchInfo,
+      waterInfo,
+      // Row 2: armor, blocks, food, first valuable
+      ...armor, ...blocks, foodInfo, { kind: "food" }, valuables[0],
+      // Row 3: valuables 2-10
+      ...valuables.slice(1),
+    ];
+  }
   if (role === "resource") {
     return [
       // Row 1: tools 1-2-3, shield, torches, info
       ...tools, { kind: "shield" },
-      {
-        kind: "info",
-        text: (r) => `Torches: ${inventoryOf(r).torches}/${TORCH_STACK} (its own)`,
-        lore: ["§7It places one about every 10 blocks underground.", "§7They refill and can't be taken."],
-      },
+      torchInfo,
       {
         kind: "info",
         text: (r) => `${r.name} (Resource AI)${r.upgraded ? " - Upgraded" : ""} - AI Chest: ${stashCount(r)}`,
         lore: ["§7Tools are used in order 1, 2, 3.", "§7When its valuables fill up, half goes in its", "§7AI Chest. Unlocked by the upgrade."],
       },
       { kind: "info", text: (r) => (r.mode === "wander" ? `Wandering: ${r.focus}` : "Following you"), lore: ["§7Left click it to change."] },
-      {
-        kind: "info",
-        icon: "water",
-        text: () => "Water bucket (infinite, its own)",
-        lore: ["§7It pours it to get down into ravines", "§7and swim back up. It can't be taken."],
-      },
+      waterInfo,
       { kind: "info", text: () => "Mining/harvesting tools only", lore: ["§7Pickaxes, axes, shovels, hoes, shears."] },
       // Row 2: armor, blocks, food, first valuable
       ...armor, ...blocks, foodInfo, { kind: "food" }, valuables[0],
@@ -152,7 +175,7 @@ function expected(record, role, s) {
     case "tool": {
       const t = inv.tools[s.i];
       const order = ["used first", "used second", "used third"][s.i];
-      const what = role === "fighter" ? "fighting tool" : "mining/harvesting tool";
+      const what = role === "fighter" && record.evolved ? "fighting or mining tool" : role === "fighter" ? "fighting tool" : "mining/harvesting tool";
       return t ? stackFromTool(t) : label(role === "fighter" ? "weapon" : "tool", `Tool ${s.i + 1} (${order})`, [`§7Put a ${what} here.`]);
     }
     case "sword":
@@ -193,7 +216,7 @@ function apply(record, role, s, item) {
   const n = item?.amount ?? 0;
   switch (s.kind) {
     case "tool":
-      if (item && !(ALLOWED_TOOLS[role].has(id) && n === 1)) return false;
+      if (item && !(toolsFor(record).has(id) && n === 1)) return false;
       inv.tools[s.i] = item ? toolFromStack(item) : null;
       return true;
     case "sword":
@@ -255,7 +278,7 @@ export function sync(ai, ownerId, role, key) {
   let record = getAi(key);
   if (!container || !record) return;
   if (role === "resource") returnOldWeapons(record, ownerId);
-  const slots = layout(role).slice(0, container.size);
+  const slots = layout(role, !!record.evolved).slice(0, container.size);
   const current = slots.map((_, i) => container.getItem(i));
   const snap = snapshots.get(ai.id);
 
@@ -274,7 +297,7 @@ export function sync(ai, ownerId, role, key) {
         apply(record, role, slots[i], undefined);
         if (owner) giveItem(owner, item);
         else ai.dimension.spawnItem(item, ai.location);
-        owner?.sendMessage(`§c${slotHelp(slots[i], role)}`);
+        owner?.sendMessage(`§c${slotHelp(slots[i], record)}`);
       }
     });
     if (changed) {
@@ -395,11 +418,11 @@ export function syncStash(chest, ownerId, key) {
   stashSnapshots.set(chest.id, wantSig);
 }
 
-/** @param {Slot} s @param {import("./data.js").RoleId} role */
-function slotHelp(s, role) {
+/** @param {Slot} s @param {import("./data.js").AiRecord} record */
+function slotHelp(s, record) {
   switch (s.kind) {
     case "tool":
-      return role === "fighter" ? "Tool slots take one fighting tool (sword, axe, trident, mace, bow, crossbow)." : "Tool slots take one pickaxe, axe, shovel, hoe or shears.";
+      return `Tool slots take one ${toolKind(record)}.`;
     case "sword":
       return "That slot takes one sword.";
     case "bow":

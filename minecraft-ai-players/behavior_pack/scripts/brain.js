@@ -19,9 +19,14 @@ import {
   findPlayer,
   ownerInfo,
   knownAis,
+  lavaProof,
+  resourcePerks,
+  fighterPerks,
+  canGather,
 } from "./data.js";
 import {
   ALLOWED_TOOLS,
+  toolsFor,
   TOOL_DAMAGE,
   ARROW_ITEM,
   isRanged,
@@ -149,7 +154,9 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {number} lastFightAt  Last time it had a target (a new fight starts after a pause).
  * @property {number} nextShotAt
  * @property {boolean} wantRanged  Keep its distance (Bow Only) instead of charging in.
- * @property {boolean} upgraded
+ * @property {boolean} upgraded  Fighter's final (netherite) upgrade: the 30-block sequence and volley.
+ * @property {boolean} lavaProof  Lava and fire can't hurt it.
+ * @property {boolean} resourcePerks  Resource AI upgrade perks: strip mining, no fall damage.
  * @property {string | undefined} modeEvent  Resource AI: follow/wander/stay event applied.
  * @property {import("./stripmine.js").StripState} strip
  * @property {Map<string, { hit: boolean, jumped: boolean }>} sequences  Upgraded Fighter: enemy players within 30 blocks.
@@ -251,9 +258,9 @@ world.beforeEvents.entityHurt.subscribe((event) => {
   if (attacker && attacker.typeId !== "minecraft:player" && attacker.typeId !== AI_ENTITY) event.cancel = true;
   if (EXPLOSIONS.includes(cause)) event.cancel = true;
   const brain = brains.get(event.hurtEntity.id);
-  if (brain?.upgraded && UPGRADED_IMMUNE.includes(cause)) event.cancel = true;
-  // No fall damage: upgraded Resource AI always, Fighter for 5 seconds after a power jump.
-  if (cause === EntityDamageCause.fall && brain && ((brain.upgraded && brain.role === "resource") || Date.now() < brain.noFallUntil)) {
+  if (brain?.lavaProof && UPGRADED_IMMUNE.includes(cause)) event.cancel = true;
+  // No fall damage: upgraded Resource AI (and the Fighter it becomes) always, any Fighter for 5 seconds after a power jump.
+  if (cause === EntityDamageCause.fall && brain && (brain.resourcePerks || Date.now() < brain.noFallUntil)) {
     event.cancel = true;
   }
 });
@@ -541,12 +548,19 @@ function think(ai, ownerId, role, record, brain) {
   const hpRatio = health.currentValue / health.effectiveMax;
   const now = Date.now();
 
-  // ---- Upgrade (lava/fire/fall proof).
-  if (record.upgraded && !brain.upgraded) ai.triggerEvent("aip:upgrade");
-  brain.upgraded = !!record.upgraded;
+  // ---- Stage perks (see data.js): lava/fire proof, fall proof, the Fighter's final upgrade.
+  brain.role = role;
+  if (lavaProof(record) && !brain.lavaProof) ai.triggerEvent("aip:upgrade");
+  brain.lavaProof = lavaProof(record);
+  brain.resourcePerks = resourcePerks(record);
+  brain.upgraded = fighterPerks(record);
 
-  // ---- Lava: cover it with blocks or back away (both AIs; upgraded AIs don't mind lava).
-  const lavaClose = brain.upgraded ? false : avoidLava(ai, ownerId, role, record, brain.gather);
+  // ---- Working far from every player (gathering, building, guarding): keep its land loaded so it
+  // doesn't freeze. One ticking area per AI, and each player only has one AI.
+  keepLoaded(ai, record.key, record.mode === "wander" || record.mode === "guard");
+
+  // ---- Lava: cover it with blocks or back away (lava proof AIs don't mind lava).
+  const lavaClose = brain.lavaProof ? false : avoidLava(ai, ownerId, role, record, brain.gather);
 
   // ---- Wear armor and a shield.
   wearGear(ai, brain, record);
@@ -571,7 +585,7 @@ function think(ai, ownerId, role, record, brain) {
   }
   if (brain.retreating) {
     heal(health, 0.5); // resting: 1 health a second, plus any chicken it eats
-    if (role === "resource") setGatherBehavior(ai, brain.gather, record.focus, false);
+    if (canGather(record)) setGatherBehavior(ai, brain.gather, record.focus, false);
     if (health.currentValue / health.effectiveMax >= RECOVERED_AT) {
       brain.retreating = false;
       if (!brain.fleeing) ai.triggerEvent("aip:recovered");
@@ -586,43 +600,7 @@ function think(ai, ownerId, role, record, brain) {
   pickUpItems(ai, ownerId, role, record);
   if (role !== "fighter") {
     // ---- It never fights: it runs from players who attack it.
-    const fleeSlot = resourceDefense(ai, brain, record, owner, now);
-
-    // ---- Direction: strictly follow its owner, or wander and gather (or strip mine, if upgraded).
-    const wandering = record.mode === "wander";
-    const stripping = wandering && brain.upgraded && record.focus === "Strip mine";
-
-    // ---- Gather only while wandering, and not while being attacked or near lava.
-    const safe = wandering && !lavaClose && now - lastHit > RECENT_MS;
-    setGatherBehavior(ai, brain.gather, stripping ? "Nothing" : record.focus, safe && !stripping);
-    // Sugar cane farm: collect the materials (normal gathering), then build it.
-    const building = wandering && farmBuilding(record);
-    let slot = fleeSlot;
-    if (slot === undefined && safe) {
-      if (stripping) {
-        slot = stripMine(ai, ownerId, record, brain.strip, () => placeTorch(ai, ownerId, record, brain, Date.now()));
-      } else if (building) {
-        buildFarm(ai, ownerId, record);
-      } else {
-        slot = gather(ai, ownerId, record, brain.gather, undefined);
-        if (record.focus === FARM_FOCUS) checkCollected(ai, ownerId, record);
-      }
-    }
-    // Working on a farm far from every player: keep its land loaded so it doesn't freeze.
-    keepLoaded(ai, record.key, wandering && record.focus === FARM_FOCUS && !!record.farm);
-    // While it's walking to or chopping/mining something it stands still instead of strolling off.
-    const working = wandering && !stripping && (isBusy(brain.gather) || building);
-    const modeEvent = stripping || working ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
-    if (brain.modeEvent !== modeEvent) {
-      ai.triggerEvent(modeEvent);
-      brain.modeEvent = modeEvent;
-    }
-    equip(ai, brain, record, slot ?? firstTool(record, false));
-    if (safe) placeTorch(ai, ownerId, record, brain, now);
-    // Not mining and its owner is away: bridge/pillar to catch up.
-    if (slot === undefined && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
-      bridgeTowards(ai, ownerId, role, record, owner.location);
-    }
+    gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit, resourceDefense(ai, brain, record, owner, now), now);
     return;
   }
 
@@ -645,6 +623,18 @@ function think(ai, ownerId, role, record, brain) {
     // Switch only if the current target is gone or the new one is clearly more important
     // (stops it flip-flopping between two similar enemies).
     setHunt(brain, best.entity, best.score);
+  }
+
+  // ---- A Fighter that was a Resource AI, told to gather: it gathers whenever there's nothing to fight.
+  if (record.evolved && record.mode === "wander") {
+    if (!brain.huntId) {
+      stopSprint(ai, brain);
+      gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit, undefined, now);
+      return;
+    }
+    setGatherBehavior(ai, brain.gather, record.focus, false); // an enemy: drop the work and fight
+  } else {
+    brain.modeEvent = undefined; // following/guarding (its own movement groups)
   }
 
   // ---- Nothing to fight: break and loot tombstones nearby.
@@ -688,6 +678,56 @@ function think(ai, ownerId, role, record, brain) {
   if (!lavaClose) {
     const followOwner = record.mode !== "guard" && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4;
     bridgeTowards(ai, ownerId, role, record, target?.location ?? (followOwner ? owner.location : undefined));
+  }
+}
+
+/**
+ * Gathering work (Resource AI, or a Fighter that was one, when it has nothing to fight): follow its owner,
+ * or wander and gather / strip mine / build a sugar cane farm.
+ * @param {import("@minecraft/server").Entity} ai
+ * @param {string} ownerId
+ * @param {import("./data.js").RoleId} role
+ * @param {import("./data.js").AiRecord} record
+ * @param {Brain} brain
+ * @param {import("@minecraft/server").Player | undefined} owner
+ * @param {boolean} lavaClose
+ * @param {number} lastHit
+ * @param {number | undefined} fleeSlot  Resource AI running from a player (it holds this slot)
+ * @param {number} now
+ */
+function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit, fleeSlot, now) {
+  // ---- Direction: strictly follow its owner, or wander and gather (or strip mine, if upgraded).
+  const wandering = record.mode === "wander";
+  const stripping = wandering && brain.resourcePerks && record.focus === "Strip mine";
+
+  // ---- Gather only while wandering, and not while being attacked or near lava.
+  const safe = wandering && !lavaClose && now - lastHit > RECENT_MS;
+  setGatherBehavior(ai, brain.gather, stripping ? "Nothing" : record.focus, safe && !stripping);
+  // Sugar cane farm: collect the materials (normal gathering), then build it.
+  const building = wandering && farmBuilding(record);
+  let slot = fleeSlot;
+  if (slot === undefined && safe) {
+    if (stripping) {
+      slot = stripMine(ai, ownerId, record, brain.strip, () => placeTorch(ai, ownerId, record, brain, Date.now()));
+    } else if (building) {
+      buildFarm(ai, ownerId, record);
+    } else {
+      slot = gather(ai, ownerId, record, brain.gather, undefined);
+      if (record.focus === FARM_FOCUS) checkCollected(ai, ownerId, record);
+    }
+  }
+  // While it's walking to or chopping/mining something it stands still instead of strolling off.
+  const working = wandering && !stripping && (isBusy(brain.gather) || building);
+  const modeEvent = stripping || working ? "aip:resource_stay" : wandering ? "aip:resource_wander" : "aip:resource_follow";
+  if (brain.modeEvent !== modeEvent) {
+    ai.triggerEvent(modeEvent);
+    brain.modeEvent = modeEvent;
+  }
+  equip(ai, brain, record, slot ?? firstTool(record, false));
+  if (safe) placeTorch(ai, ownerId, record, brain, now);
+  // Not mining and its owner is away: bridge/pillar to catch up.
+  if (slot === undefined && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
+    bridgeTowards(ai, ownerId, role, record, owner.location);
   }
 }
 
@@ -879,7 +919,8 @@ function firstTool(record, meleeOnly) {
 function chooseSlot(record, brain, owner, target, dist) {
   const tools = inventoryOf(record).tools;
   const arrows = totalArrows(record) > 0;
-  const usable = [0, 1, 2].filter((i) => tools[i] && (!isRanged(tools[i]?.id) || arrows));
+  // Only weapons (a Fighter that gathers may also carry pickaxes and shovels).
+  const usable = [0, 1, 2].filter((i) => tools[i] && ALLOWED_TOOLS.fighter.has(tools[i]?.id ?? "") && (!isRanged(tools[i]?.id) || arrows));
   const melee = usable.filter((i) => !isRanged(tools[i]?.id));
   const ranged = usable.filter((i) => isRanged(tools[i]?.id));
   const style = record.combat ?? "archer_sword";
@@ -1047,7 +1088,7 @@ function pickUpItems(ai, ownerId, role, record) {
     const stack = item.getComponent("minecraft:item")?.itemStack;
     if (!stack) continue;
     let message;
-    if (ALLOWED_TOOLS[role].has(stack.typeId) && stack.amount === 1) {
+    if (toolsFor(record).has(stack.typeId) && stack.amount === 1) {
       const slot = addTool(record, toolFromStack(stack));
       if (slot === -1) continue;
       item.remove();
@@ -1126,6 +1167,8 @@ function ensureBrain(ai, role) {
     nextShotAt: 0,
     wantRanged: false,
     upgraded: false,
+    lavaProof: false,
+    resourcePerks: false,
     modeEvent: undefined,
     strip: createStripState(),
     sequences: new Map(),

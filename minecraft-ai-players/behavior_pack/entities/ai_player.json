@@ -1442,6 +1442,11 @@
         }
       },
       "aip:role_fighter": {
+        "remove": {
+          "component_groups": [
+            "aip:role_resource"
+          ]
+        },
         "add": {
           "component_groups": [
             "aip:role_fighter"
@@ -1449,6 +1454,11 @@
         }
       },
       "aip:role_resource": {
+        "remove": {
+          "component_groups": [
+            "aip:role_fighter"
+          ]
+        },
         "add": {
           "component_groups": [
             "aip:role_resource"
@@ -1458,7 +1468,9 @@
       "aip:fighter_follow": {
         "remove": {
           "component_groups": [
-            "aip:fighter_guard"
+            "aip:fighter_guard",
+            "aip:resource_follow",
+            "aip:resource_wander"
           ]
         },
         "add": {
@@ -1470,7 +1482,9 @@
       "aip:fighter_guard": {
         "remove": {
           "component_groups": [
-            "aip:fighter_follow"
+            "aip:fighter_follow",
+            "aip:resource_follow",
+            "aip:resource_wander"
           ]
         },
         "add": {
@@ -1482,6 +1496,8 @@
       "aip:resource_follow": {
         "remove": {
           "component_groups": [
+            "aip:fighter_follow",
+            "aip:fighter_guard",
             "aip:resource_wander"
           ]
         },
@@ -1532,6 +1548,8 @@
       "aip:resource_wander": {
         "remove": {
           "component_groups": [
+            "aip:fighter_follow",
+            "aip:fighter_guard",
             "aip:resource_follow"
           ]
         },
@@ -1551,6 +1569,8 @@
       "aip:resource_stay": {
         "remove": {
           "component_groups": [
+            "aip:fighter_follow",
+            "aip:fighter_guard",
             "aip:resource_follow",
             "aip:resource_wander"
           ]

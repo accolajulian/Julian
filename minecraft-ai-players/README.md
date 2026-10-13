@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.20.0)
+## What it does (v1.21.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -16,7 +16,7 @@ An original add-on with AI companions that look like players. It's kept separate
   Iron   Redstone  Iron
   Iron   Iron      Iron
   ```
-- **Resource AI** costs 30 gold ingots, **Fighter AI** costs 15 diamonds. Each player can only **buy** one of each, ever.
+- Each player buys **one AI, ever**: a **Resource AI** for 30 gold ingots. It then levels up at the Coder (see *Stages*). (Players who bought both AIs in older versions keep them.)
 - Prices show in red until you have enough. Trying to buy without enough only tells you how many more you need.
 - Buying: type a name (required). The look is picked automatically (add-ons can't copy a player's skin). Every AI starts with full health and 10 cooked chicken. You get an **AI Egg**; use it to throw it,
   and your AI appears where it lands.
@@ -36,11 +36,15 @@ An original add-on with AI companions that look like players. It's kept separate
 - Mobs can't hurt either AI, and no explosion can (creepers, ghast fireballs, TNT).
 - The Resource AI never fights (it runs from players who attack it). The Fighter kills mobs.
 
-### Upgrades (at the Coder)
-| AI | Cost | What it gets |
+### Stages (level up at the Coder)
+| Stage | Cost | What it gets |
 |---|---|---|
-| Resource AI | 10 diamonds | Strip mining (digs a tunnel straight to diamonds, or netherite in the Nether), no lava/fire/fall damage (no potion bubbles), Computer Chest access |
-| Fighter AI | 10 netherite ingots | The 30-block sequence (below), 2 opening arrows at 3x speed in Bow and Sword Combat, no lava/fire damage, Computer Chest access |
+| 1. Resource AI | 30 gold ingots (buy) | Gathering (Trees, Caves), sugar cane farm, torches, water bucket, AI Chest (locked) |
+| 2. Resource AI+ | 10 diamonds | Strip mining (digs a tunnel straight to diamonds, or netherite in the Nether), no lava/fire/fall damage (no potion bubbles), AI Chest unlocked, Computer Chest access |
+| 3. Fighter AI | 15 diamonds | Becomes a Fighter and **keeps everything above**: fights mobs and players, guards, fighting styles, arrows, tombstone looting, red recall robot. Left click → *Gather & build* sends it off to do its old jobs; it drops the work to fight any enemy, then goes back to it. Its tool slots take weapons and mining tools. |
+| 4. Fighter AI Max | 10 netherite ingots | The 30-block sequence (below), 2 opening arrows at 3x speed in Bow and Sword Combat |
+
+While an AI is working (gathering, building, guarding) far from every player, it keeps its land loaded with one ticking area so it doesn't freeze. Its ticking areas are removed when it comes back near a player, is deleted, or the world reloads (only ones the add-on made).
 
 ### Upgraded Fighter: the 30-block sequence
 When an enemy player comes within 30 blocks, the upgraded Fighter gets each of these once:

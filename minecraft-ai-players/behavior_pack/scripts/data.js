@@ -18,7 +18,8 @@ const MAX_ENEMIES = 40;
  * @property {number} serial  Eggs with an older serial no longer work.
  * @property {string} [id]  Entity id while alive.
  * @property {"follow" | "guard" | "wander"} mode  Fighter: follow/guard. Resource AI: follow (strictly) or wander (gather).
- * @property {boolean} [upgraded]  Upgraded at the Coder.
+ * @property {boolean} [upgraded]  Resource AI: its first upgrade (stage 2). Fighter: the final netherite upgrade (stage 4).
+ * @property {boolean} [evolved]  A Fighter that started as a Resource AI (stage 3+): it keeps everything the Resource AI could do.
  * @property {number} [diedAt]  When it died (it respawns 60 seconds later).
  * @property {string} focus
  * @property {{ x: number, y: number, z: number, dim: string }} [post]  Guard spot.
@@ -119,7 +120,50 @@ export function ownsAnyAi(playerId) {
   return controlledBy(playerId).length > 0;
 }
 
-/** Has this player already bought an AI of this kind? (Only one of each, ever.) */
+// ---------------------------------------------------------------- stages
+// Each player buys ONE AI: a Resource AI (stage 1). At the Coder it levels up:
+//   stage 2 (10 diamonds): strip mining, lava/fire/fall proof, AI Chest unlocked
+//   stage 3 (15 diamonds): becomes a Fighter, keeping everything it could do before
+//   stage 4 (10 netherite): the Fighter's final upgrade (sprint, power jump, knockback, volley)
+// (Fighters bought before version 1.21 have no resource abilities.)
+
+/** Stage 1-4 (an old directly-bought Fighter counts as 3, or 4 when upgraded). @param {AiRecord} r */
+export function stageOf(r) {
+  if (r.role === "resource") return r.upgraded ? 2 : 1;
+  return r.upgraded ? 4 : 3;
+}
+
+/** Can gather, build and carry torches/water/AI Chest (a Resource AI, or a Fighter that was one). @param {AiRecord} r */
+export function canGather(r) {
+  return r.role === "resource" || !!r.evolved;
+}
+
+/** Has the Resource AI upgrade's perks: strip mining, fall proof, AI Chest unlocked, Computer Chest. @param {AiRecord} r */
+export function resourcePerks(r) {
+  return (r.role === "resource" && !!r.upgraded) || !!r.evolved;
+}
+
+/** Has the Fighter's final (netherite) upgrade. @param {AiRecord} r */
+export function fighterPerks(r) {
+  return r.role === "fighter" && !!r.upgraded;
+}
+
+/** Lava and fire can't hurt it. @param {AiRecord} r */
+export function lavaProof(r) {
+  return resourcePerks(r) || fighterPerks(r);
+}
+
+/** Opens in a Computer Chest. @param {AiRecord} r */
+export function chestReady(r) {
+  return resourcePerks(r) || fighterPerks(r);
+}
+
+/** Has this player bought their AI yet? (One per player, ever.) @param {string} playerId */
+export function hasBoughtAny(playerId) {
+  return ROLE_IDS.some((role) => hasBought(playerId, role));
+}
+
+/** Has this player already bought an AI of this kind? */
 /** @param {string} playerId @param {RoleId} role */
 export function hasBought(playerId, role) {
   return world.getDynamicProperty(`aip:bought:${playerId}:${role}`) === true;

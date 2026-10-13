@@ -112,6 +112,17 @@ def main():
     ev["aip:resource_wander"] = {"remove": {"component_groups": ["aip:resource_follow"]}, "add": {"component_groups": ["aip:resource_wander"]}}
     # Strip mining: the script moves it through its tunnel, so neither follow nor wander.
     ev["aip:resource_stay"] = {"remove": {"component_groups": ["aip:resource_follow", "aip:resource_wander"]}}
+    # A Fighter that was a Resource AI also gathers: its gathering moves (above) and fighting moves
+    # (follow/guard) replace each other, and becoming a Fighter swaps its role group.
+    fighter_modes = ["aip:fighter_follow", "aip:fighter_guard"]
+    resource_modes = ["aip:resource_follow", "aip:resource_wander"]
+    for name in ("aip:resource_follow", "aip:resource_wander", "aip:resource_stay"):
+        ev[name].setdefault("remove", {"component_groups": []})["component_groups"] = sorted(
+            set(ev[name]["remove"]["component_groups"]) | set(fighter_modes))
+    for name in fighter_modes:
+        ev[name]["remove"]["component_groups"] = sorted(set(ev[name]["remove"]["component_groups"]) | set(resource_modes))
+    ev["aip:role_fighter"] = {"remove": {"component_groups": ["aip:role_resource"]}, "add": {"component_groups": ["aip:role_fighter"]}}
+    ev["aip:role_resource"] = {"remove": {"component_groups": ["aip:role_fighter"]}, "add": {"component_groups": ["aip:role_resource"]}}
 
     # Upgraded (at the Coder): can't burn and walks through lava. No potion effect, so no bubbles.
     g["aip:upgraded"] = {"minecraft:fire_immune": {}}

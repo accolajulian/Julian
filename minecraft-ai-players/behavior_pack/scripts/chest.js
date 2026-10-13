@@ -4,7 +4,7 @@
 // - Right click it: that AI's inventory (only the player who placed it can open it).
 import { world, system, ItemStack } from "@minecraft/server";
 import { ActionFormData } from "@minecraft/server-ui";
-import { getAi, controlledBy, giveItem, takeOneFromHand } from "./data.js";
+import { getAi, controlledBy, giveItem, takeOneFromHand, chestReady, canGather } from "./data.js";
 import { sync, syncEmpty, syncStash } from "./container.js";
 
 export const CHEST_ENTITY = "aip:computer_chest";
@@ -50,13 +50,13 @@ async function chestMenu(player, chest) {
   if (open.has(player.id)) return;
   open.add(player.id);
   try {
-    const upgraded = controlledBy(player.id).filter((r) => r.upgraded);
+    const upgraded = controlledBy(player.id).filter(chestReady);
     // Each upgraded AI's inventory, plus each upgraded Resource AI's AI Chest.
     /** @type {{ view: string, name: string, about: string }[]} */
     const views = [];
     for (const r of upgraded) {
       views.push({ view: r.key, name: `${r.name}'s inventory`, about: r.role === "fighter" ? "Fighter AI" : "Resource AI" });
-      if (r.role === "resource") views.push({ view: `stash:${r.key}`, name: `${r.name}'s AI Chest`, about: "Saved-up valuables" });
+      if (canGather(r)) views.push({ view: `stash:${r.key}`, name: `${r.name}'s AI Chest`, about: "Saved-up valuables" });
     }
     const showing = chest.getDynamicProperty("aip:view");
     const current = typeof showing === "string" ? views.find((v) => v.view === showing) : undefined;
@@ -95,9 +95,9 @@ system.runInterval(() => {
       const key = typeof view === "string" ? view.replace(/^stash:/, "") : undefined;
       const record = key ? getAi(key) : undefined;
       try {
-        if (stash && record && record.upgraded && record.ownerId === ownerId) {
+        if (stash && record && chestReady(record) && canGather(record) && record.ownerId === ownerId) {
           syncStash(chest, ownerId, record.key);
-        } else if (record && record.upgraded && record.ownerId === ownerId) {
+        } else if (record && chestReady(record) && record.ownerId === ownerId) {
           sync(chest, ownerId, record.role, record.key);
         } else {
           syncEmpty(chest, ownerId, record ? `${record.name} isn't yours or isn't upgraded` : "No AI chosen");

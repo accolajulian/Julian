@@ -3,8 +3,10 @@
 //   closest first (counted in 8 x 8 columns).
 // - Nothing loaded nearby: it "cheats" and briefly loads land further out with a ticking area
 //   (rings at 96, 160 and 224 blocks in 8 directions), scans it, and goes to the best spot found.
-// - While it's far from every player it keeps the land around itself loaded (another ticking area),
-//   so it keeps working instead of freezing.
+// - While an AI works far from every player (gathering, building, guarding) it keeps the land around
+//   itself loaded (one ticking area per AI), so it keeps working instead of freezing.
+// - The names of its ticking areas are saved; any left over (the world was closed mid-scout) are
+//   removed when the world loads. Ticking areas you made yourself are never touched.
 import { world, system, BlockVolume } from "@minecraft/server";
 import { GATHER } from "./gather_data.js";
 
@@ -173,6 +175,14 @@ export function keepLoaded(ai, key, wanted) {
   kept.set(key, { x, z, dim: ai.dimension.id });
 }
 
+/** The AI was deleted: remove the ticking area keeping it loaded. @param {string} key */
+export function releaseLoaded(key) {
+  const at = kept.get(key);
+  if (!at) return;
+  command(world.getDimension(at.dim), `tickingarea remove aip_keep_${clean(key)}`);
+  kept.delete(key);
+}
+
 /** @param {import("@minecraft/server").Dimension} dim @param {string} text */
 function command(dim, text) {
   try {
@@ -180,7 +190,33 @@ function command(dim, text) {
   } catch {
     // e.g. removing an area that isn't there, or the world already has 10 ticking areas
   }
+  // Remember our own areas so leftovers can be cleaned up.
+  const match = /^tickingarea (add|remove) (?:circle \S+ \S+ \S+ \d+ )?(aip_\w+)$/.exec(text);
+  if (!match) return;
+  const areas = savedAreas();
+  areas[match[2]] = match[1] === "add" ? dim.id : undefined;
+  if (match[1] === "remove") delete areas[match[2]];
+  world.setDynamicProperty(AREAS_KEY, JSON.stringify(areas));
 }
+
+const AREAS_KEY = "aip:ticking_areas";
+
+/** Our ticking areas: name -> dimension. @returns {Record<string, string | undefined>} */
+function savedAreas() {
+  try {
+    const raw = world.getDynamicProperty(AREAS_KEY);
+    return typeof raw === "string" ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+// World loaded: remove ticking areas left over from last time (they're re-made when needed).
+system.runTimeout(() => {
+  for (const [name, dim] of Object.entries(savedAreas())) {
+    if (dim) command(world.getDimension(dim), `tickingarea remove ${name}`);
+  }
+}, 40);
 
 /** @param {string} text */
 function clean(text) {
