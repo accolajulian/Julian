@@ -29,7 +29,7 @@ export const NETHER_ORES = [
 const MIN_COVER = 10; // blocks above the spot
 const DEEP_Y = 20; // this deep down, a roof of 3 blocks is enough
 const DEEP_COVER = 3;
-const LASER_RANGE = 64;
+const LASER_RANGE = 100; // blocks
 const PLACING_MS = 120000;
 export const CAVE_LEASH = 128; // explores the caves up to about this far from its cave spot (goes back if it's further)
 
