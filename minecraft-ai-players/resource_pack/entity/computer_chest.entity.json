@@ -14,7 +14,18 @@
       },
       "render_controllers": [
         "controller.render.aip.computer_chest"
-      ]
+      ],
+      "animations": {
+        "open": "animation.aip.computer_chest.open",
+        "opened": "animation.aip.computer_chest.opened",
+        "close": "animation.aip.computer_chest.close",
+        "lid": "controller.animation.aip.computer_chest.lid"
+      },
+      "scripts": {
+        "animate": [
+          "lid"
+        ]
+      }
     }
   }
 }

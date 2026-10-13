@@ -5,18 +5,18 @@
       "description": {
         "identifier": "geometry.aip.computer_chest",
         "texture_width": 64,
-        "texture_height": 32,
+        "texture_height": 64,
         "visible_bounds_width": 2,
-        "visible_bounds_height": 2,
+        "visible_bounds_height": 2.5,
         "visible_bounds_offset": [
           0,
-          0.5,
+          0.75,
           0
         ]
       },
       "bones": [
         {
-          "name": "box",
+          "name": "base",
           "pivot": [
             0,
             0,
@@ -31,12 +31,39 @@
               ],
               "size": [
                 16,
-                16,
+                10,
                 16
               ],
               "uv": [
                 0,
                 0
+              ]
+            }
+          ]
+        },
+        {
+          "name": "lid",
+          "parent": "base",
+          "pivot": [
+            0,
+            10,
+            0
+          ],
+          "cubes": [
+            {
+              "origin": [
+                -8,
+                10,
+                -8
+              ],
+              "size": [
+                16,
+                6,
+                16
+              ],
+              "uv": [
+                0,
+                26
               ]
             }
           ]

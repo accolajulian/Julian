@@ -7,37 +7,64 @@
 // - Left click it: pick it back up (or choose which AI's chest, if you control more than one).
 import { world, system, ItemStack } from "@minecraft/server";
 import { ActionFormData } from "@minecraft/server-ui";
-import { getAi, controlledBy, giveItem, takeOneFromHand, canGather, resourcePerks } from "./data.js";
+import { getAi, controlledBy, giveItem, canGather, resourcePerks } from "./data.js";
 import { stashCount } from "./inventory.js";
 import { syncEmpty, syncStash } from "./container.js";
 
 export const CHEST_ENTITY = "aip:computer_chest";
 const CHEST_ITEM = "aip:computer_chest";
 
-// Place it against the block you tap.
-world.afterEvents.playerInteractWithBlock.subscribe(({ player, block, blockFace, itemStack, isFirstEvent }) => {
-  if (!isFirstEvent || itemStack?.typeId !== CHEST_ITEM) return;
-  const offset = { Up: [0, 1, 0], Down: [0, -1, 0], North: [0, 0, -1], South: [0, 0, 1], West: [-1, 0, 0], East: [1, 0, 0] }[blockFace] ?? [0, 1, 0];
-  const at = { x: block.location.x + offset[0], y: block.location.y + offset[1], z: block.location.z + offset[2] };
-  if (!player.dimension.getBlock(at)?.isAir) {
-    player.sendMessage("§eThere's no room for the Computer Chest there.");
-    return;
-  }
-  const chest = player.dimension.spawnEntity(CHEST_ENTITY, { x: at.x + 0.5, y: at.y, z: at.z + 0.5 });
-  chest.getComponent("minecraft:tameable")?.tame(player); // only this player can open it
-  chest.setDynamicProperty("aip:owner", player.id);
-  chest.nameTag = "Computer Chest";
-  chest.teleport(chest.location, { facingLocation: { x: player.location.x, y: chest.location.y, z: player.location.z } });
-  takeOneFromHand(player);
-  // Like an ender chest: it opens your AI's AI Chest straight away.
+// Placing it: the item places the chest itself (like an armor stand), so it works with a tap of
+// Place on touch screens too. Here it's set up for the player who placed it (the closest one).
+world.afterEvents.entitySpawn.subscribe(({ entity }) => {
+  if (entity.typeId !== CHEST_ENTITY || !entity.isValid || entity.getDynamicProperty("aip:owner") !== undefined) return;
+  const player = entity.dimension
+    .getPlayers({ location: entity.location, maxDistance: 10 })
+    .sort((a, b) => dist(a.location, entity.location) - dist(b.location, entity.location))[0];
+  if (!player) return;
+  const at = { x: Math.floor(entity.location.x) + 0.5, y: Math.floor(entity.location.y + 0.01), z: Math.floor(entity.location.z) + 0.5 };
+  entity.teleport(at, { facingLocation: { x: player.location.x, y: at.y, z: player.location.z } });
+  entity.getComponent("minecraft:tameable")?.tame(player); // only this player can open it
+  entity.setDynamicProperty("aip:owner", player.id);
+  entity.nameTag = "Computer Chest";
+  // Like an ender chest: it opens your AI's AI Chest.
   const ai = controlledBy(player.id).find(canGather);
-  if (ai) chest.setDynamicProperty("aip:view", `stash:${ai.key}`);
+  if (ai) entity.setDynamicProperty("aip:view", `stash:${ai.key}`);
   player.sendMessage(
     ai
       ? `§aComputer Chest placed. Right click it to open ${ai.name}'s AI Chest${resourcePerks(ai) ? "" : " §7(locked until it's upgraded at the Coder)"}§a.`
-      : "§aComputer Chest placed. §7Left click it to choose what it shows."
+      : "§aComputer Chest placed."
   );
 });
+
+/** @param {import("@minecraft/server").Vector3} a @param {import("@minecraft/server").Vector3} b */
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+// Opening it: the lid slides up like a shulker box's (no spinning) and closes again once nobody is
+// looking at it up close any more (the inventory screen was closed and they looked away or left).
+world.afterEvents.playerInteractWithEntity.subscribe(({ player, target }) => {
+  if (target.typeId !== CHEST_ENTITY || target.getDynamicProperty("aip:owner") !== player.id) return;
+  if (target.getProperty("aip:open") !== true) {
+    target.setProperty("aip:open", true);
+    target.dimension.playSound("random.shulkerboxopen", target.location);
+  }
+});
+system.runInterval(() => {
+  for (const dimensionId of ["minecraft:overworld", "minecraft:nether", "minecraft:the_end"]) {
+    for (const chest of world.getDimension(dimensionId).getEntities({ type: CHEST_ENTITY })) {
+      if (chest.getProperty("aip:open") !== true) continue;
+      const watched = chest.dimension.getPlayers({ location: chest.location, maxDistance: 6 }).some((p) =>
+        p.getEntitiesFromViewDirection({ maxDistance: 6 }).some((hit) => hit.entity.id === chest.id)
+      );
+      if (!watched) {
+        chest.setProperty("aip:open", false);
+        chest.dimension.playSound("random.shulkerboxclosed", chest.location);
+      }
+    }
+  }
+}, 10);
 
 // Left click: choose an AI or pick the chest up. (Hits never break it.)
 world.afterEvents.entityHitEntity.subscribe(({ damagingEntity, hitEntity }) => {

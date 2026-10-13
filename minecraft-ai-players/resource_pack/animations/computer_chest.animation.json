@@ -1,0 +1,56 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.aip.computer_chest.open": {
+      "animation_length": 0.25,
+      "hold_on_last_frame": true,
+      "bones": {
+        "lid": {
+          "position": {
+            "0.0": [
+              0,
+              0,
+              0
+            ],
+            "0.25": [
+              0,
+              6,
+              0
+            ]
+          }
+        }
+      }
+    },
+    "animation.aip.computer_chest.opened": {
+      "loop": true,
+      "bones": {
+        "lid": {
+          "position": [
+            0,
+            6,
+            0
+          ]
+        }
+      }
+    },
+    "animation.aip.computer_chest.close": {
+      "animation_length": 0.25,
+      "bones": {
+        "lid": {
+          "position": {
+            "0.0": [
+              0,
+              6,
+              0
+            ],
+            "0.25": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    }
+  }
+}

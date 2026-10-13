@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.29.0)
+## What it does (v1.30.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -93,7 +93,7 @@ Drop a tool it can use within 10 blocks of it and it picks it up into a free too
 - Messages and shared XP for an owner who's offline are kept and given when they're back.
 
 ### Computer Chest (chest.js)
-Craft: chest + redstone + glass pane. The **player** places it (AIs never place one). It only ever holds materials the AI mined (never its torches or chicken). It works like an **ender chest**:
+Craft: chest + redstone + glass pane. Tap Place with it on a block to put it down (it places itself like an armor stand). It's a black box covered in green Matrix code with a glowing seam; when you open it the lid slides straight up like a shulker box's (no spinning) and closes when you look away. The **player** places it (AIs never place one). It only ever holds materials the AI mined (never its torches or chicken). It works like an **ender chest**:
 every Computer Chest you place opens the same **AI Chest**, the one your AI fills. **Right click** it to open your AI's
 AI Chest (locked until the AI is upgraded at the Coder; it shows how much is saved). **Left click** it to switch to an
 upgraded AI's own inventory instead, or to pick the chest up. Only the player who placed it can use it.

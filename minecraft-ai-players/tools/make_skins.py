@@ -295,45 +295,23 @@ def head_icon(skin_img, size):
 
 
 def coder_textures():
-    """16x16 sides, top and bottom of the Coder block."""
-    rng = random.Random(99)
-    metal, rim, dark = (150, 160, 175), (95, 105, 120), (40, 44, 56)
-    screen, face = (79, 224, 255), (24, 30, 44)
+    """16x16 sides, top and bottom of the Coder block: green Matrix code on black, with a glowing
+    green frame (and a crafting grid on top)."""
+    glow, rim = (90, 255, 140, 255), (20, 70, 35, 255)
 
-    def plate(base):
+    def face(seed, frame=glow):
         img = Image.new("RGBA", (16, 16))
+        matrix_rain(img, 0, 0, 16, 16, random.Random(seed))
         p = img.load()
-        for x in range(16):
-            for y in range(16):
-                d = rng.randint(-6, 6)
-                p[x, y] = tuple(max(0, min(255, c + d)) for c in base) + (255,)
-            p[x, 0] = p[x, 15] = rim + (255,)
-        for y in range(16):
-            p[0, y] = p[15, y] = rim + (255,)
+        for i in range(16):
+            p[i, 0] = p[i, 15] = p[0, i] = p[15, i] = frame
         return img, p
 
-    side, p = plate(metal)
-    for x in range(2, 14):                            # screen frame + screen
-        for y in range(2, 11):
-            p[x, y] = dark + (255,)
-    for x in range(3, 13):
-        for y in range(3, 10):
-            p[x, y] = screen + (255,)
-    for x, y in ((5, 5), (10, 5), (5, 6), (10, 6), (6, 8), (7, 8), (8, 8), (9, 8)):
-        p[x, y] = face + (255,)                       # smiling face
-    for x in (4, 6, 8, 10):                           # coloured buttons
-        p[x + 1, 13] = ((255, 90, 90), (90, 255, 120), (255, 210, 70), (90, 170, 255))[(x - 4) // 2] + (255,)
-
-    top, p = plate(metal)
-    for x in range(4, 12):                            # glowing ring
-        for y in range(4, 12):
-            if x in (4, 11) or y in (4, 11):
-                p[x, y] = screen + (255,)
-    for y in (2, 13):                                 # vents
-        for x in range(3, 13):
-            p[x, y] = dark + (255,)
-
-    bottom, _ = plate(rim)
+    side, _ = face(91)
+    top, p = face(92)
+    for i in range(1, 15):                            # a 3x3 crafting grid in glowing green
+        p[5, i] = p[10, i] = p[i, 5] = p[i, 10] = glow
+    bottom, _ = face(93, rim)
     return side, top, bottom
 
 
@@ -359,23 +337,19 @@ def egg_icon(base, accent, seed):
 
 
 def computer_icon():
-    """16x16 computer: monitor with a little robot face on the screen, stand and keyboard."""
+    """16x16 computer: a dark monitor full of green Matrix code, with a stand and keyboard."""
     img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    case, dark, glow = (25, 35, 28), (12, 20, 14), (90, 255, 140)
     p = img.load()
-    case, dark, screen, face = (200, 205, 215), (60, 64, 76), (79, 224, 255), (24, 30, 44)
     for x in range(1, 15):
         for y in range(1, 11):
             p[x, y] = case + (255,)                   # monitor case
-    for x in range(2, 14):
-        for y in range(2, 10):
-            p[x, y] = screen + (255,)                 # screen
-    for x, y in ((5, 4), (10, 4), (5, 5), (10, 5), (6, 7), (7, 8), (8, 8), (9, 7)):
-        p[x, y] = face + (255,)                       # smiling face
+    matrix_rain(img, 2, 2, 12, 8, random.Random(61))  # the screen
     for y in (11, 12):
-        p[7, y] = p[8, y] = dark + (255,)             # stand
+        p[7, y] = p[8, y] = case + (255,)             # stand
     for x in range(2, 14):
-        p[x, 13] = dark + (255,)                      # keyboard
-        p[x, 14] = (case if x % 2 else dark) + (255,)
+        p[x, 13] = case + (255,)                      # keyboard
+        p[x, 14] = (glow if x % 2 else dark) + (255,)
     return img
 
 
@@ -492,38 +466,70 @@ def slot_icon(kind):
     return img
 
 
+def matrix_code(img, x0, y0, w, h, rng, bg=(5, 12, 7)):
+    """Fills an area with green 'falling code': columns of tiny random glyphs, each with a bright
+    head and a trail that fades to dark green, on a near-black background."""
+    p = img.load()
+    for x in range(x0, x0 + w):
+        for y in range(y0, y0 + h):
+            p[x, y] = bg + (255,)
+    rows = max(1, h // 5)
+    for cx in range(x0, x0 + w - 2, 4):
+        head = rng.randrange(rows)                 # which cell of this column is the bright head
+        trail = rng.randint(3, max(3, rows))       # how long its fading trail is
+        for r in range(rows):
+            behind = (head - r) % rows             # 0 = the head, 1 = just behind it, ...
+            if behind >= trail or rng.random() < 0.12:
+                continue
+            if behind == 0:
+                color = (210, 255, 220)            # the head: almost white
+            else:
+                level = 1 - behind / trail
+                color = (int(15 + 30 * level), int(80 + 165 * level), int(30 + 50 * level))
+            glyph = rng.getrandbits(12) | 0b000100100010  # never an empty glyph
+            for gx in range(3):
+                for gy in range(4):
+                    px, py = cx + gx, y0 + r * 5 + gy
+                    if glyph >> (gx * 4 + gy) & 1 and px < x0 + w and py < y0 + h:
+                        p[px, py] = color + (255,)
+
+
+def matrix_rain(img, x0, y0, w, h, rng, bg=(5, 12, 7)):
+    """Matrix code for small (icon-sized) areas: single-pixel streaks of green with bright heads."""
+    p = img.load()
+    for x in range(x0, x0 + w):
+        for y in range(y0, y0 + h):
+            p[x, y] = bg + (255,)
+        head = rng.randrange(h)
+        trail = rng.randint(3, h)
+        for k in range(trail):
+            y = y0 + (head - k) % h
+            if k and rng.random() < 0.3:
+                continue
+            level = 1 - k / trail
+            p[x, y] = ((210, 255, 220) if k == 0 else (int(15 + 30 * level), int(80 + 165 * level), int(30 + 50 * level))) + (255,)
+
+
 def computer_chest_textures():
-    """The Computer Chest: a wooden chest with a screen on the front (64x32 box texture) and its item icon."""
+    """The Computer Chest: a black box covered in green falling code, a base and a lid like a shulker box
+    (64x64 texture: base 16x10x16 at the top, lid 16x6x16 below it) and its item icon."""
     rng = random.Random(77)
-    wood, dark, metal = (150, 105, 55), (95, 65, 32), (170, 175, 185)
-    screen, face = (79, 224, 255), (24, 30, 44)
-    tex = Image.new("RGBA", (64, 32))
+    tex = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    matrix_code(tex, 0, 0, 64, 26, rng)   # base
+    matrix_code(tex, 0, 26, 64, 22, rng)  # lid
     p = tex.load()
+    glow = (90, 255, 140, 255)
     for x in range(64):
-        for y in range(32):
-            d = rng.randint(-10, 10)
-            c = dark if (x % 16 in (0, 15) or y in (0, 15, 16, 31) or y == 22) else wood
-            p[x, y] = tuple(max(0, min(255, v + d)) for v in c) + (255,)
-    # front face (16..32, 16..32): a screen with a face and a latch
-    for x in range(19, 29):
-        for y in range(18, 22):
-            p[x, y] = metal + (255,)
-    for x in range(20, 28):
-        for y in range(23, 30):
-            p[x, y] = screen + (255,)
-    for x, y in ((22, 25), (25, 25), (22, 27), (23, 28), (24, 28), (25, 27)):
-        p[x, y] = face + (255,)
+        p[x, 16] = glow                   # top edge of the base's sides (the seam)
+        p[x, 47] = glow                   # bottom edge of the lid's sides
     icon = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    matrix_rain(icon, 1, 2, 14, 13, random.Random(78))
     q = icon.load()
     for x in range(1, 15):
-        for y in range(3, 15):
-            q[x, y] = (dark if x in (1, 14) or y in (3, 14, 7) else wood) + (255,)
-    for x in range(4, 12):
-        for y in range(8, 13):
-            q[x, y] = screen + (255,)
-    q[6, 10] = q[9, 10] = face + (255,)
-    for x in range(6, 10):
-        q[x, 5] = metal + (255,)
+        q[x, 7] = glow                    # the seam between lid and base
+        q[x, 2] = q[x, 14] = (20, 60, 30, 255)
+    for y in range(2, 15):
+        q[1, y] = q[14, y] = (20, 60, 30, 255)
     return tex, icon
 
 
