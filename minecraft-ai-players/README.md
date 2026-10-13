@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.31.1)
+## What it does (v1.31.2)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -75,6 +75,11 @@ Gold Ore and Nether Quartz Ore, each switchable too) and *Pick cave spot*: a las
 it goes (green when OK, red when not); tap Place (or left click) to send it there. The spot must be underground:
 10+ blocks above it, or deep down (y 20 or lower) with a roof of 3+ blocks. It mines the chosen ores around that
 spot and goes back there if it wanders more than 64 blocks away.
+
+### Follows like a dog
+When it's following you (*Follow me*) and gets more than 25 blocks away, it teleports right next to you
+(a free spot with ground under it, behind or beside you), like a tamed wolf. Not while it's in a fight, and
+not while you're mid-air (it waits until you land or are swimming).
 
 ### Self-sufficient
 The AI never asks you to fill its inventory: with no suitable tool it mines with its hands (slower, but it can

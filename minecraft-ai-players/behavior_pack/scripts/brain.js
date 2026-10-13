@@ -81,6 +81,7 @@ const ARROW_GRAVITY = 0.05; // blocks per tick per tick
 // hit), the 7-block knockback (on that first hit), and the 10-block power jump.
 const SEQUENCE_RADIUS = 30;
 const TOOL_PICKUP_RANGE = 10; // picks up tools it can use from this far away
+const FOLLOW_TELEPORT = 25; // following you and further than this: it teleports to you
 const SPRINT_MOVEMENT = 0.45; // normal is 0.3: 1.5x faster
 const POWER_JUMP_UP = 1.3; // upward push for about a 10-block jump
 const NO_FALL_MS = 5000; // no fall damage for this long after a power jump
@@ -582,6 +583,14 @@ function think(ai, ownerId, role, record, brain) {
   // doesn't freeze. One ticking area per AI, and each player only has one AI.
   keepLoaded(ai, record.key, record.mode === "wander" || record.mode === "guard");
 
+  // ---- Like a dog: following you and more than 25 blocks away (and not in a fight), it teleports
+  // right next to you.
+  if (record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
+      distance(owner.location, ai.location) > FOLLOW_TELEPORT && (owner.isOnGround || owner.isInWater)) {
+    ai.teleport(besideOwner(owner), { facingLocation: owner.location });
+    ai.clearVelocity();
+  }
+
   // ---- Lava: cover it with blocks or back away (lava proof AIs don't mind lava).
   const lavaClose = brain.lavaProof ? false : avoidLava(ai, ownerId, role, record, brain.gather);
 
@@ -761,6 +770,26 @@ function gatherWork(ai, ownerId, role, record, brain, owner, lavaClose, lastHit,
   if (slot === undefined && !isBusy(brain.gather) && !building && !lavaClose && owner && owner.dimension.id === ai.dimension.id && distance(owner.location, ai.location) > 4) {
     bridgeTowards(ai, ownerId, role, record, owner.location);
   }
+}
+
+/**
+ * A safe spot right next to its owner: a free spot with ground under it (behind or beside them),
+ * or their own spot if there's none.
+ * @param {import("@minecraft/server").Player} owner
+ */
+function besideOwner(owner) {
+  const dim = owner.dimension;
+  const p = owner.location;
+  const view = owner.getViewDirection();
+  const back = { x: -Math.sign(view.x) || 1, z: -Math.sign(view.z) || 1 };
+  for (const [ox, oz] of [[back.x * 2, 0], [0, back.z * 2], [back.x * 2, back.z * 2], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+    const at = { x: Math.floor(p.x) + ox, y: Math.floor(p.y), z: Math.floor(p.z) + oz };
+    const feet = dim.getBlock(at);
+    const head = dim.getBlock({ ...at, y: at.y + 1 });
+    const floor = dim.getBlock({ ...at, y: at.y - 1 });
+    if (feet?.isAir && head?.isAir && floor && !floor.isAir && !floor.isLiquid) return { x: at.x + 0.5, y: at.y, z: at.z + 0.5 };
+  }
+  return p;
 }
 
 /**
