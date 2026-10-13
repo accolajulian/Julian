@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.32.1)
+## What it does (v1.33.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -80,6 +80,13 @@ spot and goes back there if it wanders more than 64 blocks away.
 When it's following you (*Follow me*) it jump sprints to keep up once it's more than 4 blocks behind (never off a cliff or into lava), and if it gets more than 25 blocks away it teleports right next to you
 (a free spot with ground under it, behind or beside you), like a tamed wolf. Not while it's in a fight, and
 not while you're mid-air (it waits until you land or are swimming).
+
+### Boats
+While it's following you: if you're on the water (swimming or in a boat) and it's in the water too, or you
+paddle off more than 8 blocks away, it spawns its own boat and paddles along a block ahead of you, to your
+right. If you place a boat in the water it gets in your boat; if it's already in a boat it follows you in it.
+If you get into the same boat, you swap seats so you steer. Back on land, it gets out (its own boat
+disappears; yours is left alone).
 
 ### Self-sufficient
 The AI never asks you to fill its inventory: with no suitable tool it mines with its hands (slower, but it can

@@ -59,6 +59,7 @@ import { bridgeTowards, isBridging } from "./movement.js";
 import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from "./gather.js";
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 import { keepLoaded } from "./scout.js";
+import { boatThink } from "./boats.js";
 import { CAVE_LEASH } from "./caves.js";
 import { moveFactor, damageBonus, levelOf } from "./levels.js";
 
@@ -625,15 +626,18 @@ function think(ai, ownerId, role, record, brain) {
   // doesn't freeze. One ticking area per AI, and each player only has one AI.
   keepLoaded(ai, record.key, record.mode === "wander" || record.mode === "guard");
 
+  // ---- Boats: on the water with you it follows by boat (see boats.js); then no walking-follow below.
+  const boating = boatThink(ai, owner, record);
+
   // ---- Like a dog: following you and more than 25 blocks away (and not in a fight), it teleports
   // right next to you.
-  if (record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
+  if (!boating && record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
       distance(owner.location, ai.location) > FOLLOW_TELEPORT && (owner.isOnGround || owner.isInWater)) {
     ai.teleport(besideOwner(owner), { facingLocation: owner.location });
     ai.clearVelocity();
   }
   // Following and a bit behind: jump sprint to catch up (the loop below does it every tick).
-  if (record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
+  if (!boating && record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
       distance(owner.location, ai.location) > FOLLOW_SPRINT_FROM) {
     sprinters.set(ai.id, { ai, ownerId, speed: moveFactor(levelOf(record)), until: Date.now() + 700 });
   }
