@@ -90,9 +90,12 @@ it goes (green when OK, red when not); tap Place (or left click) to send it ther
 spot and goes back there if it wanders more than 64 blocks away.
 
 ### Follows like a dog
-When it's following you (*Follow me*) it jump sprints to keep up once it's more than 4 blocks behind (never off a cliff or into lava), and if it gets more than 25 blocks away it teleports right next to you
-(a free spot with ground under it, behind or beside you), like a tamed wolf. Not while it's in a fight, and
-not while you're mid-air (it waits until you land or are swimming).
+When it's following you (*Follow me*) it jump sprints to keep up once it's more than 4 blocks behind (never off a
+cliff or into lava), **in your tracks**: it remembers your last 400 steps and goes the way you went (around walls,
+up your stairs, over your bridges). Off your tracks it heads straight for you. It **never teleports to you**: where
+it can't walk it pillars up to you, crouch-bridges across gaps, digs stairs out of pits, or takes a boat. Far from
+every player it keeps its own land loaded so it keeps coming. (While it sprints, the game's own follow behavior is
+switched off so it doesn't run sideways.)
 
 ### Hunger
 It has hunger like a player (20). Jump sprinting after you uses it up (0.1 exhaustion per block sprinted,
@@ -109,10 +112,10 @@ can't take it. (Not in the Nether, where water doesn't work.)
 
 ### Boats
 While it's following you: if you're on the water (swimming or in a boat) and it's in the water too, or you
-paddle off more than 8 blocks away, it spawns its own boat and paddles along a block ahead of you, to your
-right. If you place a boat in the water it gets in your boat; if it's already in a boat it follows you in it.
+paddle off more than 8 blocks away, it spawns its own boat and paddles along about 4 blocks ahead of you (ahead
+of where you're heading), to your right. If you place a boat in the water it gets in your boat; if it's already in a boat it follows you in it.
 If you get into the same boat, you swap seats so you steer. Back on land, it gets out (its own boat
-disappears; yours is left alone).
+disappears; yours is left alone). It never teleports to you after getting out.
 
 ### Self-sufficient
 The AI never asks you to fill its inventory (except a pickaxe for mining, see below), with no blocks it bridges and covers lava with its own endless cobblestone, and with no bow it

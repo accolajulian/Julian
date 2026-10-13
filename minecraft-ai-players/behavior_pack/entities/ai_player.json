@@ -913,7 +913,8 @@
           "priority": 5,
           "speed_multiplier": 1.2,
           "start_distance": 6,
-          "stop_distance": 2
+          "stop_distance": 2,
+          "can_teleport": false
         },
         "minecraft:mark_variant": {
           "value": 0
@@ -929,7 +930,8 @@
           "priority": 5,
           "speed_multiplier": 1.2,
           "start_distance": 6,
-          "stop_distance": 2
+          "stop_distance": 2,
+          "can_teleport": false
         }
       },
       "aip:retreating": {
@@ -1615,6 +1617,14 @@
         "remove": {
           "component_groups": [
             "aip:look_around"
+          ]
+        }
+      },
+      "aip:follow_pause": {
+        "remove": {
+          "component_groups": [
+            "aip:resource_follow",
+            "aip:fighter_follow"
           ]
         }
       }

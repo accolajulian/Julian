@@ -1,6 +1,6 @@
 // Boats (any AI that's following you).
 // - You're on the water (swimming or in a boat) and it's in the water too, or you paddle off more than
-//   8 blocks away: it spawns its own boat, gets in, and paddles along a block ahead of you, to your right.
+//   8 blocks away: it spawns its own boat, gets in, and paddles along a few blocks ahead of you, to your right.
 // - You place a boat in the water: it gets in your boat. Already in a boat: it follows you in it.
 // - You get in the same boat: you swap seats so YOU steer (the front seat).
 // - You're back on land: it gets out (its own spawned boat disappears; your boat is left alone).
@@ -9,9 +9,10 @@ import { controlledBy, findPlayer } from "./data.js";
 
 const BOATS = ["minecraft:boat", "minecraft:chest_boat"];
 const FOLLOW_BY_BOAT_FROM = 8; // you're paddling away further than this: it follows by boat
-const PADDLE_SPEED = 0.42; // top speed (blocks per tick), about a player's boat
-const AHEAD = 1; // where it paddles: this far ahead of you...
-const RIGHT = 1.5; // ...and this far to your right
+const PADDLE_SPEED = 0.7; // top speed (blocks per tick): faster than a player's boat, so it can keep ahead
+const AHEAD = 4; // where it paddles: this far ahead of you...
+const RIGHT = 2; // ...and this far to your right
+const LEAD_TICKS = 8; // ...plus where you'll be this many ticks from now (so it doesn't lag behind)
 const OWN_BOAT = "aip:ai_boat"; // set on boats an AI spawned for itself
 
 /** @typedef {import("@minecraft/server").Entity} Entity */
@@ -99,16 +100,12 @@ function spawnBoat(ai) {
 
 /**
  * Gets out of the boat. Its own spawned boat disappears; a player's boat is left where it is.
- * @param {Entity} ai @param {Entity} boat @param {import("@minecraft/server").Player | undefined} owner
+ * @param {Entity} ai @param {Entity} boat @param {import("@minecraft/server").Player | undefined} _owner
  */
-function leaveBoat(ai, boat, owner) {
+function leaveBoat(ai, boat, _owner) {
   try {
     boat.getComponent("minecraft:rideable")?.ejectRider(ai);
     if (boat.getDynamicProperty(OWN_BOAT) === true) system.runTimeout(() => boat.isValid && boat.remove(), 2);
-    // Still far from you: hop over to you.
-    if (owner && Math.hypot(owner.location.x - ai.location.x, owner.location.z - ai.location.z) > 6) {
-      system.runTimeout(() => ai.isValid && ai.teleport(owner.location), 3);
-    }
   } catch {
     // gone
   }
@@ -152,12 +149,17 @@ system.runInterval(() => {
       const fl = Math.hypot(fx0, fz0) || 1;
       const fx = fx0 / fl;
       const fz = fz0 / fl;
-      const target = { x: owner.location.x + fx * AHEAD - fz * RIGHT, z: owner.location.z + fz * AHEAD + fx * RIGHT };
+      // A few blocks ahead of where you'll be in a moment, to your right.
+      const ov = ownerBoat ? v0 : owner.getVelocity();
+      const target = {
+        x: owner.location.x + ov.x * LEAD_TICKS + fx * AHEAD - fz * RIGHT,
+        z: owner.location.z + ov.z * LEAD_TICKS + fz * AHEAD + fx * RIGHT,
+      };
       const dx = target.x - boat.location.x;
       const dz = target.z - boat.location.z;
       const d = Math.hypot(dx, dz);
       const v = boat.getVelocity();
-      const speed = Math.min(PADDLE_SPEED, d * 0.12);
+      const speed = Math.min(PADDLE_SPEED, d * 0.2);
       const ux = d > 0 ? dx / d : 0;
       const uz = d > 0 ? dz / d : 0;
       boat.applyImpulse({ x: ux * speed - v.x, y: 0, z: uz * speed - v.z });

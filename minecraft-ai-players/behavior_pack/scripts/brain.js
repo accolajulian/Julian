@@ -85,7 +85,9 @@ const ARROW_GRAVITY = 0.05; // blocks per tick per tick
 // hit), the 7-block knockback (on that first hit), and the 10-block power jump.
 const SEQUENCE_RADIUS = 30;
 const TOOL_PICKUP_RANGE = 10; // picks up tools it can use from this far away
-const FOLLOW_TELEPORT = 25; // following you and further than this: it teleports to you
+const FOLLOW_DIG_RANGE = 25; // stuck in a pit below you within this distance: it digs stairs up
+const TRAIL_MAX = 400; // your last 400 steps are remembered (it follows in your tracks)
+const OFF_TRAIL = 6; // further than this from your tracks: it heads straight for you
 const FOLLOW_SPRINT_FROM = 4; // following you and further than this: it jump sprints to catch up
 const FOLLOW_SPRINT_UNTIL = 2.5; // ...until it's this close
 const FOLLOW_SPRINT_SPEED = 0.28; // blocks per tick (a player's sprint)
@@ -96,6 +98,55 @@ const MAX_HUNGER = 20;
 const SPRINT_HUNGER = 6; // like a player: at 6 hunger or less it can't sprint
 const CHICKEN_HUNGER = 6; // a cooked chicken fills 6 hunger
 const BITE_MS = 1600; // eating one takes as long as a player's
+
+/** Each player's tracks: where they walked, about one point per block. @type {Map<string, { dim: string, points: import("@minecraft/server").Vector3[] }>} */
+const trails = new Map();
+
+// Every 2 ticks: add each player's position to their tracks once they've moved a block (not while
+// flying or in a boat: it can't follow those steps).
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    try {
+      let t = trails.get(player.id);
+      if (!t || t.dim !== player.dimension.id) {
+        t = { dim: player.dimension.id, points: [] };
+        trails.set(player.id, t);
+      }
+      if (!player.isOnGround && !player.isInWater) continue;
+      const p = player.location;
+      const last = t.points[t.points.length - 1];
+      if (last && Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z) < 1) continue;
+      t.points.push({ x: p.x, y: p.y, z: p.z });
+      if (t.points.length > TRAIL_MAX) t.points.shift();
+    } catch {
+      // left
+    }
+  }
+}, 2);
+
+/**
+ * Where a following AI heads next: a couple of steps further along your tracks from the closest
+ * point to it (so it goes the way you went: around walls, up your stairs, over your bridges).
+ * Off your tracks, or close to you: straight to you.
+ * @param {import("@minecraft/server").Entity} ai @param {import("@minecraft/server").Player} owner
+ */
+function trailTarget(ai, owner) {
+  const t = trails.get(owner.id);
+  const p = ai.location;
+  if (!t || t.dim !== ai.dimension.id || t.points.length < 3) return owner.location;
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < t.points.length; i++) {
+    const q = t.points[i];
+    const d = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+    if (d <= bestD) {
+      best = i;
+      bestD = d;
+    }
+  }
+  if (bestD > OFF_TRAIL) return owner.location;
+  return t.points[Math.min(t.points.length - 1, best + 2)];
+}
 
 /** AIs jump sprinting after their owner. @type {Map<string, { ai: import("@minecraft/server").Entity, ownerId: string, speed: number, until: number }>} */
 const sprinters = new Map();
@@ -111,13 +162,16 @@ system.runInterval(() => {
         continue;
       }
       const p = s.ai.location;
-      const dx = owner.location.x - p.x;
-      const dz = owner.location.z - p.z;
-      const d = Math.hypot(dx, dz);
-      if (d < FOLLOW_SPRINT_UNTIL) {
+      if (Math.hypot(owner.location.x - p.x, owner.location.z - p.z) < FOLLOW_SPRINT_UNTIL) {
         sprinters.delete(id);
         continue;
       }
+      // In your tracks.
+      const goal = trailTarget(s.ai, owner);
+      const dx = goal.x - p.x;
+      const dz = goal.z - p.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.2) continue;
       const ux = dx / d;
       const uz = dz / d;
       const ahead = { x: Math.floor(p.x + ux), y: Math.floor(p.y), z: Math.floor(p.z + uz) };
@@ -223,6 +277,7 @@ const NOT_TARGETS = new Set(["minecraft:item", "minecraft:xp_orb", "minecraft:ar
  * @property {boolean} lavaProof  Lava and fire can't hurt it.
  * @property {boolean} resourcePerks  Resource AI upgrade perks: strip mining, no fall damage.
  * @property {number} level  0 once its walking speed is back to normal (-1: set it again).
+ * @property {boolean} followPaused  the game's follow behavior is off while it sprints after you
  * @property {string | undefined} lookEvent  aip:look_on / aip:look_off applied (it never looks at players on a job).
  * @property {boolean} eatingToFull  Too hungry to sprint: eating chicken until it's full.
  * @property {number} biteAt  When it takes its next bite.
@@ -661,7 +716,7 @@ function think(ai, ownerId, role, record, brain) {
 
   // ---- Working far from every player (gathering, building, guarding): keep its land loaded so it
   // doesn't freeze. One ticking area per AI, and each player only has one AI.
-  keepLoaded(ai, record.key, record.mode === "wander" || record.mode === "guard");
+  keepLoaded(ai, record.key, record.mode === "wander" || record.mode === "guard" || record.mode === "follow");
 
   // ---- Water bucket drop (mlg.js): while it's falling it does nothing else; afterwards it takes its tool back out.
   const dropping = isDropping(ai.id);
@@ -670,17 +725,19 @@ function think(ai, ownerId, role, record, brain) {
   // ---- Boats: on the water with you it follows by boat (see boats.js); then no walking-follow below.
   const boating = dropping || boatThink(ai, owner, record);
 
-  // ---- Like a dog: following you and more than 25 blocks away (and not in a fight), it teleports
-  // right next to you.
-  if (!boating && record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
-      distance(owner.location, ai.location) > FOLLOW_TELEPORT && (owner.isOnGround || owner.isInWater)) {
-    ai.teleport(besideOwner(owner), { facingLocation: owner.location });
-    ai.clearVelocity();
-  }
-  // Following and a bit behind: jump sprint to catch up (the loop below does it every tick).
+  // ---- Following and a bit behind: jump sprint after you in your tracks (the loop above does it every
+  // tick). It never teleports to you: it walks, sprints, builds up, crouch-bridges or takes a boat.
   if (!boating && record.mode === "follow" && !brain.huntId && owner && owner.dimension.id === ai.dimension.id &&
       distance(owner.location, ai.location) > FOLLOW_SPRINT_FROM && hungerOf(record) > SPRINT_HUNGER && !brain.eatingToFull) {
     sprinters.set(ai.id, { ai, ownerId, speed: 1, until: Date.now() + 700 });
+  }
+  // While it sprints after you the game's own follow behavior is switched off, so the two don't pull
+  // it different ways (that made it run sideways).
+  const pauseFollow = record.mode === "follow" && sprinters.has(ai.id);
+  if (pauseFollow !== brain.followPaused) {
+    if (pauseFollow) ai.triggerEvent("aip:follow_pause");
+    else if (record.mode === "follow") ai.triggerEvent(role === "fighter" ? "aip:fighter_follow" : "aip:resource_follow");
+    brain.followPaused = pauseFollow;
   }
 
   // ---- Following you but stuck down in a pit (you're above it and it isn't moving): it digs a
@@ -690,7 +747,7 @@ function think(ai, ownerId, role, record, brain) {
     const dx = owner.location.x - ai.location.x;
     const dz = owner.location.z - ai.location.z;
     const d = Math.hypot(dx, dz);
-    if (d > 0.5 && d < FOLLOW_TELEPORT) {
+    if (d > 0.5 && d < FOLLOW_DIG_RANGE) {
       const ux = dx / d;
       const uz = dz / d;
       // Straight at you, or along the main direction if that's blocked.
@@ -1418,6 +1475,7 @@ function ensureBrain(ai, role) {
     resourcePerks: false,
     level: -1,
     lookEvent: undefined,
+    followPaused: false,
     eatingToFull: false,
     biteAt: 0,
     hungryWarnedAt: 0,
