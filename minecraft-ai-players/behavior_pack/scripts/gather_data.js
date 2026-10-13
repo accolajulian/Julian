@@ -345,4 +345,7 @@ export const GATHER = {
   }
 };
 
-export const FOCUSES = ["Wood", "Stone", "Ores", "Everything", "Nothing"];
+export const FOCUSES = ["Trees", "Caves", "Nothing"];
+
+/** Which GATHER blocks each focus gets. @type {Record<string, string>} */
+export const FOCUS_TYPES = {"Trees": "Wood", "Caves": "Ores"};

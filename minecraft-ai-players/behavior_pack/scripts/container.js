@@ -6,7 +6,7 @@
 //   item is allowed in that slot (anything else is handed back to the owner);
 // - writes the record back into the inventory (so tool wear, arrows used, ores mined, chicken
 //   made... show up), and puts the labels back in empty slots.
-// The AI's own 10 chicken and its torches are shown on info labels, so they can't be taken.
+// The AI's own 10 chicken, its torches and its water bucket are shown on info labels, so they can't be taken.
 import { world, system, ItemStack } from "@minecraft/server";
 import { AI_ENTITY, getAi, saveRecord, findPlayer, knownAis, giveItem } from "./data.js";
 import {
@@ -44,6 +44,7 @@ const LABEL = {
   blocks: "aip:slot_blocks",
   valuables: "aip:slot_valuables",
   info: "aip:slot_info",
+  water: "aip:slot_water",
 };
 export const LABEL_ITEMS = new Set(Object.values(LABEL));
 
@@ -51,7 +52,7 @@ export const LABEL_ITEMS = new Set(Object.values(LABEL));
  * @typedef {{ kind: "tool", i: number } | { kind: "sword" } | { kind: "bow" } |
  *   { kind: "armor", slot: "head" | "chest" | "legs" | "feet" } | { kind: "shield" } | { kind: "food" } |
  *   { kind: "arrows", i: number } | { kind: "blocks", i: number } | { kind: "valuables", i: number } |
- *   { kind: "info", text: (record: import("./data.js").AiRecord) => string, lore?: string[] }} Slot
+ *   { kind: "info", text: (record: import("./data.js").AiRecord) => string, lore?: string[], icon?: keyof typeof LABEL }} Slot
  */
 
 /**
@@ -93,7 +94,12 @@ function layout(role) {
       },
       { kind: "info", text: (r) => `${r.name} (Resource AI)${r.upgraded ? " - Upgraded" : ""}`, lore: ["§7Tools are used in order 1, 2, 3."] },
       { kind: "info", text: (r) => (r.mode === "wander" ? `Wandering: ${r.focus}` : "Following you"), lore: ["§7Left click it to change."] },
-      { kind: "info", text: () => "It never fights", lore: ["§7Mobs can't hurt it. It runs from players."] },
+      {
+        kind: "info",
+        icon: "water",
+        text: () => "Water bucket (infinite, its own)",
+        lore: ["§7It pours it to get down into ravines", "§7and swim back up. It can't be taken."],
+      },
       { kind: "info", text: () => "Mining/harvesting tools only", lore: ["§7Pickaxes, axes, shovels, hoes, shears."] },
       // Row 2: armor, blocks, food, first valuable
       ...armor, ...blocks, foodInfo, { kind: "food" }, valuables[0],
@@ -165,7 +171,7 @@ function expected(record, role, s) {
     case "valuables":
       return stack(inv.valuables[s.i]) ?? label("valuables", `Valuables ${s.i + 1}`, ["§7Diamonds, gold, iron, coal, netherite..."]);
     case "info":
-      return label("info", s.text(record), s.lore);
+      return label(s.icon ?? "info", s.text(record), s.lore);
   }
 }
 

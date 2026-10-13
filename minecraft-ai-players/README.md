@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.15.0)
+## What it does (v1.16.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -91,7 +91,7 @@ worse pieces), a shield, better tools, arrows, blocks. Anything it can't use sta
 "grave", "tomb", "headstone" or "corpse" are found automatically; others can be taught in its menu
 (*Tombstones > Teach*, standing next to one). Looting can be turned off. **Targets:** *Mob killing and player killing*, or *Only player
 killing* (it still defends against mobs that attack, and attacks whatever you attack).
-**Resource commands:** "Choose resource": *Teleport to me*, *Follow me* (strictly) or *Wander and gather*, Wood, Stone, Ores, Everything (and *Strip mine* when upgraded), *Allies & enemies*, *Delete*.
+**Resource commands:** "Choose resource": *Teleport to me*, *Follow me* (strictly) or *Wander and gather*, *Trees* or *Caves* (and *Strip mine* when upgraded), *Allies & enemies*, *Delete*.
 
 Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
 
@@ -107,6 +107,8 @@ from its block slots and tells you when it runs out.
 - Uses the first tool slot that can mine the block; pickaxe tiers apply like for players (stone for iron,
   lapis and copper; iron for gold, redstone, diamonds and emeralds; diamond for ancient debris). Logs can be
   chopped by hand, slower. Mining takes as long as it would for a player (Efficiency counts).
+- **Trees:** chops whole trees (see below). **Caves:** finds ores in caves and ravines and mines them, placing a torch about every 10 blocks.
+- Carries an infinite water bucket (shown in its inventory, can't be taken). To get down into a ravine it pours water over the edge and swims down; to get back up a wall it pours water above itself and swims up. It scoops the water back up afterwards. (Not in the Nether.)
 - Only chops real trees (logs with leaves above), so it won't take apart log houses.
 - Chops trees like a player: it walks up to the trunk, stands still and chops the bottom 2 logs, steps into that gap (breaking dirt or leaves in the way), chops the rest of the tree it can reach from there, then moves on to the next tree. It really walks (with gravity and leg movement), and stands still while working instead of strolling around.
 - Drops go into its block slots first (building blocks only), then its backpack (576 items).

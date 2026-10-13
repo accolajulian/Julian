@@ -1,7 +1,9 @@
 // Gathering (Resource AI) and lava safety (both AIs).
 //
 // The AI finds the nearest block of its focus (within 12 blocks of its owner), walks to a free spot
-// next to it (really walking, with gravity, jumping up single blocks, never into lava or off a cliff),
+// next to it (really walking, with gravity, jumping up single blocks, never into lava). To get down
+// into a ravine (or back up a wall) it pours its own infinite water bucket and swims, then picks the
+// water back up.
 // then mines it. Trees are chopped like a player would: stand next to the trunk and chop the bottom
 // two logs, step into that gap (breaking dirt or leaves in the way), chop the rest of the tree from
 // there, then go to the next tree. It picks a suitable tool from slots 1-2-3,
@@ -9,7 +11,7 @@
 // its owner), and never mines
 // next to lava. Lava near any AI gets covered with blocks from its block slots, or the AI backs away.
 import { system, BlockVolume, ItemStack } from "@minecraft/server";
-import { GATHER } from "./gather_data.js";
+import { GATHER, FOCUS_TYPES } from "./gather_data.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
   inventoryOf,
@@ -45,6 +47,9 @@ const WALK_MS = 15000; // gives up on a walk after this long
 const TREE_REACH = 6; // from inside the trunk it reaches logs this far away
 const TREE_MS = 120000; // gives up on a tree after this long
 /** Blocks it may break to step into the trunk gap. */
+const WATER_MS = 15000; // gives up swimming after this long
+const WATER_DEPTH = 24; // deepest ravine it will swim down
+const WATER_HEIGHT = 16; // highest wall it will swim up
 const CLEARABLE = /leaves|dirt|grass_block|podzol|mycelium|mud|moss|snow|vine|roots|propagule|_log$|_stem$|_wood$/;
 /** Blocks it can walk through (plants, torches, snow...). */
 const PASSABLE = /short_grass|tall_grass|fern|flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily_of|torch|sapling|snow_layer|vine|carpet|dead_bush|sweet_berry|leaf_litter|wildflowers/;
@@ -439,9 +444,13 @@ function avoidTree(state, logs) {
 function findTarget(ai, record, state, ownerId, radius, owner) {
   const dim = ai.dimension;
   const feet = floor(ai.location);
-  const types = Object.keys(GATHER).filter((id) => record.focus === "Everything" || GATHER[id].focus === record.focus);
+  const kind = FOCUS_TYPES[record.focus];
+  const types = Object.keys(GATHER).filter((id) => GATHER[id].focus === kind);
   const r = Math.ceil(radius);
-  const volume = new BlockVolume({ x: feet.x - r, y: feet.y - 4, z: feet.z - r }, { x: feet.x + r, y: feet.y + 6, z: feet.z + r });
+  // In caves it looks further up and down (ravines, cave walls).
+  const down = kind === "Ores" ? 12 : 4;
+  const up = kind === "Ores" ? 8 : 6;
+  const volume = new BlockVolume({ x: feet.x - r, y: feet.y - down, z: feet.z - r }, { x: feet.x + r, y: feet.y + up, z: feet.z + r });
   const nearOwner = owner && owner.dimension.id === dim.id ? owner.location : undefined;
   let found;
   try {
@@ -578,7 +587,9 @@ function hasLeavesAbove(dim, p) {
 // ================================================================ walking
 
 /**
- * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3 }} Walker
+ * @typedef {{ source: Vector3, col: Vector3, out: Vector3 | undefined, dir: "down" | "up", endY: number, until: number }} WaterRide
+ *   Swimming down or up a water column it poured: `source` is the water block, `col` the column it swims in.
+ * @typedef {{ ai: import("@minecraft/server").Entity, state: GatherState, stand: Vector3, block: Vector3, until: number, stuck: number, last: Vector3, water?: WaterRide }} Walker
  */
 /** AIs walking to a block. @type {Map<string, Walker>} */
 const walkers = new Map();
@@ -596,6 +607,8 @@ function startWalking(ai, state, stand, block) {
 
 /** @param {string} aiId @param {GatherState} state */
 function stopWalking(aiId, state) {
+  const w = walkers.get(aiId);
+  if (w) pickUpWater(w);
   walkers.delete(aiId);
   state.walking = false;
 }
@@ -621,6 +634,10 @@ system.runInterval(() => {
  * @param {Walker} w
  */
 function step(id, w) {
+  if (w.water) {
+    swim(id, w);
+    return;
+  }
   const ai = w.ai;
   const dim = ai.dimension;
   const p = ai.location;
@@ -653,13 +670,22 @@ function step(id, w) {
       if (breakLeaves(dim, ahead)) return; // leaves in the way: break through
       const up = { ...ahead, y: fy + 1 };
       const room = passable(dim.getBlock({ x: Math.floor(p.x), y: fy + 2, z: Math.floor(p.z) }));
-      if (!free(dim, up) || !room) return; // a wall: wait (gives up if it stays stuck)
+      if (!free(dim, up) || !room) {
+        // A wall. If where it's going is up there, swim up it with its water bucket.
+        if (w.stand.y > fy + 1 && ai.isOnGround) waterUp(w, { x: Math.floor(p.x), y: fy, z: Math.floor(p.z) }, ahead);
+        return; // otherwise wait (gives up if it stays stuck)
+      }
       jump = ai.isOnGround;
     } else {
-      // Never walk into lava or off a drop of more than 3 blocks.
+      // Never walk into lava. A drop of more than 3 blocks (a ravine): if where it's going is down
+      // there, pour water over the edge and swim down; otherwise don't go.
       const below = [1, 2, 3].map((k) => dim.getBlock({ ...ahead, y: fy - k }));
-      if (below.some((b) => b && LAVA.includes(b.typeId)) || below.every((b) => passable(b))) {
+      if (below.some((b) => b && LAVA.includes(b.typeId))) {
         giveUp(id, w);
+        return;
+      }
+      if (below.every((b) => passable(b))) {
+        if (!(w.stand.y < fy - 2 && waterDown(w, ahead))) giveUp(id, w);
         return;
       }
     }
@@ -667,6 +693,127 @@ function step(id, w) {
   const v = ai.getVelocity();
   const speed = Math.min(WALK_SPEED, d);
   ai.applyImpulse({ x: ux * speed - v.x, y: jump ? JUMP - Math.max(0, v.y) : 0, z: uz * speed - v.z });
+}
+
+// ================================================================ water bucket (ravines)
+// The Resource AI carries an infinite water bucket (shown in its inventory, can't be taken). It pours a
+// water column, swims down or up it, then scoops the water back up, like a player would.
+
+/** Water works here (not in the Nether). @param {import("@minecraft/server").Dimension} dim */
+function waterWorks(dim) {
+  return dim.id !== "minecraft:nether";
+}
+
+/**
+ * Pours water over the edge into a ravine. Returns false if it can't (too deep, lava, Nether...).
+ * @param {Walker} w
+ * @param {Vector3} edge  the empty spot over the drop, at its feet level
+ */
+function waterDown(w, edge) {
+  const dim = w.ai.dimension;
+  if (!waterWorks(dim) || !dim.getBlock(edge)?.isAir) return false;
+  for (let y = edge.y - 1; y >= edge.y - WATER_DEPTH; y--) {
+    const block = dim.getBlock({ ...edge, y });
+    if (!block || LAVA.includes(block.typeId)) return false;
+    if (!passable(block)) {
+      pour(w, { source: edge, col: edge, out: undefined, dir: "down", endY: y + 1, until: Date.now() + WATER_MS });
+      return true;
+    }
+  }
+  return false; // too deep
+}
+
+/**
+ * Pours water above itself against a wall and swims up it. Returns false if it can't.
+ * @param {Walker} w
+ * @param {Vector3} col  the spot it's standing in
+ * @param {Vector3} wall  the wall spot in front of it
+ */
+function waterUp(w, col, wall) {
+  const dim = w.ai.dimension;
+  if (!waterWorks(dim)) return false;
+  for (let y = col.y + 1; y <= col.y + WATER_HEIGHT; y++) {
+    // Its column has to be open all the way up.
+    if (!passable(dim.getBlock({ ...col, y: y + 1 }))) return false;
+    // The top: room to step onto the wall, with ground under it.
+    const top = { ...wall, y };
+    if (free(dim, top) && !passable(dim.getBlock({ ...wall, y: y - 1 }))) {
+      const source = { ...col, y };
+      if (!dim.getBlock(source)?.isAir) return false;
+      pour(w, { source, col, out: wall, dir: "up", endY: y, until: Date.now() + WATER_MS });
+      return true;
+    }
+  }
+  return false;
+}
+
+/** @param {Walker} w @param {WaterRide} ride */
+function pour(w, ride) {
+  const dim = w.ai.dimension;
+  dim.setBlockType(ride.source, "minecraft:water");
+  dim.playSound("bucket.empty_water", ride.source);
+  w.water = ride;
+  w.until = Math.max(w.until, ride.until + 2000);
+}
+
+/** Scoops its water back up. @param {Walker} w */
+function pickUpWater(w) {
+  const ride = w.water;
+  if (!ride) return;
+  w.water = undefined;
+  try {
+    const dim = w.ai.dimension;
+    const block = dim.getBlock(ride.source);
+    if (block && /water/.test(block.typeId)) {
+      dim.setBlockType(ride.source, "minecraft:air");
+      dim.playSound("bucket.fill_water", ride.source);
+    }
+  } catch {
+    // The AI is gone or the area unloaded; the water stays.
+  }
+}
+
+/**
+ * One tick of swimming down or up its water column.
+ * @param {string} id
+ * @param {Walker} w
+ */
+function swim(id, w) {
+  const ride = /** @type {WaterRide} */ (w.water);
+  const ai = w.ai;
+  const p = ai.location;
+  if (Date.now() > ride.until) {
+    giveUp(id, w); // also picks the water up
+    return;
+  }
+  const v = ai.getVelocity();
+  const pull = (/** @type {Vector3} */ c) => ({ x: (c.x + 0.5 - p.x) * 0.3, z: (c.z + 0.5 - p.z) * 0.3 });
+  if (ride.dir === "down") {
+    if (p.y <= ride.endY + 0.1 && ai.isOnGround) {
+      pickUpWater(w); // at the bottom: back to walking
+      w.last = { ...p };
+      w.stuck = 0;
+      return;
+    }
+    const h = pull(ride.col);
+    ai.applyImpulse({ x: h.x - v.x, y: -0.25 - v.y, z: h.z - v.z });
+    return;
+  }
+  // Up: swim to the top, then step onto the wall and scoop the water up.
+  const out = /** @type {Vector3} */ (ride.out);
+  if (Math.floor(p.x) === out.x && Math.floor(p.z) === out.z) {
+    pickUpWater(w);
+    w.last = { ...p };
+    w.stuck = 0;
+    return;
+  }
+  if (p.y >= ride.endY - 0.1) {
+    const h = pull(out);
+    ai.applyImpulse({ x: h.x * 2 - v.x, y: 0.05 - v.y, z: h.z * 2 - v.z });
+  } else {
+    const h = pull(ride.col);
+    ai.applyImpulse({ x: h.x - v.x, y: 0.25 - v.y, z: h.z - v.z });
+  }
 }
 
 /**

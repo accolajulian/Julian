@@ -141,7 +141,7 @@ const ROLES = {
       "§7Health: 20 (same as a player)   Damage: 6 + tool",
   },
 };
-const RESOURCE_FOCUS = FOCUSES; // Wood, Stone, Ores, Everything, Nothing
+const RESOURCE_FOCUS = FOCUSES; // Trees, Caves, Nothing
 
 /** Fighter fighting styles. */
 const COMBAT_STYLES = /** @type {const} */ ([
@@ -400,7 +400,7 @@ async function buy(player, role) {
   /** @type {AiRecord} */
   const record = {
     key: newKey(), role, ownerId: player.id, buyerId: player.id,
-    name, look, state: "egg", serial: Date.now(), mode: "follow", focus: "Everything", combat: "archer_sword", targets: "all",
+    name, look, state: "egg", serial: Date.now(), mode: "follow", focus: "Trees", combat: "archer_sword", targets: "all",
   };
   inventoryOf(record).food = START_FOOD;
   saveRecord(player.id, role, record);
@@ -1001,7 +1001,11 @@ async function showCommands(player, key) {
     const resources = RESOURCE_FOCUS.filter((f) => f !== "Nothing");
     if (record.upgraded) resources.push("Strip mine");
     for (const focus of resources) {
-      const about = focus === "Strip mine" ? `\n§8Tunnels to ${ai?.dimension.id === "minecraft:nether" ? "netherite" : "diamonds"}` : "";
+      const about = focus === "Strip mine"
+        ? `\n§8Tunnels to ${ai?.dimension.id === "minecraft:nether" ? "netherite" : "diamonds"}`
+        : focus === "Trees"
+          ? "\n§8Chops down whole trees"
+          : "\n§8Mines ores in caves, lighting the way";
       actions.push({ label: `${focus === record.focus ? "§2" : ""}${focus}${about}`, run: setResource({ focus }) });
     }
   }

@@ -16,5 +16,6 @@ item.aip:slot_arrows=Arrow slot
 item.aip:slot_blocks=Block slot
 item.aip:slot_valuables=Valuables slot
 item.aip:slot_info=Info
+item.aip:slot_water=Water bucket
 entity.aip:computer_chest.name=Computer Chest
 item.aip:computer_chest=Computer Chest

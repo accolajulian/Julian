@@ -59,7 +59,18 @@ export function isRole(value) {
 
 /** @param {string} key @returns {AiRecord | undefined} */
 export function getAi(key) {
-  return readJson(`aip:rec:${key}`);
+  return upgradeRecord(readJson(`aip:rec:${key}`));
+}
+
+/**
+ * Fixes records saved by older versions (the Resource AI's choices are now Trees and Caves).
+ * @param {AiRecord | undefined} record
+ */
+function upgradeRecord(record) {
+  if (record && !["Trees", "Caves", "Strip mine", "Nothing"].includes(record.focus)) {
+    record.focus = record.focus === "Wood" ? "Trees" : "Caves";
+  }
+  return record;
 }
 
 /**
@@ -87,7 +98,7 @@ export function allAis() {
   const list = [];
   for (const id of world.getDynamicPropertyIds()) {
     if (!id.startsWith("aip:rec:")) continue;
-    const record = readJson(id);
+    const record = upgradeRecord(readJson(id));
     if (record) list.push(record);
   }
   return list;
