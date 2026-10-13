@@ -7,7 +7,7 @@
 //    grows back). The player can also hand it materials from its menu.
 // 3. Building: it crafts the logs into planks and a boat, then, step by step:
 //    - rides its boat over the area and lays a floor of planks 1 block below the water surface,
-//    - wades along the water channels and puts 1 sand on each plank of the 6 lines,
+//    - wades along the water channels and puts 1 sand on each plank of the 8 lines,
 //    - plants 1 sugar cane on each sand.
 //    Before collecting, it puts a warp point (a lodestone) on the closest land next to the farm.
 //    20 minutes after the farm was placed it warps back there and is given whatever it's still
@@ -16,9 +16,10 @@
 //
 // The farm is 15 wide and 22 long:
 // - floor: 15 x 22 = 330 planks, 1 block below the water surface (replacing whatever is there),
-// - 6 lines of 18 sand on the floor (2 blocks apart, 2-block gaps at the edges) = 108 sand,
-// - 1 sugar cane on every sand = 108 sugar cane.
-// Materials: 330 + 5 for the boat = 335 planks = 84 logs (1 plank spare), 108 sand, 108 sugar cane.
+// - 8 parallel lines of 18 sand on the floor (every other column, including both edges of the floor,
+//   with a line of water between each) = 144 sand,
+// - 1 sugar cane on every sand = 144 sugar cane.
+// Materials: 330 + 5 for the boat = 335 planks = 84 logs (1 plank spare), 144 sand, 144 sugar cane.
 import { world, system, ItemStack, MolangVariableMap } from "@minecraft/server";
 import { isLeftClick } from "./effects.js";
 import { MessageFormData } from "@minecraft/server-ui";
@@ -30,12 +31,12 @@ import { inventoryOf, isWood } from "./inventory.js";
 export const FARM_FOCUS = "Sugar cane farm";
 const WIDTH = 15;
 const LENGTH = 22;
-const LINES = [2, 4, 6, 8, 10, 12]; // which columns across the width get sand + sugar cane
+const LINES = [0, 2, 4, 6, 8, 10, 12, 14]; // which columns across the width get sand + sugar cane (water between each)
 const LINE_START = 2; // the lines run from block 2 to block 19 along the length (18 blocks)
 const LINE_END = 19;
-const LANES = [3, 7, 11]; // water channels it travels along (each reaches the lines on both sides)
+const LANES = [1, 5, 9, 13]; // water channels it travels along (each reaches the lines on both sides)
 export const FLOOR_PLANKS = WIDTH * LENGTH; // 330
-export const LINE_BLOCKS = LINES.length * (LINE_END - LINE_START + 1); // 108
+export const LINE_BLOCKS = LINES.length * (LINE_END - LINE_START + 1); // 144
 export const BOAT_PLANKS = 5;
 export const NEED_LOGS = Math.ceil((FLOOR_PLANKS + BOAT_PLANKS) / 4); // 84
 const CANE_BLOCK = "minecraft:reeds";
@@ -92,7 +93,7 @@ function isLine(w, l) {
   return LINES.includes(w) && l >= LINE_START && l <= LINE_END;
 }
 
-/** The path it travels: up channel 3, across the end, down channel 7, across, up channel 11. */
+/** The path it travels: up channel 1, across the end, down channel 5, across, up channel 9, across, down channel 13. */
 function routeCells() {
   /** @type {{ w: number, l: number }[]} */
   const cells = [];
