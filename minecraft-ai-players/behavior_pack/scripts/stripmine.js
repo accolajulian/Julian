@@ -50,11 +50,8 @@ export function stripMine(ai, ownerId, record, state, placeTorch) {
   const targets = TARGETS[/** @type {keyof typeof TARGETS} */ (dim.id)];
   if (!targets) return undefined; // not in the Overworld or the Nether
 
-  const pick = bestPickaxe(record);
-  if (!pick) {
-    warn(state, ownerId, `§e${record.name} needs a pickaxe in a tool slot to strip mine.`);
-    return undefined;
-  }
+  // Its best pickaxe, or its hands (slower, but they can mine anything): it never needs you to give it one.
+  const pick = bestPickaxe(record) ?? HANDS;
 
   // Look for ore every few seconds (or when it reached the last one).
   const now = Date.now();
@@ -76,13 +73,9 @@ export function stripMine(ai, ownerId, record, state, placeTorch) {
   // Next to the ore: mine it.
   if (target && dist(center(target), { ...ai.location, y: ai.location.y + 1.5 }) <= 3) {
     const info = GATHER[dim.getBlock(target)?.typeId ?? ""];
-    if (info && info.tier > pick.tier) {
-      warn(state, ownerId, `§e${record.name} needs a ${info.tier >= 3 ? "diamond" : "iron"} pickaxe or better to mine that.`);
-      state.target = undefined;
-      return pick.slot;
-    }
+    const use = info && info.tier > pick.tier ? HANDS : pick; // its pickaxe is too weak: hands
     ai.playAnimation("animation.aip.ai_player.mine");
-    breakBlock(ai, ownerId, record, target, pick.slot);
+    breakBlock(ai, ownerId, record, target, use.slot);
     state.target = undefined;
     state.scannedAt = 0; // look for the next one right away
     return pick.slot;
@@ -182,13 +175,16 @@ function breakBlock(ai, ownerId, record, p, slot) {
     countCollected(record, info.drop, amount); // (it's in the 20-minute report)
   }
 
-  const toolId = inventoryOf(record).tools[slot]?.id;
-  if (wearTool(record, slot) === "broke" && toolId) {
+  const toolId = slot >= 0 ? inventoryOf(record).tools[slot]?.id : undefined;
+  if (toolId && wearTool(record, slot) === "broke") {
     dim.playSound("random.break", ai.location);
     findPlayer(ownerId)?.sendMessage(`§c${record.name}'s ${itemName(toolId)} broke!`);
   }
   saveRecord(ownerId, "resource", record);
 }
+
+/** Mining with its hands: slot -1, can mine anything. */
+const HANDS = { slot: -1, tier: 4, score: 0 };
 
 /** The best pickaxe in its tool slots. @param {import("./data.js").AiRecord} record */
 function bestPickaxe(record) {
@@ -202,13 +198,6 @@ function bestPickaxe(record) {
     if (!best || score > best.score) best = { slot, tier, score };
   });
   return best;
-}
-
-/** @param {StripState} state @param {string} ownerId @param {string} message */
-function warn(state, ownerId, message) {
-  if (Date.now() - state.warnedAt < 30000) return;
-  state.warnedAt = Date.now();
-  findPlayer(ownerId)?.sendMessage(message);
 }
 
 /** @param {Vector3} p */

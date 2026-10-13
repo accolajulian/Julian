@@ -945,10 +945,6 @@ function chooseSlot(record, brain, owner, target, dist) {
       brain.wantRanged = true;
       return ranged[0];
     }
-    if (target && Date.now() - brain.warnedAt > 30000) {
-      brain.warnedAt = Date.now();
-      owner?.sendMessage(`§e${record.name}: no bow or arrows, using melee.`);
-    }
     return pickMelee(melee, tools, target);
   }
   if (style === "sword") return pickMelee(melee, tools, target);

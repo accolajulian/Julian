@@ -584,15 +584,19 @@ export function totalValuables(record) {
   return inventoryOf(record).valuables.reduce((sum, v) => sum + (v?.count ?? 0), 0);
 }
 
+/** What it builds with when its block slots are empty: its own endless supply (like its water bucket). */
+export const BUILT_IN_BLOCK = "minecraft:cobblestone";
+
 /**
- * Takes one block to place (slot 1 first). Returns its id, or undefined if there are none.
+ * Takes one block to place (slot 1 first). With nothing in its block slots it uses its own endless
+ * cobblestone, so it never needs you to give it blocks.
  * @param {import("./data.js").AiRecord} record
  */
 export function takeBlock(record) {
   const blocks = inventoryOf(record).blocks;
   const i = blocks.findIndex((b) => b && b.count > 0);
   const slot = blocks[i];
-  if (!slot) return undefined;
+  if (!slot) return BUILT_IN_BLOCK;
   slot.count -= 1;
   if (slot.count <= 0) blocks[i] = null;
   return slot.id;

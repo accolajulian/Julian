@@ -1,15 +1,12 @@
-// Bridging and pillaring with blocks from the AI's block slots.
+// Bridging and pillaring with blocks from the AI's block slots (or its own endless cobblestone).
 // - A deep gap (ravine) or lava between the AI and where it's going: it crouches and places a block
 //   in front of it, one every think, so it can walk across, like a player bridging.
 // - Its target is 2+ blocks above it and close by: it jumps and places a block under itself.
 import { system } from "@minecraft/server";
-import { saveRecord, findPlayer } from "./data.js";
-import { takeBlock, totalBlocks } from "./inventory.js";
+import { saveRecord } from "./data.js";
+import { takeBlock } from "./inventory.js";
 
 const LAVA = ["minecraft:lava", "minecraft:flowing_lava"];
-const WARN_MS = 30000;
-/** @type {Map<string, number>} owner id -> last "needs blocks" warning */
-const warned = new Map();
 
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
 
@@ -38,7 +35,6 @@ export function bridgeTowards(ai, ownerId, role, record, goal) {
   if (goal.y - ai.location.y >= 2 && flat < 3) {
     const head = dim.getBlock({ x: feet.x, y: feet.y + 2, z: feet.z });
     if (!head?.isAir) return false; // ceiling
-    if (!hasBlocks(ownerId, record)) return false;
     ai.playAnimation("animation.aip.ai_player.crouch");
     ai.applyImpulse({ x: 0, y: 0.52, z: 0 });
     // A few ticks later it's at the top of its jump: put a block where its feet were.
@@ -68,7 +64,6 @@ export function bridgeTowards(ai, ownerId, role, record, goal) {
   // below (it can just walk down).
   const deep = u.isAir && isAir(dim, { ...under, y: under.y - 1 }) && isAir(dim, { ...under, y: under.y - 2 });
   if (!lava && !(deep && goal.y >= feet.y - 1)) return false;
-  if (!hasBlocks(ownerId, record)) return false;
 
   const block = takeBlock(record);
   if (!block) return false;
@@ -86,13 +81,3 @@ function isAir(dim, p) {
   return dim.getBlock(p)?.isAir ?? false;
 }
 
-/** @param {string} ownerId @param {import("./data.js").AiRecord} record */
-function hasBlocks(ownerId, record) {
-  if (totalBlocks(record) > 0) return true;
-  const now = Date.now();
-  if (now - (warned.get(ownerId) ?? 0) > WARN_MS) {
-    warned.set(ownerId, now);
-    findPlayer(ownerId)?.sendMessage(`§e${record.name} needs blocks to get across. §7Right click it and add blocks in Inventory > Blocks.`);
-  }
-  return false;
-}

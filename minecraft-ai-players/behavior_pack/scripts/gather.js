@@ -149,8 +149,7 @@ export function avoidLava(ai, ownerId, role, record, state) {
   ai.applyImpulse({ x: (away.x / len) * 0.45, y: 0.15, z: (away.z / len) * 0.45 });
   state.mining = undefined;
   state.pausedUntil = Date.now() + 10000;
-  warn(state, ownerId, "lava", `§6${record.name} found lava and backed away.` +
-    (covered === 0 ? " §7Right click it and add blocks (Inventory > Blocks) so it can cover lava." : ""));
+  warn(state, ownerId, "lava", `§6${record.name} found lava and backed away.`);
   return true;
 }
 
@@ -420,7 +419,7 @@ function chopTree(ai, record, state) {
 function startChop(ai, record, p, reach, state) {
   const id = /** @type {string} */ (ai.dimension.getBlock(p)?.typeId);
   const info = GATHER[id];
-  const tool = toolFor(record, info) ?? { slot: -1, speed: 1 };
+  const tool = toolFor(record, info);
   const ticks = Math.min(400, Math.max(4, Math.ceil(((info.hardness * 30) / tool.speed) * miningFactor(levelOf(record)))));
   state.mining = { ...p, id, slot: tool.slot, until: system.currentTick + ticks, reach };
   face(ai, center(p));
@@ -495,7 +494,6 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
   const eye = { x: ai.location.x, y: ai.location.y + 1.5, z: ai.location.z };
   /** @type {{ location: Vector3, id: string, slot: number, ticks: number, d: number } | undefined} */
   let best;
-  let missingTool;
   for (const p of found) {
     const d = dist(center(p), eye);
     if (d > radius || (best && d >= best.d)) continue;
@@ -513,10 +511,6 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
     // Leave the bottom of each sugar cane so it grows back.
     if (info.focus === "Cane" && dim.getBlock({ ...p, y: p.y - 1 })?.typeId !== id) continue;
     const tool = toolFor(record, info);
-    if (!tool) {
-      missingTool = info;
-      continue;
-    }
     // Never mine next to lava.
     if (lavaNextTo(dim, p).length > 0) {
       state.avoid.set(key, now + 120000);
@@ -526,10 +520,6 @@ function findTarget(ai, record, state, ownerId, radius, owner) {
     best = { location: p, id, slot: tool.slot, ticks, d };
   }
 
-  if (!best && missingTool) {
-    const need = missingTool.tier >= 2 ? "an iron pickaxe or better" : missingTool.tier === 1 ? "a stone pickaxe or better" : "a pickaxe";
-    warn(state, ownerId, `tool${missingTool.tier}`, `§e${record.name} needs ${need} in a tool slot to mine that.`);
-  }
   return best;
 }
 
@@ -632,7 +622,8 @@ function toolFor(record, info) {
     const speed = (MATERIAL_SPEED[material] ?? 1) + (efficiency > 0 ? efficiency * efficiency + 1 : 0);
     return { slot, speed };
   }
-  return info.required ? undefined : { slot: -1, speed: 1 };
+  // No suitable tool: it mines with its hands (slower, but it can mine anything). It never needs you to give it tools.
+  return { slot: -1, speed: 1 };
 }
 
 /** @param {import("@minecraft/server").Dimension} dim @param {Vector3} p */
