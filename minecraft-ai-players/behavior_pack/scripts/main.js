@@ -1129,7 +1129,7 @@ async function showJobs(player, key) {
     run: () => setJob(player, key, job),
   }));
   actions.push({
-    label: `${working && record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm${record.farm ? " §8(in progress)" : ""}`,
+    label: `${working && record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm §8(In Water Only)${record.farm ? " - in progress" : ""}`,
     run: () => (record.farm ? showFarm(player, key) : startPlacing(player, key)),
   });
   const form = new ActionFormData().title("Jobs").body(working ? `§7Now:§r ${record.focus}` : "Pick a job.");
