@@ -60,6 +60,7 @@ import { createGatherState, avoidLava, gather, setGatherBehavior, isBusy } from 
 import { FARM_FOCUS, buildFarm, checkCollected, farmBuilding } from "./farm.js";
 import { keepLoaded } from "./scout.js";
 import { boatThink } from "./boats.js";
+import { isDropping, takeHandChanged, startDrop } from "./mlg.js";
 import { CAVE_LEASH } from "./caves.js";
 import { moveFactor, damageBonus, levelOf } from "./levels.js";
 
@@ -113,8 +114,13 @@ system.runInterval(() => {
       const ahead = { x: Math.floor(p.x + ux), y: Math.floor(p.y), z: Math.floor(p.z + uz) };
       const dim = s.ai.dimension;
       if ([0, -1].some((k) => /lava/.test(dim.getBlock({ ...ahead, y: ahead.y + k })?.typeId ?? ""))) continue;
-      // A deep drop ahead (a ravine): don't run off it; crouch-bridging takes over.
-      if ([1, 2, 3].every((k) => dim.getBlock({ ...ahead, y: ahead.y - k })?.isAir ?? false)) continue;
+      // A deep drop ahead: if you're down there it jumps down with its water bucket; otherwise it
+      // doesn't run off it (crouch-bridging takes over).
+      if ([1, 2, 3].every((k) => dim.getBlock({ ...ahead, y: ahead.y - k })?.isAir ?? false)) {
+        if (owner.location.y < p.y - 3 && startDrop(s.ai, { x: ux, z: uz })) sprinters.delete(id);
+        continue;
+      }
+      if (isDropping(id)) continue;
       const v = s.ai.getVelocity();
       const speed = FOLLOW_SPRINT_SPEED * s.speed;
       const jump = s.ai.isOnGround;
@@ -626,8 +632,12 @@ function think(ai, ownerId, role, record, brain) {
   // doesn't freeze. One ticking area per AI, and each player only has one AI.
   keepLoaded(ai, record.key, record.mode === "wander" || record.mode === "guard");
 
+  // ---- Water bucket drop (mlg.js): while it's falling it does nothing else; afterwards it takes its tool back out.
+  const dropping = isDropping(ai.id);
+  if (!dropping && takeHandChanged(ai.id)) brain.equipped = "unknown";
+
   // ---- Boats: on the water with you it follows by boat (see boats.js); then no walking-follow below.
-  const boating = boatThink(ai, owner, record);
+  const boating = dropping || boatThink(ai, owner, record);
 
   // ---- Like a dog: following you and more than 25 blocks away (and not in a fight), it teleports
   // right next to you.

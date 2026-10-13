@@ -15,6 +15,7 @@ import { GATHER, FOCUS_TYPES } from "./gather_data.js";
 import { FARM_FOCUS, farmKinds, farmCollect } from "./farm.js";
 import { createScoutState, scout } from "./scout.js";
 import { caveBlocks } from "./caves.js";
+import { isDropping, startDrop } from "./mlg.js";
 import { addXp, countCollected, miningFactor, moveFactor, levelOf, blockXp } from "./levels.js";
 import { saveRecord, findPlayer, giveItem } from "./data.js";
 import {
@@ -220,6 +221,7 @@ export function setGatherBehavior(ai, state, focus, canGather) {
 export function gather(ai, ownerId, record, state, owner) {
   const now = Date.now();
   if (record.focus === "Nothing" || now < state.pausedUntil) return undefined;
+  if (isDropping(ai.id)) return undefined; // mid water-bucket drop
 
   const dim = ai.dimension;
   const farming = record.focus === FARM_FOCUS;
@@ -812,6 +814,11 @@ function step(id, w) {
         return;
       }
       if (below.every((b) => passable(b))) {
+        // Where it's going is down there: jump down with its water bucket (or swim down a water column).
+        if (w.stand.y < fy - 2 && startDrop(ai, { x: ux, z: uz })) {
+          stopWalking(id, w.state);
+          return;
+        }
         if (!(w.stand.y < fy - 2 && waterDown(w, ahead))) giveUp(id, w);
         return;
       }

@@ -98,7 +98,7 @@ function layout(role, evolved = false) {
     kind: "info",
     icon: "water",
     text: () => "Water bucket (infinite, its own)",
-    lore: ["§7It pours it to get down into ravines", "§7and swim back up. It can't be taken."],
+    lore: ["§7Like a creative bucket: never empties or fills.", "§7Jumps down cliffs onto a splash of water,", "§7then scoops it back up. It can't be taken."],
   };
   if (role === "fighter" && evolved) {
     return [
