@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.24.0)
+## What it does (v1.25.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -41,8 +41,8 @@ An original add-on with AI companions that look like players. It's kept separate
 |---|---|---|
 | 1. Resource AI | 30 gold ingots (buy) | Gathering (Trees, Caves), sugar cane farm, torches, water bucket, AI Chest (locked) |
 | 2. Resource AI+ | 10 diamonds | Strip mining (digs a tunnel straight to diamonds, or netherite in the Nether), no lava/fire/fall damage (no potion bubbles), AI Chest unlocked, Computer Chest access |
-| 3. Fighter AI | 15 diamonds | Becomes a Fighter and **keeps everything above**: fights mobs and players, guards, fighting styles, arrows, tombstone looting, red Remote. Left click → *Gather & build* sends it off to do its old jobs; it drops the work to fight any enemy, then goes back to it. Its tool slots take weapons and mining tools. |
-| 4. Fighter AI Max | 10 netherite ingots | The 30-block sequence (below), 2 opening arrows at 3x speed in Bow and Sword Combat |
+| 3. Fighter AI | 15 diamonds | Becomes a Fighter and **keeps everything above**: fights mobs and players, guards, fighting styles, arrows, tombstone looting, red Remote. Remote → *Jobs* sends it off to do its old jobs; it drops the work to fight any enemy, then goes back to it. Its tool slots take weapons and mining tools. |
+| 4. Fighter AI Max | 10 netherite ingots | The 30-block sequence (below), 2 opening arrows at 3x speed in Bow + Sword |
 
 While an AI is working (gathering, building, guarding) with no player within 40 blocks, it keeps its land loaded with one ticking area so it doesn't freeze. Its ticking areas are removed when it comes back near a player, is deleted, or the world reloads (only ones the add-on made).
 
@@ -75,7 +75,7 @@ upgraded AI's own inventory instead, or to pick the chest up. Only the player wh
 ### Controls
 | Action | What happens |
 |---|---|
-| Left click its Remote (the **only** way to give commands) | Commands (Teleport to me, settings, gather focus, Allies & enemies, **Delete** at the bottom). Clicking the AI itself does nothing. |
+| Left click its Remote (the **only** way to give commands) | The Remote menu (below). **Delete** is at the bottom. Clicking the AI itself does nothing. |
 | Right click your AI | Its inventory: a 27-slot chest-style screen with labeled slots (owner only) |
 | Right click its Remote | Brings the AI next to you, so you can right click it |
 | An ally right clicks your AI | They can take spare cooked chicken |
@@ -91,13 +91,13 @@ shown on info labels and can't be taken.
 | 2 | Helmet, Chestplate, Leggings, Boots, Blocks 1-2, Own chicken (info), Spare chicken, Valuables 1 | same |
 | 3 | Valuables 2-10 | Valuables 2-10 |
 
-**Fighter commands:** *Teleport to me*, *Attack a player*, *Follow and protect me*, *Guard this spot*, *Fighting*, *Tombstones*, *Allies & enemies*, *Delete*.
+**Remote menu (Fighter):** *Come here*, *Follow me*, *Guard here*, *Attack a player*, *Jobs* (if it was a Resource AI), *Fight settings* (Style, Targets, Loot tombstones, Teach a tombstone: tap to change), *AI Chest*, *Friends & enemies*, *Delete*.
 
 | Fighting | What it does |
 |---|---|
-| Sword Combat | Sprints at the enemy and keeps hitting with its sword |
-| Bow Only | Keeps its distance and shoots from up to 25 blocks, aiming ahead of moving targets |
-| Bow and Sword Combat | Runs in with its bow out, fires one arrow from about 20 blocks, then switches to its sword. No more opening arrows in that fight unless a new target is over 20 blocks away |
+| Sword | Sprints at the enemy and keeps hitting with its sword |
+| Bow | Keeps its distance and shoots from up to 25 blocks, aiming ahead of moving targets |
+| Bow + Sword | Runs in with its bow out, fires one arrow from about 20 blocks, then switches to its sword. No more opening arrows in that fight unless a new target is over 20 blocks away |
 
 All styles back off to heal at 30% health. **Targets** (in the same Fighting section): mobs and players, or only players.
 
@@ -107,7 +107,7 @@ worse pieces), a shield, better tools, arrows, blocks. Anything it can't use sta
 "grave", "tomb", "headstone" or "corpse" are found automatically; others can be taught in its menu
 (*Tombstones > Teach*, standing next to one). Looting can be turned off. **Targets:** *Mob killing and player killing*, or *Only player
 killing* (it still defends against mobs that attack, and attacks whatever you attack).
-**Resource commands:** "Choose resource": *Teleport to me*, *Follow me* (strictly) or *Wander and gather*, *Trees* or *Caves* (and *Strip mine* when upgraded), *Sugar cane farm*, *Allies & enemies*, *Delete*.
+**Remote menu (Resource AI):** *Come here*, *Follow me*, *Jobs* (*Trees*, *Caves*, *Strip mine* when upgraded, *Sugar cane farm*: picking one starts it), *AI Chest*, *Friends & enemies*, *Delete*.
 
 Both AIs have **20 health, the same as a player**, and eat their own cooked chicken (+4 health each) when hurt.
 

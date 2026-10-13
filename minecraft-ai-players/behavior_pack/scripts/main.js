@@ -93,7 +93,7 @@ const LEVEL_UPS = {
       "its AI Chest, torches, water bucket, lava/fire/fall proof.\n\n" +
       "§a+§r Follows and protects you from mobs and players, most dangerous enemy first\n" +
       "§a+§r Attacks whatever you attack, or any player you send it after\n" +
-      "§a+§r Fighting: Sword Combat, Bow Only (25 blocks, aims ahead), or Bow and Sword Combat\n" +
+      "§a+§r Fight styles: Sword, Bow (25 blocks, aims ahead), or Bow + Sword\n" +
       "§a+§r Hunts mobs and players, or only players; can guard a spot\n" +
       "§a+§r Arrow slots; its tool slots take weapons and mining tools\n" +
       "§a+§r Breaks tombstones and takes the most valuable loot\n" +
@@ -111,7 +111,7 @@ const LEVEL_UPS = {
       "§a+§r That first hit knocks the player back about 7 blocks\n" +
       "§a+§r Power jump: jumps about 10 blocks to reach a player more than 2 blocks above it, swinging all\n" +
       "   the way up (no fall damage for 5 seconds after)\n" +
-      "§a+§r Bow and Sword Combat: 2 opening arrows at 3x speed instead of 1",
+      "§a+§r Bow + Sword: 2 opening arrows at 3x speed instead of 1",
   },
 };
 
@@ -155,7 +155,7 @@ const ROLES = {
       "§a+§r Goes after the most dangerous enemy first, and protects you first when you're hurt\n" +
       "§a+§r Attacks whatever you attack\n" +
       "§a+§r Backs off to heal when badly hurt. Mobs and explosions can't hurt it\n" +
-      "§a+§r Fighting: Sword Combat, Bow Only (25 blocks, aims ahead), or Bow and Sword Combat\n" +
+      "§a+§r Fight styles: Sword, Bow (25 blocks, aims ahead), or Bow + Sword\n" +
       "§a+§r Can hunt mobs and players, or only players\n" +
       "§a+§r 3 tool slots for fighting tools, used in order 1, 2, 3 (next one when a tool breaks)\n" +
       "§a+§r 2 arrow slots, so it can fight with a bow or crossbow\n" +
@@ -177,14 +177,14 @@ const RESOURCE_FOCUS = FOCUSES; // Trees, Caves, Nothing
 
 /** Fighter fighting styles. */
 const COMBAT_STYLES = /** @type {const} */ ([
-  { id: "sword", label: "Sword Combat", about: "Sprints at the enemy and keeps hitting with its sword" },
-  { id: "archer", label: "Bow Only", about: "Shoots from up to 25 blocks, aiming ahead of moving targets" },
-  { id: "archer_sword", label: "Bow and Sword Combat", about: "One arrow from 20 blocks, then runs in with its sword" },
+  { id: "sword", label: "Sword", about: "Sprints at the enemy and keeps hitting with its sword" },
+  { id: "archer", label: "Bow", about: "Shoots from up to 25 blocks, aiming ahead of moving targets" },
+  { id: "archer_sword", label: "Bow + Sword", about: "One arrow from 20 blocks, then runs in with its sword" },
 ]);
 /** Fighter target modes. */
 const TARGET_MODES = /** @type {const} */ ([
-  { id: "all", label: "Mob killing and player killing", about: "Hunts monsters and enemy players" },
-  { id: "players", label: "Only player killing", about: "Ignores monsters unless they attack" },
+  { id: "all", label: "Mobs + players", about: "Hunts monsters and enemy players" },
+  { id: "players", label: "Players only", about: "Ignores monsters unless they attack" },
 ]);
 
 // The 10 looks (skin numbers aip:skin_0 ... aip:skin_9). An AI's look is picked automatically.
@@ -229,7 +229,7 @@ const GUIDE_TEXT =
   "(no sand, gravel or other falling blocks; used to bridge, pillar and cover lava), 10 valuables slots, " +
   "and arrows. Drag items into the labeled slots; wrong items are handed back.\n\n" +
   "§lFighter settings§r (left click its Remote to change)\n" +
-  "Fighting: Sword Combat, Bow Only, or Bow and Sword Combat. Targets: mobs and players, or only players.\n" +
+  "Style: Sword, Bow, or Bow + Sword. Targets: mobs + players, or players only.\n" +
   "Tombstones: it breaks tombstones near it and takes the most valuable loot (can be turned off).\n\n" +
   "§lFood§r\n" +
   `Each AI makes ${FOOD_RESERVED} cooked chicken every 10 minutes, up to ${FOOD_CAP}. ` +
@@ -602,7 +602,7 @@ function becomeFighter(player, record) {
   }
   player.sendMessage(
     `§b${record.name} is now a Fighter AI! §fIt keeps everything it could do before. ` +
-      "Left click its Remote: fighting commands, plus §eGather & build§f for its old jobs (it still fights any enemy that shows up)."
+      "Its Remote now has fight commands, plus §eJobs§f (it still fights any enemy that shows up)."
   );
 }
 
@@ -893,14 +893,13 @@ async function deleteAi(player, key) {
   const confirm = await new MessageFormData()
     .title(`Delete ${record.name}?`)
     .body(
-      `${record.name} and its Remote will be gone for good. You get back everything it carries.\n\n` +
+      "Gone for good. You get its items back. No refund." +
         (canGather(record) && !resourcePerks(record) && stashCount(record) > 0
-          ? `§6Its AI Chest is still locked, so the ${stashCount(record)} items in it are lost.§r\n\n`
-          : "") +
-        `§cThere's no refund, and whoever bought it can't buy another ${ROLES[role].title} (one per player).`
+          ? `\n§6Its locked AI Chest (${stashCount(record)} items) is lost.`
+          : "")
     )
-    .button1("Delete")
-    .button2("Keep")
+    .button1("§cDelete")
+    .button2("Cancel")
     .show(player);
   if (confirm.selection !== 0) return;
 
@@ -1058,7 +1057,8 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target }) => {
 // ================================================================ commands (left click)
 
 /**
- * Everything you can tell your AI to do. Opened by left clicking the AI or its Remote.
+ * The Remote's menu (left click the Remote): everything you can tell your AI to do.
+ * Kept short: one status line, plain buttons, details in sub-menus.
  * @param {import("@minecraft/server").Player} player
  * @param {string} key
  */
@@ -1068,42 +1068,31 @@ async function showCommands(player, key) {
     player.sendMessage("§eYou don't control that AI anymore.");
     return;
   }
-  const role = record.role;
   const ai = record.id ? world.getEntity(record.id) : undefined;
+  const fighter = record.role === "fighter";
+  const now = record.mode === "wander" ? record.focus : record.mode === "guard" ? "Guarding" : "Following you";
+  const on = (/** @type {boolean} */ yes) => (yes ? "§2" : "");
+  const needAi = (/** @type {(ai: import("@minecraft/server").Entity) => unknown} */ fn) => () =>
+    ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far. Use Come here first.`);
 
   /** @type {{ label: string, run: () => unknown }[]} */
-  const actions = [{ label: "Teleport to me", run: () => recallAi(player, key) }];
-  let body = "";
-  const needAi = (/** @type {(ai: import("@minecraft/server").Entity) => unknown} */ fn) => () =>
-    ai?.isValid ? fn(ai) : player.sendMessage(`§e${record.name} is too far away. Teleport it to you first.`);
-
-  if (role === "fighter") {
-    const mode = record.mode === "guard" ? "Guarding a spot" : record.mode === "wander" ? `Gathering: ${record.focus}` : "Following and protecting you";
-    const style = COMBAT_STYLES.find((c) => c.id === (record.combat ?? "archer_sword")) ?? COMBAT_STYLES[2];
-    const targets = TARGET_MODES.find((t) => t.id === (record.targets ?? "all")) ?? TARGET_MODES[0];
-    body = `Right now: §e${mode}§r\nStyle: §e${style.label}§r\nTargets: §e${targets.label}§r`;
+  const actions = [{ label: "Come here", run: () => recallAi(player, key) }];
+  if (fighter) {
+    actions.push({ label: `${on(record.mode === "follow")}Follow me`, run: needAi((a) => setFighterMode(player, key, a, "follow")) });
+    actions.push({ label: `${on(record.mode === "guard")}Guard here`, run: needAi((a) => setFighterMode(player, key, a, "guard")) });
     actions.push({ label: "Attack a player", run: needAi((a) => chooseAttackTarget(player, a)) });
-    actions.push({ label: "Follow and protect me", run: needAi((a) => setFighterMode(player, key, a, "follow")) });
-    actions.push({ label: "Guard this spot\n§8Attacks any other player who comes near", run: needAi((a) => setFighterMode(player, key, a, "guard")) });
-    actions.push({ label: `Fighting\n§8${style.label}, ${targets.label.toLowerCase()}`, run: () => chooseFighting(player, key) });
-    actions.push({ label: `Tombstones\n§8Looting ${record.loot === false ? "off" : "on"}`, run: () => showTombs(player, key) });
+  } else {
+    actions.push({ label: `${on(record.mode !== "wander")}Follow me`, run: () => setJob(player, key, undefined) });
   }
-  if (role === "fighter" && record.evolved) {
-    actions.push({
-      label: `${record.mode === "wander" ? "§2" : ""}Gather & build\n§8${record.mode === "wander" ? `Working: ${record.focus}` : "Its Resource AI jobs"}`,
-      run: () => showGathering(player, key),
-    });
-  }
-  if (role !== "fighter") {
-    body = "Choose resource";
-    resourceChoices(player, key, record, ai, actions, true);
-  }
-  actions.push({ label: "Allies & enemies", run: () => showMemory(player) });
-  actions.push({ label: `§cDelete ${record.name}\n§8Removes the AI and its Remote`, run: () => deleteAi(player, key) });
+  if (canGather(record)) actions.push({ label: `${on(record.mode === "wander")}Jobs`, run: () => showJobs(player, key) });
+  if (fighter) actions.push({ label: "Fight settings", run: () => chooseFighting(player, key) });
+  if (canGather(record)) actions.push({ label: `AI Chest${resourcePerks(record) ? "" : " §8(locked)"}`, run: () => showStash(player, key) });
+  actions.push({ label: "Friends & enemies", run: () => showMemory(player) });
+  actions.push({ label: "§cDelete", run: () => deleteAi(player, key) });
 
   const form = new ActionFormData()
-    .title(`${ROLES[role].color}${record.name}§r (${STAGE_NAMES[stageOf(record)]})`)
-    .body(`§a${levelText(record)}§r\n${body}`);
+    .title(`${record.name} · ${STAGE_NAMES[stageOf(record)]}`)
+    .body(`§7Now:§r ${now}\n§7${levelText(record)}`);
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
@@ -1111,78 +1100,50 @@ async function showCommands(player, key) {
 }
 
 /**
- * A Fighter that was a Resource AI: its old jobs. Picking one sends it off to do it (it still fights).
+ * Sends the AI off to do a job (gathering, strip mining), or back to following (job undefined).
+ * A Fighter still fights any enemy that shows up while working.
+ * @param {import("@minecraft/server").Player} player @param {string} key @param {string | undefined} job
+ */
+function setJob(player, key, job) {
+  const r = mine(player, key);
+  if (!r) return;
+  if (job) {
+    r.focus = job;
+    r.mode = "wander";
+  } else {
+    r.mode = "follow";
+    const ai = r.id ? world.getEntity(r.id) : undefined;
+    if (r.role === "fighter") ai?.triggerEvent("aip:fighter_follow");
+  }
+  saveRecord(player.id, r.role, r);
+  toolsChanged(r.id);
+  player.sendMessage(`§e${r.name}: ${job ?? "following you"}`);
+}
+
+/**
+ * Jobs: picking one starts it. The sugar cane farm opens its own menu once it's placed.
  * @param {import("@minecraft/server").Player} player @param {string} key
  */
-async function showGathering(player, key) {
+async function showJobs(player, key) {
   const record = mine(player, key);
   if (!record) return;
-  const ai = record.id ? world.getEntity(record.id) : undefined;
+  const working = record.mode === "wander";
+  const jobs = RESOURCE_FOCUS.filter((f) => f !== "Nothing");
+  if (resourcePerks(record)) jobs.push("Strip mine");
   /** @type {{ label: string, run: () => unknown }[]} */
-  const actions = [];
-  resourceChoices(player, key, record, ai, actions, false);
-  const form = new ActionFormData()
-    .title(`${record.name}: Gather & build`)
-    .body(
-      record.mode === "wander"
-        ? `Working on: §e${record.focus}§r\n§7It drops the work to fight any enemy, then goes back to it. Pick "Follow and protect me" in its commands to stop.`
-        : "Pick a job and it goes off to do it. §7It still fights any enemy that shows up."
-    );
+  const actions = jobs.map((job) => ({
+    label: `${working && record.focus === job ? "§2" : ""}${job}`,
+    run: () => setJob(player, key, job),
+  }));
+  actions.push({
+    label: `${working && record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm${record.farm ? " §8(in progress)" : ""}`,
+    run: () => (record.farm ? showFarm(player, key) : startPlacing(player, key)),
+  });
+  const form = new ActionFormData().title("Jobs").body(working ? `§7Now:§r ${record.focus}` : "Pick a job.");
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
   await actions[response.selection].run();
-}
-
-/**
- * The gathering jobs (Resource AI menu, and a Fighter's Gather & build menu).
- * @param {import("@minecraft/server").Player} player @param {string} key @param {AiRecord} record
- * @param {import("@minecraft/server").Entity | undefined} ai
- * @param {{ label: string, run: () => unknown }[]} actions
- * @param {boolean} followChoices  Resource AI: also "Follow me" / "Wander and gather"
- */
-function resourceChoices(player, key, record, ai, actions, followChoices) {
-  {
-    const role = record.role;
-    const wandering = record.mode === "wander";
-    const setResource = (/** @type {{ mode?: "follow" | "wander", focus?: string }} */ change) => () => {
-      const r = mine(player, key);
-      if (!r) return;
-      if (change.mode) r.mode = change.mode;
-      if (change.focus) {
-        r.focus = change.focus;
-        r.mode = "wander"; // picking something to get sends it off to get it
-      }
-      saveRecord(player.id, role, r);
-      toolsChanged(r.id);
-      player.sendMessage(r.mode === "wander" ? `§e${r.name} will wander and get: ${r.focus}` : `§e${r.name} will follow you.`);
-    };
-    if (followChoices) {
-      actions.push({ label: `${wandering ? "" : "§2"}Follow me\n§8Strictly follows you, doesn't gather`, run: setResource({ mode: "follow" }) });
-      actions.push({ label: `${wandering ? "§2" : ""}Wander and gather\n§8Goes off to get the resource below`, run: setResource({ mode: "wander" }) });
-    }
-    const resources = RESOURCE_FOCUS.filter((f) => f !== "Nothing");
-    if (resourcePerks(record)) resources.push("Strip mine");
-    actions.push({
-      label: record.farm
-        ? `${record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm\n§8${farmProgress(record.farm)}`
-        : "Sugar cane farm\n§8Builds a 15 x 22 farm in water",
-      run: () => (record.farm ? showFarm(player, key) : startPlacing(player, key)),
-    });
-    const saved = stashCount(record);
-    actions.push({
-      label: `AI Chest\n§8${saved} items${resourcePerks(record) ? "" : " - locked until upgraded"}`,
-      run: () => showStash(player, key),
-    });
-    for (const focus of resources) {
-      const about = focus === "Strip mine"
-        ? `\n§8Tunnels to ${ai?.dimension.id === "minecraft:nether" ? "netherite" : "diamonds"}`
-        : focus === "Trees"
-          ? "\n§8Chops down whole trees"
-          : "\n§8Mines ores in caves, lighting the way";
-      actions.push({ label: `${wandering && focus === record.focus ? "§2" : ""}${focus}${about}`, run: setResource({ focus }) });
-    }
-  }
 }
 
 /**
@@ -1197,10 +1158,10 @@ async function chooseAttackTarget(player, ai) {
     .filter((p) => p.id !== player.id && !allies[p.id] && p.dimension.id === ai.dimension.id)
     .filter((p) => Math.hypot(p.location.x - ai.location.x, p.location.z - ai.location.z) <= 64);
   if (choices.length === 0) {
-    player.sendMessage("§eThere are no other players near your Fighter (allies don't count).");
+    player.sendMessage("§eNo players near it (friends don't count).");
     return;
   }
-  const form = new ActionFormData().title("Attack a player").body("Your Fighter goes after them, even if it's fighting someone else.");
+  const form = new ActionFormData().title("Attack who?");
   choices.forEach((p) => form.button(p.name));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
@@ -1208,77 +1169,55 @@ async function chooseAttackTarget(player, ai) {
 }
 
 /**
- * Fighter tombstone settings: looting on/off, and teaching it tombstones from another add-on.
+ * Fight settings, on one screen. Tapping a setting switches it to the next option.
  * @param {import("@minecraft/server").Player} player @param {string} key
  */
-async function showTombs(player, key) {
-  const record = mine(player, key);
-  if (!record) return;
-  const types = tombTypes();
-  const known = [...types.blocks, ...types.entities];
-  const response = await new ActionFormData()
-    .title("Tombstones")
-    .body(
-      `Looting: §e${record.loot === false ? "off" : "on"}§r\n\n` +
-        `When it isn't fighting, ${record.name} breaks tombstones near it and takes the most valuable ` +
-        "items first (valuables, better armor and tools, arrows, blocks). The rest stays on the ground.\n\n" +
-        `Tombstones it knows: ${known.length ? known.join(", ") : "§cnone yet§r"}\n\n` +
-        "§7If it doesn't recognize your tombstones, stand next to one and tap Teach."
-    )
-    .button(record.loot === false ? "Turn looting on" : "Turn looting off")
-    .button("Teach: a tombstone next to me")
-    .button("Forget taught tombstones")
-    .show(player);
-  if (response.canceled) return;
-  if (response.selection === 0) {
-    record.loot = record.loot === false;
+async function chooseFighting(player, key) {
+  for (;;) {
+    const record = mine(player, key);
+    if (!record) return;
+    const styleIndex = Math.max(0, COMBAT_STYLES.findIndex((c) => c.id === (record.combat ?? "archer_sword")));
+    const targetIndex = Math.max(0, TARGET_MODES.findIndex((t) => t.id === (record.targets ?? "all")));
+    const response = await new ActionFormData()
+      .title("Fight settings")
+      .body("§7Tap to change.")
+      .button(`Style: §2${COMBAT_STYLES[styleIndex].label}`)
+      .button(`Targets: §2${TARGET_MODES[targetIndex].label}`)
+      .button(`Loot tombstones: §2${record.loot === false ? "Off" : "On"}`)
+      .button("Teach a tombstone")
+      .button("Done")
+      .show(player);
+    if (response.canceled || response.selection === undefined || response.selection === 4) return;
+    if (response.selection === 3) return teachTomb(player);
+    if (response.selection === 0) record.combat = COMBAT_STYLES[(styleIndex + 1) % COMBAT_STYLES.length].id;
+    if (response.selection === 1) record.targets = TARGET_MODES[(targetIndex + 1) % TARGET_MODES.length].id;
+    if (response.selection === 2) record.loot = record.loot === false;
     saveRecord(player.id, "fighter", record);
-    player.sendMessage(`§e${record.name}: tombstone looting ${record.loot ? "on" : "off"}.`);
-  } else if (response.selection === 1) {
-    const things = addOnThingsNear(player);
-    if (things.length === 0) {
-      player.sendMessage("§eNo add-on blocks or entities right next to you. Stand next to a tombstone and try again.");
-      return;
-    }
-    const pick = new ActionFormData().title("Which one is the tombstone?");
-    things.forEach((id) => pick.button(id));
-    const choice = await pick.show(player);
-    if (choice.canceled || choice.selection === undefined) return;
-    setTaught([...getTaught(), things[choice.selection]]);
-    player.sendMessage(`§aYour Fighter AIs will now break and loot: ${things[choice.selection]}`);
-  } else if (response.selection === 2) {
-    setTaught([]);
-    player.sendMessage("§eForgot all taught tombstones (ones with grave/tomb in their name still count).");
+    toolsChanged(record.id);
   }
 }
 
 /**
- * The Fighter's one fighting section: how it fights, and what it goes after.
- * @param {import("@minecraft/server").Player} player @param {string} key
+ * Teach the Fighter what a tombstone from another add-on looks like (stand next to one).
+ * @param {import("@minecraft/server").Player} player
  */
-async function chooseFighting(player, key) {
-  const record = mine(player, key);
-  if (!record) return;
-  const targets = TARGET_MODES.find((t) => t.id === (record.targets ?? "all")) ?? TARGET_MODES[0];
-  const other = TARGET_MODES.find((t) => t.id !== targets.id) ?? TARGET_MODES[1];
-  const form = new ActionFormData()
-    .title("Fighting")
-    .body(`Pick how ${record.name} fights. Every style backs off to heal at 30% health.\n\nTargets: §e${targets.label}`);
-  COMBAT_STYLES.forEach((c) => form.button(`${c.id === (record.combat ?? "archer_sword") ? "§2" : ""}${c.label}\n§8${c.about}`));
-  form.button(`Switch targets to: ${other.label}\n§8${other.about}`);
-  const response = await form.show(player);
-  if (response.canceled || response.selection === undefined) return;
-  const latest = mine(player, key);
-  if (!latest) return;
-  if (response.selection < COMBAT_STYLES.length) {
-    latest.combat = COMBAT_STYLES[response.selection].id;
-    player.sendMessage(`§e${latest.name}: ${COMBAT_STYLES[response.selection].label}.`);
-  } else {
-    latest.targets = other.id;
-    player.sendMessage(`§e${latest.name}: ${other.label}.`);
+async function teachTomb(player) {
+  const things = addOnThingsNear(player);
+  const known = [...tombTypes().blocks, ...tombTypes().entities];
+  const pick = new ActionFormData()
+    .title("Teach a tombstone")
+    .body(things.length ? "Which one is the tombstone?" : "§eStand next to a tombstone first.");
+  things.forEach((id) => pick.button(id));
+  if (known.length) pick.button("§cForget taught ones");
+  const choice = await pick.show(player);
+  if (choice.canceled || choice.selection === undefined) return;
+  if (choice.selection >= things.length) {
+    setTaught([]);
+    player.sendMessage("§eForgot taught tombstones.");
+    return;
   }
-  saveRecord(player.id, "fighter", latest);
-  toolsChanged(latest.id);
+  setTaught([...getTaught(), things[choice.selection]]);
+  player.sendMessage(`§aIt will loot: ${things[choice.selection]}`);
 }
 
 /**
@@ -1294,12 +1233,11 @@ function setFighterMode(player, key, ai, mode) {
   if (mode === "guard") {
     record.post = { x: ai.location.x, y: ai.location.y, z: ai.location.z, dim: ai.dimension.id };
     ai.triggerEvent("aip:fighter_guard");
-    player.sendMessage(`§e${record.name} is guarding this spot.`);
   } else {
     delete record.post;
     ai.triggerEvent("aip:fighter_follow");
-    player.sendMessage(`§e${record.name} will follow and protect you.`);
   }
+  player.sendMessage(`§e${record.name}: ${mode === "guard" ? "guarding here" : "following you"}`);
   saveRecord(player.id, "fighter", record);
 }
 
@@ -1407,33 +1345,22 @@ async function showFarm(player, key) {
   /** @type {{ label: string, run: () => unknown }[]} */
   const actions = [];
   if (record.focus !== FARM_FOCUS || record.mode !== "wander") {
-    actions.push({
-      label: "Keep working on it",
-      run: () => {
-        const r = mine(player, key);
-        if (!r?.farm) return;
-        r.focus = FARM_FOCUS;
-        r.mode = "wander";
-        saveRecord(player.id, "resource", r);
-        toolsChanged(r.id);
-        player.sendMessage(`§a${r.name} is back on the sugar cane farm.`);
-      },
-    });
+    actions.push({ label: "Keep building", run: () => setJob(player, key, FARM_FOCUS) });
   }
   if (plan.phase === "collect") {
     actions.push({
-      label: "Give it materials\n§8Logs, planks, sand, sugar cane from your inventory",
+      label: "Give materials",
       run: () => {
         const r = mine(player, key);
         if (!r) return;
         const taken = giveFarmMaterials(player, r);
-        player.sendMessage(taken.length ? `§a${r.name} took ${taken.join(", ")}.` : "§eYou don't have anything it still needs.");
+        player.sendMessage(taken.length ? `§a${r.name} took ${taken.join(", ")}.` : "§eYou have nothing it needs.");
       },
     });
-    actions.push({ label: "Move the farm\n§8Pick a new spot", run: () => startPlacing(player, key) });
+    actions.push({ label: "Move farm", run: () => startPlacing(player, key) });
   }
   actions.push({
-    label: "§cCancel the farm\n§8You get back what it collected",
+    label: "§cCancel farm",
     run: () => {
       const r = mine(player, key);
       if (!r?.farm) return;
@@ -1441,19 +1368,12 @@ async function showFarm(player, key) {
       removeWarp(r.farm);
       r.farm = undefined;
       r.focus = "Trees";
-      saveRecord(player.id, "resource", r);
+      saveRecord(player.id, r.role, r);
       toolsChanged(r.id);
-      player.sendMessage(`§e${r.name} stopped the sugar cane farm.`);
+      player.sendMessage(`§e${r.name}: farm cancelled. You got its materials back.`);
     },
   });
-  const form = new ActionFormData()
-    .title("Sugar cane farm")
-    .body(
-      `${farmProgress(plan)}\n\n` +
-        `Collected: ${Object.values(plan.logs).reduce((a, b) => a + b, 0)} logs, ` +
-        `${Object.values(plan.planks).reduce((a, b) => a + b, 0)} planks, ${plan.sand} sand, ${plan.cane} sugar cane` +
-        (plan.boat ? ", a boat" : "")
-    );
+  const form = new ActionFormData().title("Sugar cane farm").body(farmProgress(plan));
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
@@ -1473,17 +1393,16 @@ async function showStash(player, key) {
   const lines = Object.entries(stashTotals(record))
     .sort((a, b) => b[1] - a[1])
     .map(([id, n]) => `${n} ${itemName(id)}`);
-  const contents = lines.length ? lines.join("\n") : "§7Nothing yet.";
-  const about = "Whenever its valuables slots fill up, it puts half of them in here.";
-  const form = new ActionFormData().title(`${record.name}'s AI Chest`);
+  const contents = lines.length ? lines.join("\n") : "§7Empty";
+  const form = new ActionFormData().title("AI Chest");
   if (!resourcePerks(record)) {
-    form.body(`${about}\n\n§6Locked.§r Upgrade ${record.name} at the Coder to unlock it.\n\n§eSaved up so far:§r\n${contents}`);
+    form.body(`§6Locked§r: level up at the Coder.\n\n${contents}`);
     form.button("OK");
     await form.show(player);
     return;
   }
-  form.body(`${about}\n\n§eInside:§r\n${contents}\n\n§7You can also open it from a Computer Chest.`);
-  form.button("Take everything");
+  form.body(contents);
+  form.button("Take all");
   form.button("Back");
   const response = await form.show(player);
   if (response.selection !== 0) return;
@@ -1493,12 +1412,12 @@ async function showStash(player, key) {
   for (const s of stash) if (s) giveStacks(player, s.id, s.count);
   stash.fill(null);
   saveRecord(player.id, latest.role, latest);
-  player.sendMessage(`§aYou took everything from ${latest.name}'s AI Chest.`);
+  player.sendMessage("§aTook everything from the AI Chest.");
 }
 
-// ================================================================ allies & enemies
+// ================================================================ friends & enemies
 
-/** Both of a player's AIs share one memory, kept even when they die. */
+/** Friends (never attacked) and enemies (attacked you or your AI). Kept even when the AI dies. */
 /** @param {import("@minecraft/server").Player} player */
 async function showMemory(player) {
   const memory = getMemory(player.id);
@@ -1507,17 +1426,13 @@ async function showMemory(player) {
   const list = (/** @type {string[]} */ names) => (names.length ? names.join(", ") : "§7none§r");
 
   /** @type {{ label: string, run: () => unknown }[]} */
-  const actions = [{ label: "Add an ally", run: () => addAlly(player) }];
-  if (allies.length) actions.push({ label: "Remove an ally", run: () => removeAlly(player) });
-  if (enemies.length) actions.push({ label: "Forgive an enemy", run: () => forgiveEnemy(player) });
+  const actions = [{ label: "Add friend", run: () => addAlly(player) }];
+  if (allies.length) actions.push({ label: "Remove friend", run: () => removeAlly(player) });
+  if (enemies.length) actions.push({ label: "Forgive enemy", run: () => forgiveEnemy(player) });
 
   const form = new ActionFormData()
-    .title("Allies & enemies")
-    .body(
-      `§cEnemies§r (attacked you or your AIs, so your Fighter goes after them):\n${list(
-        enemies.map(([, e]) => `${e.name} (x${e.times})`)
-      )}\n\n§aAllies§r (your AIs never attack them or their AIs):\n${list(allies.map(([, name]) => name))}`
-    );
+    .title("Friends & enemies")
+    .body(`§aFriends:§r ${list(allies.map(([, name]) => name))}\n§cEnemies:§r ${list(enemies.map(([, e]) => e.name))}`);
   actions.forEach((a) => form.button(a.label));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
@@ -1529,10 +1444,10 @@ async function addAlly(player) {
   const memory = getMemory(player.id);
   const choices = world.getPlayers().filter((p) => p.id !== player.id && !memory.allies[p.id]);
   if (choices.length === 0) {
-    player.sendMessage("§7There's nobody online to add as an ally right now.");
+    player.sendMessage("§7Nobody online to add.");
     return;
   }
-  const form = new ActionFormData().title("Add an ally").body("Your AIs will never attack this player.");
+  const form = new ActionFormData().title("Add friend");
   choices.forEach((p) => form.button(p.name));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
@@ -1540,38 +1455,38 @@ async function addAlly(player) {
   memory.allies[ally.id] = ally.name;
   delete memory.enemies[ally.id];
   saveMemory(player.id, memory);
-  player.sendMessage(`§a${ally.name} is now your ally. Your AIs will never attack them.`);
+  player.sendMessage(`§a${ally.name} is now a friend.`);
 }
 
 /** @param {import("@minecraft/server").Player} player */
 async function removeAlly(player) {
   const memory = getMemory(player.id);
   const allies = Object.entries(memory.allies);
-  const form = new ActionFormData().title("Remove an ally");
+  const form = new ActionFormData().title("Remove friend");
   allies.forEach(([, name]) => form.button(name));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
   const [id, name] = allies[response.selection];
   delete memory.allies[id];
   saveMemory(player.id, memory);
-  player.sendMessage(`§e${name} is no longer your ally.`);
+  player.sendMessage(`§e${name} is no longer a friend.`);
 }
 
 /** @param {import("@minecraft/server").Player} player */
 async function forgiveEnemy(player) {
   const memory = getMemory(player.id);
   const enemies = Object.entries(memory.enemies);
-  const form = new ActionFormData().title("Forgive an enemy").button("§cForgive everyone");
-  enemies.forEach(([, e]) => form.button(`${e.name} (attacked x${e.times})`));
+  const form = new ActionFormData().title("Forgive enemy").button("§cEveryone");
+  enemies.forEach(([, e]) => form.button(e.name));
   const response = await form.show(player);
   if (response.canceled || response.selection === undefined) return;
   if (response.selection === 0) {
     memory.enemies = {};
-    player.sendMessage("§eYour AIs forgave everyone.");
+    player.sendMessage("§eForgave everyone.");
   } else {
     const [id, e] = enemies[response.selection - 1];
     delete memory.enemies[id];
-    player.sendMessage(`§eYour AIs forgave ${e.name}.`);
+    player.sendMessage(`§eForgave ${e.name}.`);
   }
   saveMemory(player.id, memory);
 }

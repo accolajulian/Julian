@@ -45,7 +45,7 @@ const REACH = 4.5; // places blocks this far away
 const PLACE_PER_THINK = 2; // blocks placed per think (4 a second)
 const SPEED = 0.15; // blocks per tick while building
 const PLACING_MS = 180000; // placement mode ends after 3 minutes
-const ONLY_WATER = "The sugar cane farm can only be placed in water";
+const ONLY_WATER = "Only in water";
 const CANE_WAIT_TICKS = 20 * 60 * 20; // 20 minutes (game time): then it's given what it's missing
 const WARP_BLOCK = "minecraft:lodestone";
 const WARP_SEARCH = 40; // looks for land this far from the farm
@@ -319,17 +319,15 @@ export function returnFarmMaterials(record, player, ai) {
   if (plan.boat) give(BOAT_ITEM, 1); // its boat (crafted from planks it collected)
 }
 
-/** A short progress line for menus. @param {FarmPlan} plan */
+/** Progress for menus, a few short lines. @param {FarmPlan} plan */
 export function farmProgress(plan) {
   if (plan.phase === "collect") {
     const need = farmNeeds(plan);
     const minutes = plan.startedAt === undefined ? 20 : Math.max(0, Math.ceil((CANE_WAIT_TICKS - (world.getAbsoluteTime() - plan.startedAt)) / 1200));
-    const wait = minutes > 0 ? ` (gets the rest in ${minutes} min)` : "";
-    return `Collecting: ${need.logs} logs, ${need.sand} sand, ${need.cane} sugar cane to go${wait}`;
+    return `§7Collecting${minutes > 0 ? ` (${minutes} min left)` : ""}§r\nLogs: ${need.logs}\nSand: ${need.sand}\nSugar cane: ${need.cane}`;
   }
-  const names = { planks: "laying the plank floor", sand: "adding the sand", cane: "planting the sugar cane" };
-  const growing = plan.phase === "cane" && plan.growing ? ", replanting as it grows" : "";
-  return `Building: ${names[plan.phase]} (${plan.left[plan.phase]} to go${growing})`;
+  const names = { planks: "planks", sand: "sand", cane: "sugar cane" };
+  return `§7Building:§r ${names[plan.phase]}, ${plan.left[plan.phase]} left`;
 }
 
 // ================================================================ building
@@ -667,7 +665,7 @@ export function isPlacing(playerId) {
 /** @param {import("@minecraft/server").Player} player @param {string} key */
 export function startPlacing(player, key) {
   placing.set(player.id, { key, until: Date.now() + PLACING_MS, asking: false, preview: undefined });
-  player.sendMessage("§eLook at the water where you want the sugar cane farm. §fLeft click to place it, sneak to cancel.");
+  player.sendMessage("§eLook at water. Left click to place, sneak to cancel.");
 }
 
 /** @param {import("@minecraft/server").Player} player @param {string} [why] */
@@ -686,7 +684,7 @@ function preview(player) {
   const dim = player.dimension;
   if (dim.id === "minecraft:nether") return { spot: undefined, valid: false, reason: ONLY_WATER };
   const hit = player.getBlockFromViewDirection({ includeLiquidBlocks: true, includePassableBlocks: true, maxDistance: 64 });
-  if (!hit) return { spot: undefined, valid: false, reason: "Look at the water where you want it" };
+  if (!hit) return { spot: undefined, valid: false, reason: "Look at water" };
   let p = hit.block.location;
   if (isWater(hit.block)) {
     // The top of the water.
@@ -712,7 +710,7 @@ function preview(player) {
       if (!isWater(surface) || !open) notWater++;
     }
   }
-  if (notWater > 0) return { spot, valid: false, reason: `${ONLY_WATER} (${notWater} spots aren't water)` };
+  if (notWater > 0) return { spot, valid: false, reason: `${ONLY_WATER} (${notWater} spots aren't)` };
   return { spot, valid: true, reason: "" };
 }
 
@@ -735,8 +733,8 @@ const BAD_COLOR = color(1, 0.15, 0.15);
 function draw(player, pv) {
   player.onScreenDisplay.setActionBar(
     pv.valid
-      ? "§aSugar cane farm (15 x 22) §f- left click to place it here, sneak to cancel"
-      : `§c${pv.reason} §7- sneak to cancel`
+      ? "§aLeft click: place §7| Sneak: cancel"
+      : `§c${pv.reason} §7| Sneak: cancel`
   );
   const g = pv.spot;
   if (!g) return;
@@ -766,12 +764,12 @@ system.runInterval(() => {
       continue;
     }
     if (Date.now() > s.until) {
-      stopPlacing(player, "§7Sugar cane farm placement timed out.");
+      stopPlacing(player, "§7Farm placing timed out.");
       continue;
     }
     if (s.asking) continue;
     if (player.isSneaking) {
-      stopPlacing(player, "§7Sugar cane farm cancelled.");
+      stopPlacing(player, "§7Cancelled.");
       continue;
     }
     try {
@@ -799,7 +797,7 @@ world.afterEvents.playerSwingStart.subscribe(({ player, swingSource }) => {
 async function confirmPlace(player, s) {
   const pv = s.preview;
   if (!pv?.valid || !pv.spot) {
-    player.sendMessage(`§c${pv?.reason ?? ONLY_WATER}. §7Aim at open water with room for 15 x 22.`);
+    player.sendMessage(`§c${pv?.reason ?? ONLY_WATER}.`);
     return;
   }
   const record = getAi(s.key);
@@ -808,20 +806,14 @@ async function confirmPlace(player, s) {
     return;
   }
   const response = await new MessageFormData()
-    .title("Sugar cane farm")
-    .body(
-      `Build the farm here?\n\n§e${record.name}§r will first collect:\n` +
-        `- §e${NEED_LOGS} logs§r (${FLOOR_PLANKS + BOAT_PLANKS} planks: ${FLOOR_PLANKS} for the floor + ${BOAT_PLANKS} for its boat)\n` +
-        `- §e${LINE_BLOCKS} sand§r\n- §e${LINE_BLOCKS} sugar cane§r\n\n` +
-        "Then it crafts the planks and a boat, lays the plank floor 1 block below the water, puts sand on the 6 lines and plants the sugar cane.\n\n" +
-        "§7Anything in the way gets replaced."
-    )
-    .button1("Build it here")
+    .title("Build here?")
+    .body(`Needs ${NEED_LOGS} logs, ${LINE_BLOCKS} sand, ${LINE_BLOCKS} sugar cane.\n§7${record.name} collects them, then builds.`)
+    .button1("Build")
     .button2("Cancel")
     .show(player);
   if (response.canceled) return; // closed: keep aiming
   if (response.selection !== 0) {
-    stopPlacing(player, "§7Sugar cane farm cancelled.");
+    stopPlacing(player, "§7Cancelled.");
     return;
   }
   const latest = getAi(s.key);
@@ -846,10 +838,5 @@ async function confirmPlace(player, s) {
   latest.focus = FARM_FOCUS;
   latest.mode = "wander";
   saveRecord(player.id, "resource", latest);
-  stopPlacing(
-    player,
-    `§a${latest.name} is collecting materials for your sugar cane farm.` +
-      (warp ? ` §fIts warp point (lodestone) is at ${warp.x}, ${warp.y}, ${warp.z}.` : " §7(No land close to the farm for a warp point.)") +
-      " §7Left click its Remote to check progress or hand it materials."
-  );
+  stopPlacing(player, `§a${latest.name} is collecting for the farm.${warp ? ` §7Warp point: ${warp.x}, ${warp.y}, ${warp.z}` : ""}`);
 }
