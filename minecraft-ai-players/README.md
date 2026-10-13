@@ -6,7 +6,7 @@ An original add-on with AI companions that look like players. It's kept separate
 
 ![The 10 AI players, front and back](preview.png)
 
-## What it does (v1.21.1)
+## What it does (v1.22.0)
 - **AI Computer:** every player spawns with one in their hotbar (and gets a new one after dying if it's gone).
   It can't be placed or eaten; use it to see how to craft the Coder and what each AI costs (red until you
   have enough, green when you do), with *More help* for the full guide.
@@ -30,7 +30,7 @@ An original add-on with AI companions that look like players. It's kept separate
 - Whoever holds an AI's recall robot controls it. Drop it and let another player pick it up, and the AI
   rejoins next to them and follows, protects and obeys them, keeping everything it carries.
 - Handing over a controller never changes who bought it: the buyer still can't buy another of that kind,
-  and the new controller can still buy their own if they haven't yet. A player can control several AIs.
+  and the new controller can still buy their own if they haven't yet. **One AI per player:** someone who already controls an AI can hold another player's recall robot, but it does nothing for them.
 
 ### Mobs and explosions
 - Mobs can't hurt either AI, and no explosion can (creepers, ghast fireballs, TNT).
@@ -57,8 +57,10 @@ When the player leaves the 30 blocks and comes back, the sequence starts again. 
 damage as a normal full-power arrow.
 
 ### Computer Chest (chest.js)
-Craft: chest + redstone + glass pane. Place it, **left click** it to choose one of your upgraded AIs (or pick
-the chest up), **right click** it to open that AI's inventory from anywhere. Only the player who placed it can use it.
+Craft: chest + redstone + glass pane. The **player** places it (AIs never place one). It works like an **ender chest**:
+every Computer Chest you place opens the same **AI Chest**, the one your AI fills. **Right click** it to open your AI's
+AI Chest (locked until the AI is upgraded at the Coder; it shows how much is saved). **Left click** it to switch to an
+upgraded AI's own inventory instead, or to pick the chest up. Only the player who placed it can use it.
 
 ### Controls
 | Action | What happens |
@@ -115,7 +117,7 @@ from its block slots and tells you when it runs out.
 - **Sugar cane farm:** pick it and look at water. A colored outline shows the finished farm (planks edge 1 block under the water, sand lines, sugar cane); the 22-long side points away from you. It can only go in water (the action bar says so in red). Left click to place, sneak to cancel. The AI then collects **84 logs** (335 planks: 330 floor + 5 boat), **108 sand** and **108 sugar cane** (leaving the bottom of each cane to regrow; you can also hand it materials from its menu), crafts the planks and a boat, rides the boat to lay a 15 x 22 plank floor 1 block below the water surface (replacing anything there), then wades along the channels putting sand on the 6 lines of 18 and planting sugar cane on each. When it's done, its boat is parked next to the farm.
   - While collecting it **jump sprints** and uses **map awareness**: it scans all loaded land around it (48 blocks) for the best spot (most of what it still needs, closest first). If there's nothing loaded nearby it briefly loads land further out with ticking areas (rings at 96/160/224 blocks), scans it, and jump sprints there, hopping over walls, cliffs and lava. Far from every player it keeps its own land loaded so it doesn't freeze.
   - **Warp point & 20-minute rule:** before collecting, it puts a warp point (a lodestone) on the closest land next to the farm. 20 minutes (game time) after the farm was placed, if it's still missing anything it's given the rest, warps back to its warp point and builds the full farm. The lodestone is removed when the farm is finished or cancelled.
-- **AI Chest:** it always carries its own AI Chest (never placed). Whenever its 10 valuables slots fill up, half of each slot goes into the AI Chest (27 slots), like a starting-out tax. It's locked until the AI is upgraded at the Coder, so by then there's usually a lot saved up. Once upgraded: left click the AI → *AI Chest* → *Take everything*, or pick *<name>'s AI Chest* on a Computer Chest and take items out. Deleting a not-yet-upgraded AI loses what's in its locked AI Chest.
+- **AI Chest:** it always carries its own AI Chest (never placed). Whenever its slots are full of a material (valuables or blocks), half of that material goes into the AI Chest (27 slots), like a starting-out tax. If its valuables are full of other things, half of each goes in to make room. It's locked until the AI is upgraded at the Coder, so by then there's usually a lot saved up. Once upgraded: left click the AI → *AI Chest* → *Take everything*, or right click any Computer Chest you've placed (like an ender chest) and take items out. Deleting a not-yet-upgraded AI loses what's in its locked AI Chest.
 - Carries an infinite water bucket (shown in its inventory, can't be taken). To get down into a ravine it pours water over the edge and swims down; to get back up a wall it pours water above itself and swims up. It scoops the water back up afterwards. (Not in the Nether.)
 - Only chops real trees (logs with leaves above), so it won't take apart log houses.
 - Chops trees like a player: it walks up to the trunk, stands still and chops the bottom 2 logs, steps into that gap (breaking dirt or leaves in the way), chops the rest of the tree it can reach from there, then moves on to the next tree. It really walks (with gravity and leg movement), and stands still while working instead of strolling around.

@@ -661,7 +661,7 @@ function robotRecord(player, item) {
     player.sendMessage("§cThis AI doesn't exist anymore.");
     return undefined;
   }
-  if (record.ownerId !== player.id) takeControl(player, record);
+  if (record.ownerId !== player.id && !takeControl(player, record)) return undefined;
   return getAi(record.key);
 }
 
@@ -777,9 +777,23 @@ function makeRecallRobot(player, record) {
  * Makes a player the controller of an AI (they picked up its recall robot). The AI comes to them
  * and follows and protects them from now on; everything it carries stays with it.
  * This does NOT count as buying: it doesn't stop either player from buying their own.
+ * One AI per player: someone who already controls an AI can hold another player's robot, but it does
+ * nothing for them. Returns true if they took control.
  * @param {import("@minecraft/server").Player} player @param {AiRecord} record
+ * @returns {boolean}
  */
 function takeControl(player, record) {
+  const already = controlledBy(player.id);
+  if (already.length > 0) {
+    const warnKey = `${player.id}:${record.key}`;
+    if (Date.now() - (controlWarned.get(warnKey) ?? 0) > 30000) {
+      controlWarned.set(warnKey, Date.now());
+      player.sendMessage(
+        `§cYou already control ${already[0].name}. §fEach player can only have one AI, so ${record.name}'s recall robot does nothing for you.`
+      );
+    }
+    return false;
+  }
   const previous = findPlayer(record.ownerId);
   record.ownerId = player.id;
   saveRecord(player.id, record.role, record);
@@ -809,7 +823,11 @@ function takeControl(player, record) {
   }
   player.sendMessage(`§aYou now control ${record.name} (${ROLES[record.role].title}).`);
   previous?.sendMessage(`§e${player.name} picked up ${record.name}'s recall robot and now controls it.`);
+  return true;
 }
+
+/** "You already control an AI" warnings, so they aren't repeated every second. @type {Map<string, number>} */
+const controlWarned = new Map();
 
 // Someone picked up another player's recall robot: they become its controller.
 system.runInterval(() => {

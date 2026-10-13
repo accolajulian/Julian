@@ -1,10 +1,13 @@
-// Computer Chest: lets players open their upgraded AIs' inventories from anywhere.
+// Computer Chest: the player crafts and places it (AIs never place one). It works like an ender chest:
+// every Computer Chest you place opens the same AI Chest, the one your AI fills with half of a material
+// whenever its slots are full of it. (The AI Chest unlocks when the AI is upgraded at the Coder.)
 // Place it like a block (it's really a small entity, so right clicking it opens an inventory screen).
-// - Left click it: choose which of your upgraded AIs it shows, or pick the chest back up.
-// - Right click it: that AI's inventory (only the player who placed it can open it).
+// - Right click it: your AI's AI Chest (only the player who placed it can open it).
+// - Left click it: switch to an upgraded AI's own inventory instead, or pick the chest back up.
 import { world, system, ItemStack } from "@minecraft/server";
 import { ActionFormData } from "@minecraft/server-ui";
-import { getAi, controlledBy, giveItem, takeOneFromHand, chestReady, canGather } from "./data.js";
+import { getAi, controlledBy, giveItem, takeOneFromHand, chestReady, canGather, resourcePerks } from "./data.js";
+import { stashCount } from "./inventory.js";
 import { sync, syncEmpty, syncStash } from "./container.js";
 
 export const CHEST_ENTITY = "aip:computer_chest";
@@ -25,7 +28,14 @@ world.afterEvents.playerInteractWithBlock.subscribe(({ player, block, blockFace,
   chest.nameTag = "Computer Chest";
   chest.teleport(chest.location, { facingLocation: { x: player.location.x, y: chest.location.y, z: player.location.z } });
   takeOneFromHand(player);
-  player.sendMessage("§aComputer Chest placed. Left click it to choose an upgraded AI, right click it to open its inventory.");
+  // Like an ender chest: it opens your AI's AI Chest straight away.
+  const ai = controlledBy(player.id).find(canGather);
+  if (ai) chest.setDynamicProperty("aip:view", `stash:${ai.key}`);
+  player.sendMessage(
+    ai
+      ? `§aComputer Chest placed. Right click it to open ${ai.name}'s AI Chest${resourcePerks(ai) ? "" : " §7(locked until it's upgraded at the Coder)"}§a.`
+      : "§aComputer Chest placed. §7Left click it to choose what it shows."
+  );
 });
 
 // Left click: choose an AI or pick the chest up. (Hits never break it.)
@@ -50,13 +60,19 @@ async function chestMenu(player, chest) {
   if (open.has(player.id)) return;
   open.add(player.id);
   try {
-    const upgraded = controlledBy(player.id).filter(chestReady);
-    // Each upgraded AI's inventory, plus each upgraded Resource AI's AI Chest.
+    const mine = controlledBy(player.id);
+    // Each AI's AI Chest (locked until upgraded), and each upgraded AI's own inventory.
     /** @type {{ view: string, name: string, about: string }[]} */
     const views = [];
-    for (const r of upgraded) {
-      views.push({ view: r.key, name: `${r.name}'s inventory`, about: r.role === "fighter" ? "Fighter AI" : "Resource AI" });
-      if (canGather(r)) views.push({ view: `stash:${r.key}`, name: `${r.name}'s AI Chest`, about: "Saved-up valuables" });
+    for (const r of mine) {
+      if (canGather(r)) {
+        views.push({
+          view: `stash:${r.key}`,
+          name: `${r.name}'s AI Chest`,
+          about: resourcePerks(r) ? `${stashCount(r)} items` : `Locked: ${stashCount(r)} items saved`,
+        });
+      }
+      if (chestReady(r)) views.push({ view: r.key, name: `${r.name}'s inventory`, about: "Its slots" });
     }
     const showing = chest.getDynamicProperty("aip:view");
     const current = typeof showing === "string" ? views.find((v) => v.view === showing) : undefined;
@@ -64,9 +80,9 @@ async function chestMenu(player, chest) {
       .title("Computer Chest")
       .body(
         `Showing: §e${current ? current.name : "nothing"}§r\n\n` +
-          (upgraded.length
-            ? "Choose an upgraded AI, then right click the chest to open its inventory."
-            : "§cYou don't control any upgraded AIs yet.§r Upgrade one at the Coder.")
+          (views.length
+            ? "Choose what it shows, then right click the chest to open it."
+            : "§cYou don't have an AI yet.§r Buy one at the Coder.")
       );
     views.forEach((v) => form.button(`${v.name}\n§8${v.about}`));
     form.button("§cPick up the chest");
@@ -95,7 +111,9 @@ system.runInterval(() => {
       const key = typeof view === "string" ? view.replace(/^stash:/, "") : undefined;
       const record = key ? getAi(key) : undefined;
       try {
-        if (stash && record && chestReady(record) && canGather(record) && record.ownerId === ownerId) {
+        if (stash && record && canGather(record) && record.ownerId === ownerId && !resourcePerks(record)) {
+          syncEmpty(chest, ownerId, `${record.name}'s AI Chest is locked (${stashCount(record)} items saved). Level it up at the Coder to unlock it.`);
+        } else if (stash && record && canGather(record) && record.ownerId === ownerId) {
           syncStash(chest, ownerId, record.key);
         } else if (record && chestReady(record) && record.ownerId === ownerId) {
           sync(chest, ownerId, record.role, record.key);
