@@ -51,6 +51,8 @@ const ONLY_WATER = "Only in water";
 const CANE_WAIT_TICKS = 20 * 60 * 20; // 20 minutes (game time): then it's given what it's missing
 const WARP_BLOCK = "minecraft:lodestone";
 const WARP_SEARCH = 40; // looks for land this far from the farm
+export const FARM_COST = 10; // iron ingots: the farm's materials are then all provided
+const IRON = "minecraft:iron_ingot";
 
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
 /**
@@ -74,6 +76,7 @@ const WARP_SEARCH = 40; // looks for land this far from the farm
  * @property {number} [startedAt]  game time the farm was placed
  * @property {boolean} [growing]  short of sugar cane: replanting what grows
  * @property {Vector3} [warp]  its warp point (a lodestone on the closest land)
+ * @property {boolean} [paid]  bought for 10 iron: every material was provided (kept by the AI, can't be taken)
  */
 /** @typedef {Pick<FarmPlan, "dim" | "ox" | "oy" | "oz" | "lx" | "lz" | "wx" | "wz">} Spot */
 
@@ -347,13 +350,31 @@ export function returnFarmMaterials(record, player, ai) {
       else ai?.dimension.spawnItem(stack, ai.location);
     }
   };
-  for (const [id, n] of Object.entries(plan.logs)) give(id, n);
-  for (const [id, n] of Object.entries(plan.planks)) give(id, n);
-  give("minecraft:sand", plan.sand);
-  give(CANE_ITEM, plan.cane);
+  // Materials it was provided (bought for iron) are never handed out.
+  if (!plan.paid) {
+    for (const [id, n] of Object.entries(plan.logs)) give(id, n);
+    for (const [id, n] of Object.entries(plan.planks)) give(id, n);
+    give("minecraft:sand", plan.sand);
+    give(CANE_ITEM, plan.cane);
+  }
   const boat = plan.boatId ? world.getEntity(plan.boatId) : undefined;
   if (boat?.isValid) boat.remove();
   if (plan.boat) give(BOAT_ITEM, 1); // its boat (crafted from planks it collected)
+}
+
+/**
+ * The farm materials it carries (shown on a locked slot in its inventory), or undefined with no farm.
+ * @param {import("./data.js").AiRecord} record
+ */
+export function farmMaterialsText(record) {
+  const plan = record.farm;
+  if (!plan) return undefined;
+  return `${sum(plan.planks) + sum(plan.logs) * 4} planks, ${plan.sand} sand, ${plan.cane} sugar cane`;
+}
+
+/** Nothing built yet (cancelling gives the iron back). @param {FarmPlan} plan */
+export function farmUntouched(plan) {
+  return plan.phase === "collect" || (plan.phase === "planks" && plan.left.planks === FLOOR_PLANKS);
 }
 
 /** Progress for menus, a few short lines. @param {FarmPlan} plan */
@@ -858,9 +879,16 @@ async function confirmPlace(player, s) {
     stopPlacing(player, "§cYou don't control that AI anymore.");
     return;
   }
+  const moving = !!record.farm;
+  if (!moving && countItem(player, IRON) < FARM_COST) {
+    player.sendMessage(`§cThe sugar cane farm costs ${FARM_COST} iron ingots (you have ${countItem(player, IRON)}).`);
+    return;
+  }
   const response = await new MessageFormData()
     .title("Build here?")
-    .body(`Needs ${NEED_LOGS} logs, ${LINE_BLOCKS} sand, ${LINE_BLOCKS} sugar cane.\n§7${record.name} collects them, then builds.`)
+    .body(moving
+      ? "Move the farm here?"
+      : `Costs §f${FARM_COST} iron ingots§r.\n§7${record.name} gets all the materials (${NEED_LOGS} logs' worth of planks, ${LINE_BLOCKS} sand, ${LINE_BLOCKS} sugar cane) and builds it.`)
     .button1("Build")
     .button2("Cancel")
     .show(player);
@@ -871,6 +899,15 @@ async function confirmPlace(player, s) {
   }
   const latest = getAi(s.key);
   if (!latest || latest.ownerId !== player.id) return;
+  // Pay for a new farm.
+  const paid = !latest.farm;
+  if (paid) {
+    if (countItem(player, IRON) < FARM_COST) {
+      stopPlacing(player, `§cThe sugar cane farm costs ${FARM_COST} iron ingots.`);
+      return;
+    }
+    takeItem(player, IRON, FARM_COST);
+  }
   // Moving a farm it's still collecting for keeps what it collected.
   const keep = latest.farm?.phase === "collect" ? latest.farm : undefined;
   if (latest.farm && !keep) returnFarmMaterials(latest, player, undefined);
@@ -887,11 +924,21 @@ async function confirmPlace(player, s) {
     left: { planks: FLOOR_PLANKS, sand: LINE_BLOCKS, cane: LINE_BLOCKS },
     startedAt: keep?.startedAt ?? world.getAbsoluteTime(),
     warp,
+    paid: paid || keep?.paid,
   };
+  // Bought for iron: every material is provided right away, so it goes straight to building.
+  const plan = latest.farm;
+  if (paid) {
+    plan.logs = { "minecraft:oak_log": NEED_LOGS };
+    plan.planks = {};
+    plan.sand = LINE_BLOCKS;
+    plan.cane = LINE_BLOCKS;
+    plan.boat = false;
+  }
   latest.focus = FARM_FOCUS;
   latest.mode = "wander";
   saveRecord(player.id, "resource", latest);
-  stopPlacing(player, `§a${latest.name} is collecting for the farm.${warp ? ` §7Warp point: ${warp.x}, ${warp.y}, ${warp.z}` : ""}`);
-  player.onScreenDisplay.setTitle("§aFarm placed", { subtitle: `${latest.name} is collecting materials`, fadeInDuration: 5, stayDuration: 50, fadeOutDuration: 10 });
+  stopPlacing(player, `§a${latest.name} has the materials and is building the farm.${paid ? ` §7(-${FARM_COST} iron)` : ""}`);
+  player.onScreenDisplay.setTitle("§aFarm placed", { subtitle: `${latest.name} is building it`, fadeInDuration: 5, stayDuration: 50, fadeOutDuration: 10 });
   player.playSound("random.orb");
 }

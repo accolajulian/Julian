@@ -39,7 +39,7 @@ import { sparks, isLeftClick } from "./effects.js"; // (also starts the 20-minut
 import { commandAttack, toolsChanged, hungerOf, jobChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
 import "./chest.js"; // Computer Chest (opens the AI Chest from anywhere)
-import { FARM_FOCUS, startPlacing, isPlacing, farmProgress, giveFarmMaterials, returnFarmMaterials, removeWarp } from "./farm.js";
+import { FARM_FOCUS, FARM_COST, startPlacing, isPlacing, farmProgress, giveFarmMaterials, returnFarmMaterials, removeWarp, farmUntouched } from "./farm.js";
 import {
   FOOD_ITEM,
   FOOD_RESERVED,
@@ -1153,7 +1153,7 @@ async function showJobs(player, key) {
     run: () => (job === "Caves" ? showCaves(player, key) : setJob(player, key, job)),
   }));
   actions.push({
-    label: `${working && record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm §8(In Water Only)${record.farm ? " - in progress" : ""}`,
+    label: `${working && record.focus === FARM_FOCUS ? "§2" : ""}Sugar cane farm §8(In Water Only)${record.farm ? " - in progress" : ` - ${FARM_COST} iron`}`,
     run: () => (record.farm ? showFarm(player, key) : startPlacing(player, key)),
   });
   const form = new ActionFormData().title("Jobs").body(working ? `§7Now:§r ${record.focus}` : "Pick a job.");
@@ -1483,12 +1483,16 @@ async function showFarm(player, key) {
       const r = mine(player, key);
       if (!r?.farm) return;
       returnFarmMaterials(r, player, r.id ? world.getEntity(r.id) : undefined);
+      // Bought for iron: the iron comes back if nothing was built yet.
+      const refund = r.farm.paid && farmUntouched(r.farm);
+      if (refund) giveItem(player, new ItemStack("minecraft:iron_ingot", FARM_COST));
       removeWarp(r.farm);
+      const paid = r.farm.paid;
       r.farm = undefined;
       r.focus = "Trees";
       saveRecord(player.id, r.role, r);
       toolsChanged(r.id);
-      player.sendMessage(`§e${r.name}: farm cancelled. You got its materials back.`);
+      player.sendMessage(`§e${r.name}: farm cancelled. ${refund ? `You got your ${FARM_COST} iron back.` : paid ? "It had already started building, so no refund." : "You got its materials back."}`);
     },
   });
   const form = new ActionFormData().title("Sugar cane farm").body(farmProgress(plan));

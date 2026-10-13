@@ -9,6 +9,7 @@
 // The AI's own 30 chicken, its torches and its water bucket are shown on info labels, so they can't be taken.
 import { world, system, ItemStack } from "@minecraft/server";
 import { AI_ENTITY, getAi, saveRecord, findPlayer, knownAis, giveItem } from "./data.js";
+import { farmMaterialsText } from "./farm.js";
 import {
   inventoryOf,
   toolFromStack,
@@ -98,6 +99,7 @@ function layout(role, evolved = false) {
       `§7Torches: ${inventoryOf(r).torches}/${TORCH_STACK} (its own)`,
       `§7Crafting: ${OWN_WOOD} logs + ${OWN_STONE} cobblestone (its own, never run out)`,
       "§7Water bucket: infinite (its own)",
+      ...(r.farm ? [`§7Farm materials: ${farmMaterialsText(r)} (locked)`] : []),
       "§7Tools are used in order 1, 2, 3.",
     ],
   });
@@ -115,11 +117,11 @@ function layout(role, evolved = false) {
     lore: ["§7It places one about every 10 blocks underground.", "§7They refill and can't be taken."],
   };
   /** @type {Slot} */
-  const waterInfo = {
+  const farmInfo = {
     kind: "info",
-    icon: "water",
-    text: () => "Water bucket (infinite, its own)",
-    lore: ["§7Like a creative bucket: never empties or fills.", "§7Jumps down cliffs onto a splash of water,", "§7then scoops it back up. It can't be taken."],
+    icon: "blocks",
+    text: (r) => (r.farm ? `Farm materials: ${farmMaterialsText(r)}` : "Farm materials (none)"),
+    lore: ["§7The sugar cane farm's materials (provided", "§7when you pay 10 iron). Locked: they can't be", "§7taken; it uses them to build the farm."],
   };
   if (role === "fighter" && evolved) {
     return [
@@ -135,8 +137,8 @@ function layout(role, evolved = false) {
     return [
       // Row 1: tools 1-2-3, shield, name (and its own things), torches, wood 1-2-3
       ...tools, { kind: "shield" }, nameInfo((r) => `Resource AI${r.upgraded ? "+" : ""}`), torchInfo, ...wood,
-      // Row 2: armor, blocks, water, spare food, first valuable
-      ...armor, ...blocks, waterInfo, { kind: "food" }, valuables[0],
+      // Row 2: armor, blocks, farm materials (locked), spare food, first valuable
+      ...armor, ...blocks, farmInfo, { kind: "food" }, valuables[0],
       // Row 3: valuables 2-10
       ...valuables.slice(1),
     ];

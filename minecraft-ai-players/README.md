@@ -223,6 +223,12 @@ from its block slots and tells you when it runs out.
   next to lava, and places a torch about every 10 blocks.
 - **Blocks in caves:** the only blocks it places are torches, and cobblestone over lava that's right next to it
   (so it doesn't burn). It no longer covers lava behind ores; it just leaves those ores.
+- **Sugar cane farm costs 10 iron ingots.** When you place it, 10 iron ingots are taken from you and the AI is
+  given every material (84 logs' worth of planks, 108 sand, 108 sugar cane). They sit in a locked *Farm materials*
+  slot in its inventory (players can't take them). It warps to the farm's warp point and builds straight away:
+  the plank floor (the wood frame) first, then the sand lines, then the sugar cane. Cancelling before it has
+  placed anything gives your 10 iron back; after that there's no refund, and the provided materials are never
+  handed out. (The collecting steps below only apply to farms placed before this change.)
 - **Sugar cane farm:** pick it and look at water. A colored outline shows the finished farm (planks edge 1 block under the water, sand lines, sugar cane); the 22-long side points away from you. It can only go in water (the action bar says so in red). Tap Place (or left click) to place, sneak to cancel. The AI then collects **84 logs** (335 planks: 330 floor + 5 boat), **108 sand** and **108 sugar cane** (leaving the bottom of each cane to regrow; you can also hand it materials from its menu), crafts the planks and a boat, rides the boat to lay a 15 x 22 plank floor 1 block below the water surface (replacing anything there), then wades along the channels putting sand on the 6 lines of 18 and planting sugar cane on each. When it's done, its boat is parked next to the farm.
   - While collecting it **jump sprints** and uses **map awareness**: it scans all loaded land around it (48 blocks) for the best spot (most of what it still needs, closest first). If there's nothing loaded nearby it briefly loads land further out with ticking areas (rings at 96/160/224 blocks), scans it, and jump sprints there, hopping over walls, cliffs and lava. Far from every player it keeps its own land loaded so it doesn't freeze.
   - **Warp point & 20-minute rule:** before collecting, it puts a warp point (a lodestone) on the closest land next to the farm. 20 minutes (game time) after the farm was placed, if it's still missing anything it's given the rest, warps back to its warp point and builds the full farm. The lodestone is removed when the farm is finished or cancelled.
