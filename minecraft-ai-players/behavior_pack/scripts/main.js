@@ -35,7 +35,8 @@ import {
 } from "./data.js";
 import { releaseLoaded } from "./scout.js";
 import { CAVE_ORES, NETHER_ORES, oresOf, netherOresOf, startCavePlacing, isCavePlacing } from "./caves.js";
-import { levelText } from "./levels.js"; // (also starts the 20-minute reports)
+import { levelText } from "./levels.js";
+import { sparks } from "./effects.js"; // (also starts the 20-minute reports)
 import { commandAttack, toolsChanged } from "./brain.js";
 import "./container.js"; // the AI's right-click inventory
 import "./chest.js"; // Computer Chest (opens the AI Chest from anywhere)
@@ -430,6 +431,8 @@ async function buy(player, role) {
   inventoryOf(record).food = START_FOOD;
   saveRecord(player.id, role, record);
   giveEgg(player, record);
+  sparks(player.dimension, player.location, 16);
+  player.playSound("random.levelup");
   player.sendMessage(`§aYou bought a ${info.title}! Throw the egg to spawn §e${name}§a.`);
 }
 
@@ -528,6 +531,10 @@ async function levelUp(player, key) {
   const latest = mine(player, key);
   if (!latest || stageOf(latest) !== stage) return;
   takeItem(player, up.item, up.amount);
+  sparks(player.dimension, player.location, 16);
+  const upgradedAi = latest.id ? world.getEntity(latest.id) : undefined;
+  if (upgradedAi?.isValid) sparks(upgradedAi.dimension, upgradedAi.location, 16);
+  player.playSound("random.levelup");
 
   if (stage === 2) {
     becomeFighter(player, latest);

@@ -297,7 +297,7 @@ def head_icon(skin_img, size):
 def coder_textures():
     """16x16 sides, top and bottom of the Coder block: green Matrix code on black, with a glowing
     green frame (and a crafting grid on top)."""
-    glow, rim = (90, 255, 140, 255), (20, 70, 35, 255)
+    glow, rim = (90, 255, 140, 255), (0, 0, 0, 255)
 
     def face(seed, frame=glow):
         img = Image.new("RGBA", (16, 16))
@@ -339,7 +339,7 @@ def egg_icon(base, accent, seed):
 def computer_icon():
     """16x16 computer: a dark monitor full of green Matrix code, with a stand and keyboard."""
     img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
-    case, dark, glow = (25, 35, 28), (12, 20, 14), (90, 255, 140)
+    case, dark, glow = (0, 0, 0), (0, 0, 0), (90, 255, 140)
     p = img.load()
     for x in range(1, 15):
         for y in range(1, 11):
@@ -357,13 +357,13 @@ def remote_icon(seed):
     """16x16 handheld remote: a black body covered in green Matrix code, with a glowing green lens on top."""
     img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
     p = img.load()
-    edge = (8, 10, 9, 255)
+    edge = (0, 0, 0, 255)
     # body: columns 6-9, rows 1-14, rounded top and bottom
     body = [(x, y) for x in range(5, 11) for y in range(1, 15)]
     for x, y in body:
         p[x, y] = edge
     code = Image.new("RGBA", (4, 12))
-    matrix_rain(code, 0, 0, 4, 12, random.Random(seed), bg=(4, 8, 5))
+    matrix_rain(code, 0, 0, 4, 12, random.Random(seed))
     img.paste(code, (6, 2))
     p[5, 1] = p[10, 1] = p[5, 14] = p[10, 14] = (0, 0, 0, 0)
     p[7, 1] = p[8, 1] = (120, 255, 160, 255)   # glowing lens
@@ -447,7 +447,7 @@ def slot_icon(kind):
     return img
 
 
-def matrix_code(img, x0, y0, w, h, rng, bg=(5, 12, 7)):
+def matrix_code(img, x0, y0, w, h, rng, bg=(0, 0, 0)):
     """Fills an area with green 'falling code': columns of tiny random glyphs, each with a bright
     head and a trail that fades to dark green, on a near-black background."""
     p = img.load()
@@ -475,7 +475,7 @@ def matrix_code(img, x0, y0, w, h, rng, bg=(5, 12, 7)):
                         p[px, py] = color + (255,)
 
 
-def matrix_rain(img, x0, y0, w, h, rng, bg=(5, 12, 7)):
+def matrix_rain(img, x0, y0, w, h, rng, bg=(0, 0, 0)):
     """Matrix code for small (icon-sized) areas: single-pixel streaks of green with bright heads."""
     p = img.load()
     for x in range(x0, x0 + w):
@@ -508,9 +508,9 @@ def computer_chest_textures():
     q = icon.load()
     for x in range(1, 15):
         q[x, 7] = glow                    # the seam between lid and base
-        q[x, 2] = q[x, 14] = (20, 60, 30, 255)
+        q[x, 2] = q[x, 14] = (0, 0, 0, 255)
     for y in range(2, 15):
-        q[1, y] = q[14, y] = (20, 60, 30, 255)
+        q[1, y] = q[14, y] = (0, 0, 0, 255)
     return tex, icon
 
 

@@ -10,6 +10,7 @@ import { ActionFormData } from "@minecraft/server-ui";
 import { getAi, controlledBy, giveItem, canGather, resourcePerks } from "./data.js";
 import { stashCount } from "./inventory.js";
 import { syncEmpty, syncStash } from "./container.js";
+import { sparks } from "./effects.js";
 
 export const CHEST_ENTITY = "aip:computer_chest";
 const CHEST_ITEM = "aip:computer_chest";
@@ -49,6 +50,7 @@ world.afterEvents.playerInteractWithEntity.subscribe(({ player, target }) => {
   if (target.getProperty("aip:open") !== true) {
     target.setProperty("aip:open", true);
     target.dimension.playSound("random.shulkerboxopen", target.location);
+    sparks(target.dimension, { x: target.location.x, y: target.location.y + 0.9, z: target.location.z }, 14);
   }
 });
 system.runInterval(() => {
