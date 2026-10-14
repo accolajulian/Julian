@@ -62,11 +62,13 @@ the map and jump sprints to the nearest trees (only strolling if there are no tr
 can't reach on a tree are skipped for 10 minutes and it moves on. Leaves, dirt, sand, snow and vines in its way
 are broken; a 1-block step it can't jump, it hops up onto. It never jumps or hops up onto trees.
 
-**Chopping:** it chops logs from up to **11 blocks away**, so it rarely has to climb or squeeze into trunks: it
-picks the closest tree, chops every log it can reach (lowest first), walks closer once if some are still too far
-(finding a way **around** leaves and other obstacles; it only breaks leaves when there's no way around, or it's stuck),
-then goes to the next tree. If it stays in the same spot for 30 seconds without getting anything (Trees or the
-farm), it skips what's around there and moves on.
+**Chopping:** it goes to the closest tree, runs up to the trunk (walking around leaves), and with normal reach
+chops the **bottom two logs**. Then it steps into that gap, so it stands at the same X and Z as those two logs, and
+from there, without jumping or moving, chops **every log of the tree** (its reach is enlarged only for this),
+lowest first. "The tree" includes logs that aren't perfectly connected: every log within 7 blocks of the trunk
+that's closer to this trunk than to any other tree's. Then it goes to the next closest tree. Everywhere else
+(caves, sand, anything) its reach is normal. If it stays in the same spot for 30 seconds without getting
+anything (Trees or the farm), it skips what's around there and moves on.
 
 **Smooth turning:** it turns its head and body smoothly towards where it's going or what it's mining (a bit
 each tick) instead of snapping, so it doesn't jerk around.

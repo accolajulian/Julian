@@ -61,7 +61,7 @@ const TREE_DONE_MS = 600000; // logs it couldn't reach on a tree it finished: sk
 const SOFT = /leaves|^minecraft:(dirt|coarse_dirt|grass_block|podzol|mycelium|mud|rooted_dirt|sand|red_sand|gravel|snow|snow_layer|vine|moss_block|clay)$/;
 const STUCK_TICKS = 40; // no progress for this long: give up the walk
 const WALK_MS = 15000; // gives up on a walk after this long
-const TREE_REACH = 11; // it chops logs up to this far from its eyes
+const TRUNK_REACH = 64; // standing inside the trunk it can chop every log of its tree, however far up
 const TREE_SEARCH = 24; // looks for the closest tree trunk this far around itself
 const TREE_MS = 120000; // gives up on a tree after this long
 /** Blocks it may break to step into the trunk gap. */
@@ -105,9 +105,10 @@ const DIG_TICKS = 8; // one block every this many ticks when digging out
 /**
  * @typedef {Object} TreeJob
  * @property {Vector3} base  lowest log of the trunk
- * @property {Vector3 | undefined} stand  where it stands if it has to walk closer
- * @property {Vector3[]} logs  every log of this tree
- * @property {boolean} walked  already walked closer
+ * @property {Vector3} stand  where it stands next to the trunk to chop the bottom two logs
+ * @property {Vector3[]} logs  every log of this tree (even ones not quite connected to it)
+ * @property {"approach" | "base" | "enter" | "chop"} phase
+ * @property {boolean} walked  already walked for this phase
  * @property {number} until
  */
 
@@ -527,7 +528,8 @@ function isLog(id) {
 }
 
 /**
- * Plans chopping the tree that `log` belongs to.
+ * Plans chopping the tree that `log` belongs to: it'll run up to the trunk (around leaves), chop the
+ * bottom two logs with normal reach, step into that gap, and chop the rest of the tree from there.
  * @param {import("@minecraft/server").Entity} ai
  * @param {GatherState} state
  * @param {Vector3} log
@@ -537,26 +539,18 @@ function startTree(ai, state, log) {
   let base = { ...log };
   while (isLog(dim.getBlock({ ...base, y: base.y - 1 })?.typeId)) base = { ...base, y: base.y - 1 };
   const logs = treeLogs(dim, base);
-  // In reach already (11 blocks): it chops from where it is. Otherwise it walks (around leaves and
-  // anything else) to the closest spot it can chop it from. Only if there's no way around does it
-  // head straight for the trunk and break through leaves.
-  const inReach = dist(center(base), eyeOf(ai)) <= TREE_REACH;
-  /** @type {Vector3 | undefined} */
-  let stand;
-  if (!inReach) {
-    const path = findPath(dim, floor(ai.location), (c) => dist({ x: c.x + 0.5, y: c.y + 1.6, z: c.z + 0.5 }, center(base)) <= TREE_REACH - 1);
-    if (path) {
-      state.tree = { base, stand: undefined, logs, walked: true, until: Date.now() + TREE_MS };
-      if (path.length) startWalking(ai, state, path[path.length - 1], base, path, true);
-      return;
-    }
-    stand = standSpot(dim, base, ai.location, true) ?? clearStand(dim, base);
-    if (!stand) {
-      avoidTree(state, logs);
-      return;
-    }
+  // A spot right next to the trunk, level with it, that it can walk to.
+  const path = findPath(dim, floor(ai.location), (c) => c.y === base.y && Math.abs(c.x - base.x) + Math.abs(c.z - base.z) === 1);
+  const stand = path ? path[path.length - 1] ?? floor(ai.location) : standSpot(dim, base, ai.location, true) ?? clearStand(dim, base);
+  if (!stand) {
+    avoidTree(state, logs);
+    return;
   }
-  state.tree = { base, stand, logs, walked: false, until: Date.now() + TREE_MS };
+  state.tree = { base, stand, logs, phase: "approach", walked: false, until: Date.now() + TREE_MS };
+  if (path?.length) {
+    state.tree.walked = true;
+    startWalking(ai, state, stand, base, path, true);
+  }
 }
 
 /**
@@ -623,37 +617,35 @@ function findPath(dim, start, goal) {
 }
 
 /**
- * Every log of the tree: logs connected to the trunk, going up and out (not into the next tree over).
+ * Every log of the tree, even ones that aren't quite connected to it: every log within 7 blocks of the
+ * trunk (from its bottom up to 30 above) that's closer to this trunk than to any other tree's trunk.
  * @param {import("@minecraft/server").Dimension} dim
  * @param {Vector3} base
  */
 function treeLogs(dim, base) {
-  const seen = new Set([blockKey(base)]);
-  const queue = [base];
+  const types = Object.keys(GATHER).filter((id) => GATHER[id].focus === "Wood");
   /** @type {Vector3[]} */
-  const logs = [];
-  while (queue.length > 0 && logs.length < 120) {
-    const p = /** @type {Vector3} */ (queue.shift());
-    logs.push(p);
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dz = -1; dz <= 1; dz++) {
-          const n = { x: p.x + dx, y: p.y + dy, z: p.z + dz };
-          if (n.y < base.y || Math.abs(n.x - base.x) > 5 || Math.abs(n.z - base.z) > 5 || n.y > base.y + 30) continue;
-          // At ground level only the trunk itself: straight up, or sideways for 2x2 trunks (so it doesn't
-          // wander into the next tree over).
-          const straightUp = dx === 0 && dz === 0 && dy === 1;
-          const sideways = dy === 0 && Math.abs(dx) + Math.abs(dz) === 1;
-          if (n.y <= base.y + 1 && !straightUp && !sideways) continue;
-          const k = blockKey(n);
-          if (seen.has(k)) continue;
-          seen.add(k);
-          if (isLog(dim.getBlock(n)?.typeId)) queue.push(n);
-        }
-      }
-    }
+  let all;
+  try {
+    all = [...dim.getBlocks(new BlockVolume({ x: base.x - 14, y: base.y - 3, z: base.z - 14 }, { x: base.x + 14, y: base.y + 30, z: base.z + 14 }), { includeTypes: types }).getBlockLocationIterator()];
+  } catch {
+    return [base]; // partly unloaded
   }
-  return logs;
+  // Trunk bottoms: logs standing on the ground. Its own trunk can be 2x2.
+  const bottoms = all.filter((p) => {
+    const below = dim.getBlock({ ...p, y: p.y - 1 });
+    return !!below && !isLog(below.typeId) && !passable(below) && !/leaves/.test(below.typeId);
+  });
+  const mine = bottoms.filter((b) => Math.abs(b.x - base.x) <= 1 && Math.abs(b.z - base.z) <= 1 && Math.abs(b.y - base.y) <= 1);
+  if (mine.length === 0) mine.push(base);
+  const others = bottoms.filter((b) => !mine.some((m) => m.x === b.x && m.y === b.y && m.z === b.z));
+  const flat = (/** @type {Vector3} */ a, /** @type {Vector3} */ b) => Math.hypot(a.x - b.x, a.z - b.z);
+  return all.filter((p) => {
+    if (p.y < base.y || p.y > base.y + 30 || Math.abs(p.x - base.x) > 7 || Math.abs(p.z - base.z) > 7) return false;
+    const toMine = Math.min(...mine.map((b) => flat(p, b)));
+    const toOther = Math.min(Infinity, ...others.filter((b) => b.y <= p.y).map((b) => flat(p, b)));
+    return toMine <= toOther;
+  });
 }
 
 /**
@@ -671,33 +663,57 @@ function chopTree(ai, record, state) {
     return undefined;
   }
   if (state.walking) return undefined;
-  const left = t.logs.filter((p) => isLog(dim.getBlock(p)?.typeId));
-  if (left.length === 0) {
-    endTree(state, t, false); // the whole tree is chopped: on to the next one
-    return undefined;
+  const above = { ...t.base, y: t.base.y + 1 };
+
+  if (t.phase === "approach") {
+    // 1. Run up to the trunk.
+    if (flatDist(ai.location, t.stand) > 0.8) {
+      if (t.walked) {
+        endTree(state, t, true); // couldn't get there
+        return undefined;
+      }
+      t.walked = true;
+      startWalking(ai, state, t.stand, above);
+      return undefined;
+    }
+    ai.clearVelocity();
+    t.phase = "base";
   }
-  // Chop every log it can reach (11 blocks), lowest first, then the closest.
+
+  if (t.phase === "base") {
+    // 2. Chop the bottom two logs, standing next to the trunk (normal reach).
+    const next = [t.base, above].find((p) => isLog(dim.getBlock(p)?.typeId));
+    if (next) return startChop(ai, record, next, REACH + 1, state);
+    t.phase = "enter";
+    t.walked = false;
+  }
+
+  if (t.phase === "enter") {
+    // 3. Step into the gap those two logs left (same X and Z as them), breaking anything soft there.
+    breakSoft(dim, t.base, false);
+    if (flatDist(ai.location, t.base) > 0.35 || Math.abs(ai.location.y - t.base.y) > 0.6) {
+      if (!t.walked) {
+        t.walked = true;
+        startWalking(ai, state, t.base, { ...t.base, y: t.base.y + 3 });
+        return undefined;
+      }
+      ai.teleport({ x: t.base.x + 0.5, y: t.base.y, z: t.base.z + 0.5 }); // it's right next to it: slide in (no jump)
+    }
+    ai.clearVelocity();
+    t.phase = "chop";
+  }
+
+  // 4. From inside the trunk, without jumping or moving, chop every log of the tree (its reach is
+  // enlarged for this), lowest first. It stays right where the bottom two logs were.
+  if (flatDist(ai.location, t.base) > 0.4 || Math.abs(ai.location.y - t.base.y) > 1) {
+    ai.teleport({ x: t.base.x + 0.5, y: t.base.y, z: t.base.z + 0.5 });
+  }
   const eye = eyeOf(ai);
-  const next = left
-    .filter((p) => dist(center(p), eye) <= TREE_REACH)
+  const next = t.logs
+    .filter((p) => isLog(dim.getBlock(p)?.typeId))
     .sort((a, b) => a.y - b.y || dist(center(a), eye) - dist(center(b), eye))[0];
-  if (next) return startChop(ai, record, next, TREE_REACH, state);
-  // The rest is out of reach: walk (around leaves) to where it can reach it, once; then give up on what's left.
-  if (!t.walked) {
-    t.walked = true;
-    const target = left[0];
-    const path = findPath(dim, floor(ai.location), (c) => dist({ x: c.x + 0.5, y: c.y + 1.6, z: c.z + 0.5 }, center(target)) <= TREE_REACH - 1);
-    if (path?.length) {
-      startWalking(ai, state, path[path.length - 1], target, path, true);
-      return undefined;
-    }
-    const stand = path ? undefined : t.stand ?? standSpot(dim, t.base, ai.location, true);
-    if (stand) {
-      startWalking(ai, state, stand, t.base);
-      return undefined;
-    }
-  }
-  endTree(state, t, false);
+  if (next) return startChop(ai, record, next, TRUNK_REACH, state);
+  endTree(state, t, false); // the whole tree is chopped: on to the next closest one
   return undefined;
 }
 
@@ -1904,6 +1920,11 @@ system.runInterval(() => {
     }
   }
 }, 1);
+
+/** Distance ignoring height, to the middle of block b. @param {Vector3} a @param {Vector3} b */
+function flatDist(a, b) {
+  return Math.hypot(a.x - (b.x + 0.5), a.z - (b.z + 0.5));
+}
 
 /** @param {Vector3} a @param {Vector3} b */
 function dist(a, b) {
