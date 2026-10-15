@@ -50,6 +50,7 @@ const PLACE_PER_THINK = 2; // blocks placed per think (4 a second)
 const SPEED = 0.15; // blocks per tick while building
 const PLACING_MS = 180000; // placement mode ends after 3 minutes
 const ONLY_WATER = "Only in water";
+const MIN_WATER = 0.65; // at least this much of the farm must be over water (it clears the rest)
 const CANE_WAIT_TICKS = 20 * 60 * 20; // 20 minutes (game time): then it's given what it's missing
 const WARP_BLOCK = "minecraft:lodestone";
 const WARP_SEARCH = 40; // looks for land this far from the farm
@@ -139,6 +140,30 @@ const CELLS = { planks: phaseCells("planks"), sand: phaseCells("sand"), cane: ph
 function isWater(block) {
   if (!block) return false;
   return /water|seagrass|kelp|bubble_column|coral|sea_pickle/.test(block.typeId) || block.isWaterlogged;
+}
+
+/**
+ * Breaks whatever is in the way above a spot of the floor: the water level becomes water again and the
+ * 3 blocks above it air (shore, plants, blocks), so the farm fits.
+ * @param {import("@minecraft/server").Dimension} dim @param {Spot} plan @param {number} w @param {number} l
+ */
+function clearColumn(dim, plan, w, l) {
+  let broke = false;
+  for (let dy = 0; dy <= 3; dy++) {
+    const q = at(plan, w, l, dy);
+    const b = dim.getBlock(q);
+    if (!b) continue;
+    if (dy === 0) {
+      if (!isWater(b)) {
+        dim.setBlockType(q, "minecraft:water");
+        broke ||= !b.isAir;
+      }
+    } else if (!b.isAir && !b.isLiquid) {
+      dim.setBlockType(q, "minecraft:air");
+      broke = true;
+    }
+  }
+  if (broke) dim.playSound("dig.gravel", at(plan, w, l, 0));
 }
 
 /** Already built? @param {"planks" | "sand" | "cane"} phase @param {import("@minecraft/server").Block | undefined} block */
@@ -467,6 +492,7 @@ export function buildFarm(ai, ownerId, record) {
     }
     if (phase === "sand") plan.sand -= 1;
     if (phase === "cane") plan.cane -= 1;
+    if (phase === "planks") clearColumn(dim, plan, c.w, c.l);
     dim.setBlockType(p, id);
     dim.playSound(phase === "planks" ? "dig.wood" : phase === "sand" ? "dig.sand" : "dig.grass", p);
     plan.left[phase] = Math.max(0, plan.left[phase] - 1);
@@ -489,6 +515,7 @@ export function buildFarm(ai, ownerId, record) {
       if (id) {
         if (phase === "sand") plan.sand -= 1;
         if (phase === "cane") plan.cane -= 1;
+        if (phase === "planks") clearColumn(dim, plan, c.w, c.l);
         dim.setBlockType(p, id);
         plan.left[phase] = Math.max(0, plan.left[phase] - 1);
         b.cells.shift();
@@ -789,18 +816,18 @@ function preview(player) {
   /** @type {Spot} */
   const spot = { dim: dim.id, ox: p.x - half * wx, oy: p.y, oz: p.z - half * wz, lx, lz, wx, wz };
 
-  // Every spot of the farm's surface has to be water, with open air (or plants) above it.
-  let notWater = 0;
+  // It goes on water: most of the farm has to be over water (water at the surface, or just below it,
+  // e.g. lower flowing water). Anything in the way (a bit of shore, plants, blocks) the AI breaks.
+  let water = 0;
   for (let w = 0; w < WIDTH; w++) {
     for (let l = 0; l < LENGTH; l++) {
       const surface = dim.getBlock(at(spot, w, l, 0));
       if (!surface) return { spot, valid: false, reason: "That's too far away" };
-      const above = dim.getBlock(at(spot, w, l, 1));
-      const open = !!above && (above.isAir || above.isLiquid || /lily|grass|flower|vine/.test(above.typeId));
-      if (!isWater(surface) || !open) notWater++;
+      if (isWater(surface) || isWater(dim.getBlock(at(spot, w, l, -1)))) water++;
     }
   }
-  if (notWater > 0) return { spot, valid: false, reason: `${ONLY_WATER} (${notWater} spots aren't)` };
+  const needed = Math.ceil(WIDTH * LENGTH * MIN_WATER);
+  if (water < needed) return { spot, valid: false, reason: `${ONLY_WATER} (${WIDTH * LENGTH - water} spots are land; it can clear up to ${WIDTH * LENGTH - needed})` };
   return { spot, valid: true, reason: "" };
 }
 
