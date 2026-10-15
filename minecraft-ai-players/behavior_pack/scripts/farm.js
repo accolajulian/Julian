@@ -80,6 +80,7 @@ const IRON = "minecraft:iron_ingot";
  * @property {boolean} [growing]  short of sugar cane: replanting what grows
  * @property {Vector3} [warp]  its warp point (a lodestone on the closest land)
  * @property {boolean} [paid]  bought for 10 iron: every material was provided (kept by the AI, can't be taken)
+ * @property {boolean} [bridged]  its bridge from the land out to the farm is done (or wasn't needed)
  */
 /** @typedef {Pick<FarmPlan, "dim" | "ox" | "oy" | "oz" | "lx" | "lz" | "wx" | "wz">} Spot */
 
@@ -422,6 +423,7 @@ export function farmProgress(plan) {
  * @property {"planks" | "sand" | "cane"} phase
  * @property {{ w: number, l: number, dy: number, idx: number }[]} cells  still to place, in order
  * @property {number} placedAt  when it last placed a block (it never stalls: see buildFarm)
+ * @property {Vector3[]} bridge  planks phase: blocks still to lay from the land out to the farm
  */
 /** @type {Map<string, BuildState>} */
 const builds = new Map();
@@ -458,6 +460,28 @@ export function buildFarm(ai, ownerId, record) {
   // Out of sugar cane: harvest what has grown on the farm and plant it on the empty sand.
   if (phase === "cane" && plan.cane <= 0) {
     if (harvestGrowth(ai, plan)) saveRecord(ownerId, "resource", record);
+    return;
+  }
+
+  // No land right next to the farm: first it walks out from the land laying a bridge of blocks to it
+  // (from its warp point), then gets in its boat at the farm.
+  if (b.bridge.length > 0) {
+    for (let n = 0; n < 2 && b.bridge.length > 0; n++) {
+      const q = /** @type {Vector3} */ (b.bridge.shift());
+      const block = dim.getBlock(q);
+      if (block && (block.isAir || block.isLiquid || isWater(block))) {
+        dim.setBlockType(q, BRIDGE_BLOCK);
+        dim.playSound("dig.stone", q);
+      }
+      ai.teleport({ x: q.x + 0.5, y: q.y + 1, z: q.z + 0.5 });
+    }
+    ai.playAnimation("animation.aip.ai_player.mine");
+    b.placedAt = Date.now();
+    if (b.bridge.length === 0) {
+      plan.bridged = true;
+      saveRecord(ownerId, "resource", record);
+      boardBoat(ai, plan);
+    }
     return;
   }
 
@@ -646,27 +670,71 @@ function startPhase(ai, plan) {
   const cells = CELLS[phase].filter((c) => !built(phase, dim.getBlock(at(plan, c.w, c.l, c.dy))));
   plan.left[phase] = cells.length;
 
-  // Go to the start of its route if it's far away.
-  const start = at(plan, ROUTE[0].w, ROUTE[0].l, 0);
-  if (Math.hypot(start.x + 0.5 - ai.location.x, start.z + 0.5 - ai.location.z) > 24) {
-    ai.teleport({ x: start.x + 0.5, y: start.y + (phase === "planks" ? 0.5 : 0), z: start.z + 0.5 });
-  }
-  if (phase === "planks") {
-    // Put its boat in the water and get in.
-    let boat = plan.boatId ? world.getEntity(plan.boatId) : undefined;
-    if (!boat?.isValid) {
-      try {
-        boat = dim.spawnEntity(BOAT_ENTITY, { x: ai.location.x, y: start.y + 0.5, z: ai.location.z });
-        plan.boatId = boat.id;
-      } catch {
-        boat = undefined;
-      }
-    }
-    if (boat) boat.getComponent("minecraft:rideable")?.addRider(ai);
+  // No land right next to the farm: lay a bridge out to it from the land first.
+  const bridge = phase === "planks" && !plan.bridged ? bridgeCells(dim, plan) : [];
+  if (phase === "planks" && bridge.length === 0) plan.bridged = true;
+  if (bridge.length > 0 && plan.warp) {
+    ai.teleport({ x: plan.warp.x + 0.5, y: plan.warp.y, z: plan.warp.z + 0.5 });
   } else {
-    stowBoat(plan); // it wades along the channels for the sand and sugar cane
+    // Go to the start of its route if it's far away.
+    const start = at(plan, ROUTE[0].w, ROUTE[0].l, 0);
+    if (Math.hypot(start.x + 0.5 - ai.location.x, start.z + 0.5 - ai.location.z) > 24) {
+      ai.teleport({ x: start.x + 0.5, y: start.y + (phase === "planks" ? 0.5 : 0), z: start.z + 0.5 });
+    }
+    if (phase === "planks") boardBoat(ai, plan);
+    else stowBoat(plan); // it wades along the channels for the sand and sugar cane
   }
-  return { phase, cells, placedAt: Date.now() };
+  return { phase, cells, placedAt: Date.now(), bridge };
+}
+
+const BRIDGE_BLOCK = "minecraft:cobblestone"; // its own endless cobblestone
+const BRIDGE_MAX = 48;
+
+/**
+ * The bridge from its warp point (on land) out to the farm's edge, at the water surface: empty if the
+ * warp point is right next to the farm (or there is none).
+ * @param {import("@minecraft/server").Dimension} dim @param {FarmPlan} plan
+ * @returns {Vector3[]}
+ */
+function bridgeCells(dim, plan) {
+  if (!plan.warp) return [];
+  const a = at(plan, 0, 0, 0);
+  const b = at(plan, WIDTH - 1, LENGTH - 1, 0);
+  const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x), minZ = Math.min(a.z, b.z), maxZ = Math.max(a.z, b.z);
+  const inside = (/** @type {number} */ x, /** @type {number} */ z) => x >= minX && x <= maxX && z >= minZ && z <= maxZ;
+  const tx = Math.max(minX, Math.min(maxX, plan.warp.x));
+  const tz = Math.max(minZ, Math.min(maxZ, plan.warp.z));
+  /** @type {Vector3[]} */
+  const cells = [];
+  let x = plan.warp.x;
+  let z = plan.warp.z;
+  while (cells.length < BRIDGE_MAX) {
+    if (x !== tx) x += Math.sign(tx - x);
+    else if (z !== tz) z += Math.sign(tz - z);
+    if (inside(x, z) || (x === tx && z === tz)) break;
+    cells.push({ x, y: plan.oy, z });
+  }
+  // Already next to the farm, or it's all land anyway: no bridge needed.
+  return cells.some((c) => isWater(dim.getBlock(c)) || dim.getBlock(c)?.isAir) ? cells : [];
+}
+
+/** Puts its boat in the water at the farm and gets in. @param {import("@minecraft/server").Entity} ai @param {FarmPlan} plan */
+function boardBoat(ai, plan) {
+  const dim = ai.dimension;
+  const start = at(plan, ROUTE[0].w, ROUTE[0].l, 0);
+  let boat = plan.boatId ? world.getEntity(plan.boatId) : undefined;
+  if (!boat?.isValid) {
+    try {
+      boat = dim.spawnEntity(BOAT_ENTITY, { x: start.x + 0.5, y: start.y + 0.5, z: start.z + 0.5 });
+      plan.boatId = boat.id;
+    } catch {
+      boat = undefined;
+    }
+  }
+  if (boat) {
+    ai.teleport({ x: boat.location.x, y: boat.location.y + 0.5, z: boat.location.z });
+    boat.getComponent("minecraft:rideable")?.addRider(ai);
+  }
 }
 
 /** Takes the boat out of the water (it's put back when the farm is done). @param {FarmPlan} plan */
