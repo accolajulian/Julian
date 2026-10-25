@@ -37,7 +37,7 @@ export default function TopPicks({ areas, side, onPick, onClose }: Props) {
         </button>
       </div>
       <p className="mt-0.5 text-[11px] text-slate-400">
-        Affordable areas with momentum and new construction{side !== 'All' ? ` · ${side} Side` : ''}
+        Affordable areas that are improving (green) and building{side !== 'All' ? ` · ${side} Side` : ''}
       </p>
       <select
         value={budget}
@@ -52,7 +52,7 @@ export default function TopPicks({ areas, side, onPick, onClose }: Props) {
       </select>
 
       <ol className="mt-2 space-y-2">
-        {picks.length === 0 && <li className="py-2 text-sm text-slate-400">No areas match. Try a higher budget or another side.</li>}
+        {picks.length === 0 && <li className="py-2 text-sm text-slate-400">No improving areas match. Try a higher budget or another side.</li>}
         {picks.map((s, i) => (
           <li key={s.areaNumber}>
             <button

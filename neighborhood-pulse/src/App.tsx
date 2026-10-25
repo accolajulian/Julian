@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar'
 import Controls from './components/Controls'
 import TopPicks from './components/TopPicks'
 import { COMMUNITY_AREAS } from '../shared/communityAreas'
+import { addOpportunities } from '../shared/scoring'
 import type { AreaProperties, AreasResponse, SideName } from '../shared/types'
 import { sampleResponse } from './data/sampleData'
 import { colorContext, colorFor, type ColorMode } from './lib/colors'
@@ -18,6 +19,7 @@ async function loadScores(): Promise<AreasResponse> {
     if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) throw new Error(`HTTP ${r.status}`)
     const data = (await r.json()) as AreasResponse
     if (data.isSample || Object.keys(data.areas).length === 0) throw new Error('no data collected yet')
+    addOpportunities(data.areas) // recompute so formula updates apply without re-running the weekly job
     return data
   } catch {
     return sampleResponse()

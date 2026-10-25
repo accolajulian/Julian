@@ -40,8 +40,9 @@ it fell 10% is just average. Only doing better or worse than Chicago overall mov
 **Confidence** depends on how many ingredients had enough data. Low confidence is always shown gray.
 
 **Opportunity score** (Top Picks) = 40% momentum (the score above) + 35% affordability
-(cheaper than other areas) + 25% pipeline (new-construction permits and growth in permit
-dollars). Use it as a starting point for research, not a forecast.
+(cheaper than other areas) + 25% pipeline (new-construction permits and total permit dollars).
+Each part is ranked against the other areas so none of them drowns out the rest, and **only
+improving (green) areas qualify**. Use it as a starting point for research, not a forecast.
 
 ### Where the data comes from (all free)
 | Data | Source | Updates |

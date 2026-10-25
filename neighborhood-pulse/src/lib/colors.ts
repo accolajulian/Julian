@@ -5,7 +5,9 @@ import type { Confidence, NeighborhoodScore } from '../../shared/types'
 //   GREEN = improving, RED = declining, light gray = neutral / not enough info.
 //   Stronger signal = more opaque color.
 
-export const NEUTRAL_THRESHOLD = 15
+import { IMPROVING_THRESHOLD } from '../../shared/scoring'
+
+export const NEUTRAL_THRESHOLD = IMPROVING_THRESHOLD
 
 export const COLORS = {
   green: '#22c55e',

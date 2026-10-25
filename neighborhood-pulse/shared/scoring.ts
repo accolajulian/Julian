@@ -10,7 +10,7 @@
 
 import { COMMUNITY_AREAS } from './communityAreas.js'
 import { fmtMoney, fmtPct, pctChange } from './format.js'
-import type { AreaMetrics, Confidence, NeighborhoodScore, Opportunity, ScoreComponent } from './types.js'
+import type { AreaMetrics, Confidence, NeighborhoodScore, ScoreComponent } from './types.js'
 
 interface ComponentDef {
   key: string
@@ -164,9 +164,9 @@ export function scoreArea(
 
   const name = COMMUNITY_AREAS[areaNumber]?.name ?? `Area ${areaNumber}`
   const direction =
-    score >= 15
+    score >= IMPROVING_THRESHOLD
       ? 'is outperforming most of Chicago'
-      : score <= -15
+      : score <= -IMPROVING_THRESHOLD
         ? 'is lagging behind most of Chicago'
         : 'is tracking close to the citywide average'
   const strongest = [...components].sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution)).slice(0, 2)
@@ -196,51 +196,51 @@ function percentiles(values: Map<number, number>): Map<number, number> {
   return out
 }
 
+/** A score at or above this counts as "improving" (green on the map). */
+export const IMPROVING_THRESHOLD = 15
+
 /**
- * Opportunity = 40% momentum + 35% affordability + 25% pipeline.
+ * Opportunity = 40% momentum + 35% affordability + 25% pipeline, each ranked 0–1 against
+ * the other priced areas (so no single ingredient drowns out the others):
  *   momentum      = the score above
- *   affordability = cheaper than other areas (by typical home value)
- *   pipeline      = new construction activity + growth in permit dollars
- * Only areas with price data and at least medium confidence qualify.
+ *   affordability = cheaper typical home value
+ *   pipeline      = how much is being built: new-construction permits + total permit dollars
+ * Only areas that are actually improving (green, at least medium confidence) qualify.
  */
 export function addOpportunities(scores: Record<number, NeighborhoodScore>) {
-  const eligible = Object.values(scores).filter((s) => s.metrics.prices && s.confidence !== 'low')
-  if (eligible.length < 3) return
+  const priced = Object.values(scores).filter((s) => s.metrics.prices)
+  for (const s of Object.values(scores)) s.opportunity = null
+  if (priced.length < 3) return
 
-  const price = percentiles(new Map(eligible.map((s) => [s.areaNumber, s.metrics.prices!.typicalValue])))
-  const newBuild = percentiles(new Map(eligible.map((s) => [s.areaNumber, s.metrics.permits?.newConstruction12 ?? 0])))
-  const dollars = percentiles(
-    new Map(
-      eligible.map((s) => {
-        const p = s.metrics.permits
-        return [s.areaNumber, p ? (pctChange(p.value12, p.valuePrev12) ?? 0) : 0]
-      }),
-    ),
-  )
+  const rank = (pick: (s: NeighborhoodScore) => number) => percentiles(new Map(priced.map((s) => [s.areaNumber, pick(s)])))
+  const momentumRank = rank((s) => s.score)
+  const priceRank = rank((s) => s.metrics.prices!.typicalValue)
+  const newBuildRank = rank((s) => s.metrics.permits?.newConstruction12 ?? 0)
+  const dollarsRank = rank((s) => s.metrics.permits?.value12 ?? 0)
 
-  for (const s of eligible) {
-    const momentum = (s.score + 100) / 200
-    const affordability = 1 - price.get(s.areaNumber)!
-    const pipeline = (newBuild.get(s.areaNumber)! + dollars.get(s.areaNumber)!) / 2
+  for (const s of priced) {
+    if (s.confidence === 'low' || s.score < IMPROVING_THRESHOLD) continue
+    const momentum = momentumRank.get(s.areaNumber)!
+    const affordability = 1 - priceRank.get(s.areaNumber)!
+    const pipeline = (newBuildRank.get(s.areaNumber)! + dollarsRank.get(s.areaNumber)!) / 2
+
     const reasons: string[] = []
     const p = s.metrics.prices!
     reasons.push(`Typical home ${fmtMoney(p.typicalValue)}${p.change1y !== null ? ` (${fmtPct(p.change1y, 1)} in a year)` : ''}`)
     const permits = s.metrics.permits
     if (permits) {
-      const ch = pctChange(permits.last12, permits.prev12)
-      reasons.push(`${permits.newConstruction12} new-construction permits; all permits ${fmtPct(ch)}`)
+      reasons.push(`${permits.newConstruction12} new-construction permits, ${fmtMoney(permits.value12)} in permitted work`)
     }
     const best = [...s.components].sort((a, b) => b.contribution - a.contribution)[0]
-    if (best && best.contribution > 0.2 && best.key !== 'prices' && best.key !== 'permits') reasons.push(describe(best))
+    if (best && best.contribution > 0.2) reasons.push(describe(best))
 
-    const opp: Opportunity = {
+    s.opportunity = {
       score: Math.round(100 * (0.4 * momentum + 0.35 * affordability + 0.25 * pipeline)),
       momentum,
       affordability,
       pipeline,
       reasons,
     }
-    s.opportunity = opp
   }
 }
 
