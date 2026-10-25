@@ -5,7 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // MapLibre does its heavy lifting in a background "worker" script; tell it where Vite put that file.
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import type { FeatureCollection, Geometry } from 'geojson'
-import type { AreaProperties, SideName } from '../types'
+import type { AreaProperties, SideName } from '../../shared/types'
 
 // Esri World Imagery: free, high-resolution satellite tiles, no API key needed.
 // The optional labels layer adds street & place names on top of the imagery.
@@ -53,10 +53,12 @@ interface Props {
   side: SideName | 'All'
   selected: number | null
   showLabels: boolean
+  /** Zoom to this area (nonce changes each time, so the same area can be re-focused) */
+  focus: { area: number; nonce: number } | null
   onSelect: (areaNumber: number | null) => void
 }
 
-export default function MapView({ areas, side, selected, showLabels, onSelect }: Props) {
+export default function MapView({ areas, side, selected, showLabels, focus, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -64,6 +66,8 @@ export default function MapView({ areas, side, selected, showLabels, onSelect }:
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
   const hoveredIdRef = useRef<number | null>(null)
+  const areasRef = useRef(areas)
+  areasRef.current = areas
 
   const clearHover = () => {
     const map = mapRef.current
@@ -96,12 +100,7 @@ export default function MapView({ areas, side, selected, showLabels, onSelect }:
         source: 'areas',
         paint: {
           'fill-color': ['get', 'fillColor'],
-          'fill-opacity': [
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            ['min', 0.85, ['+', ['get', 'fillOpacity'], 0.2]],
-            ['get', 'fillOpacity'],
-          ],
+          'fill-opacity': ['get', 'fillOpacity'],
         },
       })
       // Thin outlines
@@ -121,7 +120,7 @@ export default function MapView({ areas, side, selected, showLabels, onSelect }:
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'selected'], false], 3,
-            ['boolean', ['feature-state', 'hover'], false], 2.5,
+            ['boolean', ['feature-state', 'hover'], false], 3,
             0,
           ],
         },
@@ -169,11 +168,13 @@ export default function MapView({ areas, side, selected, showLabels, onSelect }:
     for (const id of ['area-fill', 'area-outline', 'area-highlight']) map.setFilter(id, filter)
     clearHover() // the area under the mouse may have just been hidden
 
-    const feats = side === 'All' ? areas.features : areas.features.filter((f) => f.properties.side === side)
+    const all = areasRef.current.features
+    const feats = side === 'All' ? all : all.filter((f) => f.properties.side === side)
     const bounds = new maplibregl.LngLatBounds()
     for (const f of feats) eachCoord(f.geometry, (c) => bounds.extend(c as [number, number]))
     if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 800 })
-  }, [side, loaded, areas])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [side, loaded])
 
   // 4. Highlight the selected area.
   useEffect(() => {
@@ -185,7 +186,24 @@ export default function MapView({ areas, side, selected, showLabels, onSelect }:
     }
   }, [selected, loaded])
 
-  // 5. Toggle street/place labels.
+  // 5. Zoom to an area picked from the Top Picks panel (leave room for the sidebar).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!loaded || !map || !focus) return
+    const f = areas.features.find((x) => x.properties.areaNumber === focus.area)
+    if (!f) return
+    const bounds = new maplibregl.LngLatBounds()
+    eachCoord(f.geometry, (c) => bounds.extend(c as [number, number]))
+    const wide = window.innerWidth >= 640
+    map.fitBounds(bounds, {
+      padding: wide ? { top: 80, bottom: 60, left: 460, right: 360 } : 40,
+      maxZoom: 14,
+      duration: 900,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus, loaded])
+
+  // 6. Toggle street/place labels.
   useEffect(() => {
     const map = mapRef.current
     if (!loaded || !map) return

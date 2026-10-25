@@ -1,11 +1,102 @@
 # Neighborhood Pulse
 
-A full-screen satellite map of Chicago's 77 community areas, colored by whether
-each one looks like it's **improving (green)**, **declining (red)**, or
-**neutral / unknown (light gray)**. It's built to help spot real-estate opportunities.
+A full-screen satellite map of Chicago's 77 community areas, colored by whether each one
+looks like it's **improving (green)**, **declining (red)**, or **neutral / unknown (light gray)**,
+built to help spot real-estate opportunities.
 
-> **Status: Phase 1.** The map, side filter, hover names, and sidebar all work,
-> but the scores, headlines, and permit numbers are **fake sample data**.
+**Status: Phase 2.** A weekly job collects real public data (permits, home values, crime,
+vacant buildings, and new businesses), scores every area, and saves the results.
+Until you finish the setup below, the map shows **sample data** with a yellow
+"Sample data" label in the top-left corner.
+
+---
+
+## What's on the map
+
+- **Color by:** switch between the overall signal, opportunity score, home-value growth,
+  typical home value, permit growth, and crime trend.
+- **🔥 Top 3 opportunities:** affordable areas with momentum and new construction. Filter by
+  budget and by side of the city, and click a pick to zoom to it.
+- **Click an area** to open a sidebar with tabs:
+  - **Overview:** score, summary, what's driving the score, and opportunity score
+  - **Prices:** typical home value, 1-month, 1-year and 5-year change, and a 5-year chart
+  - **Activity:** building permits (new builds, renovations, demolitions, dollar value) and new business licenses
+  - **Safety:** reported crime, violent crime, and vacant-building complaints
+  - **News:** arrives in Phase 3
+- **Hover** over an area to highlight its outline and see its name.
+
+### How the score works (`shared/scoring.ts`)
+Every number is compared to **the whole city**. If crime fell 10% everywhere, an area where
+it fell 10% is just average. Only doing better or worse than Chicago overall moves the score.
+
+| Ingredient | Weight | Good when… |
+|---|---|---|
+| Home values, 1 year | 30% | rising faster than the city |
+| Building permits | 25% | rising faster than the city |
+| New business licenses | 15% | rising faster than the city |
+| Reported crime | 15% | falling faster than the city |
+| Vacant-building complaints (311) | 15% | falling faster than the city |
+
+**Confidence** depends on how many ingredients had enough data. Low confidence is always shown gray.
+
+**Opportunity score** (Top Picks) = 40% momentum (the score above) + 35% affordability
+(cheaper than other areas) + 25% pipeline (new-construction permits and growth in permit
+dollars). Use it as a starting point for research, not a forecast.
+
+### Where the data comes from (all free)
+| Data | Source | Updates |
+|---|---|---|
+| Building permits | [Chicago Data Portal: Building Permits](https://data.cityofchicago.org/d/ydr8-5enu) | daily |
+| Crime | [Chicago Data Portal: Crimes](https://data.cityofchicago.org/d/ijzp-q8t2) | daily (about 7 days behind) |
+| Vacant-building complaints | [Chicago Data Portal: 311 Service Requests](https://data.cityofchicago.org/d/v6vf-nfxy) | daily |
+| New businesses | [Chicago Data Portal: Business Licenses](https://data.cityofchicago.org/d/r5kz-chrr) | daily |
+| Home values | [Zillow Home Value Index by neighborhood](https://www.zillow.com/research/data/) | monthly |
+
+Zillow's neighborhoods don't match the 77 community areas exactly. When an area has no
+Zillow neighborhood with the same name, we average the smaller Zillow neighborhoods
+inside it, for example Wicker Park + Ukrainian Village → West Town. The Prices tab shows which
+ones were used. A few areas may have no home-value data.
+
+---
+
+## Setup (about 15 minutes, one time)
+
+### 1. Create the database (Supabase, free)
+1. Go to **supabase.com**, sign up, and click **New project**. Name it `neighborhood-pulse`,
+   create a database password (save it somewhere), and pick the US East region.
+2. When the project is ready, open **SQL Editor** in the left menu, then **New query**.
+3. Open the file `supabase/schema.sql` from this folder, copy all of it, paste it into the query box, and click **Run**.
+   It should say "Success. No rows returned".
+4. Go to **Project Settings → API Keys** and copy the **service_role** secret key.
+   Then go to **Project Settings → Data API** (or the Connect button) and copy the **Project URL**,
+   which looks like `https://abcd1234.supabase.co`.
+
+### 2. Add the keys to Vercel
+In Vercel, open your **neighborhood-pulse** project, go to **Settings → Environment Variables**, and add:
+
+| Name | Value |
+|---|---|
+| `SUPABASE_URL` | the Project URL from step 1 |
+| `SUPABASE_SERVICE_ROLE_KEY` | the service_role key from step 1 (**secret**) |
+| `CRON_SECRET` | make up a long random password, e.g. `pulse-8f3k29dk3m2x` |
+| `CHICAGO_APP_TOKEN` | *(optional)* from data.cityofchicago.org → Developer Settings |
+
+Then go to **Deployments**, click **⋯** on the newest one, and choose **Redeploy** so it picks up the keys.
+
+### 3. Test the data collection (saves nothing)
+Open this in your browser, using your own site address and CRON_SECRET:
+```
+https://YOUR-SITE.vercel.app/api/collect?key=YOUR_CRON_SECRET&dry=1
+```
+It takes 1–3 minutes, then shows ✅/❌ for each data source and a preview of the scores.
+If anything says `"ok": false`, copy the page and send it to Claude.
+
+### 4. Run it for real
+Open the same link **without** `&dry=1`. This collects the data and saves it.
+Then reload your map. The yellow "Sample data" label is replaced by "updated <date>".
+
+From then on, **Vercel runs it automatically every Monday morning** (see `crons` in `vercel.json`).
+Each run is saved as a new snapshot, which builds up the history for Phase 4's trend charts.
 
 ---
 
@@ -15,20 +106,10 @@ You need [Node.js](https://nodejs.org) 20 or newer.
 
 ```bash
 cd neighborhood-pulse
-npm install        # downloads the libraries (one time)
-npm run dev        # starts a local server
+npm install        # one time
+npm run dev        # the map, using sample data, at http://localhost:5173
+npm run collect    # test all data sources from your computer (saves nothing)
 ```
-
-Open the URL it prints (usually http://localhost:5173).
-
-### What to test in Phase 1
-1. You see a satellite map of Chicago with colored zones and thin white outlines.
-2. Hover over a zone: it brightens and a small label shows its name.
-3. Click a zone: a sidebar opens on the left with its name, side, score, summary,
-   headlines, permit trend, and last-updated date. Click ✕ or an empty area to close it.
-4. Use the **Side** dropdown: only that side's areas stay visible and the map zooms to them.
-5. Toggle **Street labels** on and off.
-6. Try it on your phone or in a narrow browser window.
 
 ---
 
@@ -36,69 +117,56 @@ Open the URL it prints (usually http://localhost:5173).
 
 ```
 neighborhood-pulse/
-  public/data/community-areas.geojson  ← the 77 boundary shapes (from the Chicago Data Portal)
-  scripts/fetch-boundaries.mjs         ← re-downloads those shapes: npm run fetch-boundaries
-  src/
-    App.tsx                  ← loads the shapes, attaches scores and colors, wires everything up
-    components/MapView.tsx   ← the satellite map, colored zones, hover and click
-    components/Sidebar.tsx   ← the left panel with details
-    components/Controls.tsx  ← title, side filter, labels toggle, legend
-    data/communityAreas.ts   ← official names and which "side" each area belongs to
-    data/sampleScores.ts     ← FAKE data for Phase 1 (replaced in Phase 2/3)
-    lib/colors.ts            ← converts a score into green / red / gray plus color strength
+  api/                       ← server code (Vercel Functions)
+    collect.ts               ← the weekly job: collect → score → save
+    areas.ts                 ← what the map loads: the latest scores
+    _lib/socrata.ts          ← Chicago Data Portal helper
+    _lib/sources.ts          ← permits, crime, 311, business licenses
+    _lib/zillow.ts           ← home values and the name-matching table
+    _lib/geo.ts              ← "which community area is this point in?"
+    _lib/db.ts               ← Supabase reads and writes
+  shared/                    ← used by both the server and the website
+    scoring.ts               ← the score, confidence, summary, and opportunity math
+    communityAreas.ts        ← names and "sides" of the 77 areas
+    types.ts, format.ts
+  src/                       ← the website
+    App.tsx                  ← loads everything and wires it together
+    components/              ← MapView, Sidebar (tabs), TopPicks, Controls, Charts
+    lib/colors.ts            ← the "Color by" modes
+    data/sampleData.ts       ← fake data, used until real data exists
+  supabase/schema.sql        ← database tables (run once in Supabase)
+  public/data/               ← the 77 boundary shapes
 ```
 
-**Color rules** (`src/lib/colors.ts`): a score of +15 or higher is green and −15 or lower is red.
-Anything in between is gray, and **low confidence is always gray**. The further the score
-is from 0, the stronger the color.
-
 ---
 
-## Deploy to Vercel
+## API keys & costs
 
-This app lives in the `neighborhood-pulse/` folder of the repo, so tell Vercel to build only that folder:
-
-1. Go to vercel.com → **Add New → Project** → import the GitHub repo.
-2. Set **Root Directory** to `neighborhood-pulse`. Vercel then detects Vite automatically.
-3. Click **Deploy**. Phase 1 needs no environment variables.
-
----
-
-## API keys: what you need, where to get them, and what they cost
-
-**Rule:** keys go in **environment variables**, never in the code.
-- **On your computer:** copy `.env.example` to `.env.local` and fill it in. `.env.local` is git-ignored.
-- **On Vercel:** go to Project → **Settings → Environment Variables**.
-- Any variable starting with `VITE_` is **visible in the browser**. Only use that prefix
-  for values that are safe to make public.
+**Rule:** keys go in **environment variables**, never in the code. Never put a secret in a variable whose name starts with `VITE_`, because those are visible in the browser.
 
 | Phase | Service | Env var(s) | Where to get it | Rough cost / month |
 |---|---|---|---|---|
-| 1 | **Esri World Imagery** (satellite) via MapLibre | none | No signup needed | **$0** |
-| 2 | **Supabase** (database) | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret, server only), `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (public) | supabase.com → New project → Project Settings → API | **$0** free tier (500 MB). Pro is $25 if you outgrow it |
-| 2 | **Chicago Data Portal** (permits) | `CHICAGO_APP_TOKEN` (optional) | data.cityofchicago.org → sign up → Developer Settings → Create App Token | **$0** |
-| 2 | **Cron secret** (stops strangers from triggering your job) | `CRON_SECRET` | Make up a long random string | **$0** |
-| 2 | **Vercel** hosting + Cron | none | vercel.com | **$0** on Hobby (cron jobs allowed once per day; we need weekly). Pro is $20 if you need longer function run times or commercial use |
-| 3 | **GDELT** (news) | none | Free public API | **$0** |
-| 3 | **Anthropic Claude API** (scoring) | `ANTHROPIC_API_KEY` (secret, server only) | console.anthropic.com → API Keys (add a payment method) | About **$15** with Claude Opus 5.5 for 77 areas × 4 runs. About **$0.50** with Claude Haiku 5.5. You choose in Phase 3 |
-| 3 | NewsAPI (optional) | `NEWSAPI_KEY` | newsapi.org | Free plan only works on localhost, and paid plans are expensive, so **GDELT is recommended** |
-
-**Phase 1 total: $0. Expected ongoing cost: about $0–$15/month**, depending on which Claude model you pick.
+| 1 | Esri World Imagery (satellite) | none | — | $0 |
+| 2 | Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | supabase.com | $0 (free tier) |
+| 2 | Weekly job password | `CRON_SECRET` | make one up | $0 |
+| 2 | Chicago Data Portal | `CHICAGO_APP_TOKEN` (optional) | data.cityofchicago.org | $0 |
+| 2 | Zillow research data | none | — | $0 |
+| 2 | Vercel Hobby + Cron | none | vercel.com | $0 |
+| 3 | GDELT news | none | — | $0 |
+| 3 | Anthropic Claude API | `ANTHROPIC_API_KEY` | console.anthropic.com | ~$0.50–$15 depending on model |
 
 Notes:
-- **Satellite imagery:** Esri's free tiles are fine for personal use and testing. If you turn
-  this into a commercial product, create a free ArcGIS Location Platform account, which includes
-  a generous free tile allowance, or switch to Mapbox satellite (free up to 50k map loads/month).
-  Either switch only changes the tile URL in `MapView.tsx`.
-- **Supabase free projects pause after about a week of inactivity.** The weekly job should keep yours awake;
-  if it pauses, click "Restore" in the Supabase dashboard.
-- Prices are approximate. Check each provider's pricing page before relying on these numbers.
+- Supabase free projects pause after about a week with no activity. The weekly job should keep yours awake; if it pauses, click **Restore** in Supabase.
+- Esri's free satellite tiles are fine for personal use. For a commercial product, get a free ArcGIS Location Platform account or switch to Mapbox.
+- Zillow's data is free with credit ("Data: Zillow", shown in the Prices tab).
 
 ---
 
 ## Roadmap
-- [x] **Phase 1:** map, satellite view, community areas, sides filter, hover names, sidebar (sample data)
-- [ ] **Phase 2:** Supabase database + weekly Vercel Cron job using permit data only
-- [ ] **Phase 3:** news (GDELT) + Claude scoring (score −100…+100, confidence, summary)
-- [ ] **Phase 4:** score history per neighborhood and trend direction
+- [x] **Phase 1:** satellite map, community areas, sides filter, hover names, sidebar
+- [x] **Phase 2:** database + weekly job: permits, home values, crime, vacant buildings,
+      new businesses → score, confidence, summary, Top Picks, Color by
+- [ ] **Phase 3:** news (GDELT) + Claude scoring and summaries; zoning changes, TIF / Invest
+      South/West, and big-project proximity added to the pipeline score
+- [ ] **Phase 4:** history charts and "trending up or down", mortgage (HMDA) and rent data, Census "People" tab
 - [ ] **Phase 5:** suburbs (Cook and DuPage towns like Elmhurst), then other Illinois cities
