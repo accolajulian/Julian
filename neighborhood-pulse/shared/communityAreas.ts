@@ -1,4 +1,4 @@
-import type { SideName } from './types'
+import type { SideName } from './types.js'
 
 // Chicago's 77 official community areas, keyed by their official number,
 // grouped into the city's 9 traditional "sides".

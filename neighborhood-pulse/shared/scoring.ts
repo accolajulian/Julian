@@ -8,9 +8,9 @@
 // an area where it fell 10% is just average. Investors care about areas that are
 // doing better than the rest of Chicago.
 
-import { COMMUNITY_AREAS } from './communityAreas'
-import { fmtMoney, fmtPct, pctChange } from './format'
-import type { AreaMetrics, Confidence, NeighborhoodScore, Opportunity, ScoreComponent } from './types'
+import { COMMUNITY_AREAS } from './communityAreas.js'
+import { fmtMoney, fmtPct, pctChange } from './format.js'
+import type { AreaMetrics, Confidence, NeighborhoodScore, Opportunity, ScoreComponent } from './types.js'
 
 interface ComponentDef {
   key: string
