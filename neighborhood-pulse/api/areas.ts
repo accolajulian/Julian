@@ -5,7 +5,7 @@ import { db, lastRun, latestSnapshots } from './_lib/db.js'
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
   const client = db()
-  if (!client) return res.status(200).json({ updatedAt: null, isSample: true, areas: {} } satisfies AreasResponse)
+  if (!client) return res.setHeader('Cache-Control', 'no-store').status(200).json({ updatedAt: null, isSample: true, areas: {} } satisfies AreasResponse)
   try {
     const [rows, run] = await Promise.all([latestSnapshots(client), lastRun(client)])
     const areas: Record<number, NeighborhoodScore> = {}
@@ -24,8 +24,9 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       }
       if (!updatedAt || r.collected_on > updatedAt) updatedAt = r.collected_on
     }
-    // Cache at Vercel's edge for an hour; the data only changes weekly.
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400')
+    // Cache briefly at Vercel's edge (the data only changes weekly), but never cache
+    // "no data yet", or the map would keep showing sample data after the first run.
+    res.setHeader('Cache-Control', rows.length ? 's-maxage=600, stale-while-revalidate=3600' : 'no-store')
     return res.status(200).json({ updatedAt, isSample: rows.length === 0, areas, sources: run?.sources } satisfies AreasResponse)
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : String(e) })
