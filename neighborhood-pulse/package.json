@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "fetch-boundaries": "node scripts/fetch-boundaries.mjs"
+    "fetch-boundaries": "node scripts/fetch-boundaries.mjs",
+    "collect": "tsx scripts/collect-local.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "maplibre-gl": "^6.15.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
@@ -17,10 +19,13 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/geojson": "^7946.0.16",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vercel/node": "^27.0.2",
     "@vitejs/plugin-react": "^6.1.2",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
   }
