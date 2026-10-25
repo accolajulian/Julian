@@ -1,11 +1,30 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { AreaMetrics, NeighborhoodScore, SourceStatus } from '../../shared/types.js'
 
+/**
+ * Accepts the Supabase project URL in whatever form it was pasted and returns
+ * the bare "https://<project>.supabase.co" that the client library needs:
+ *   https://abc.supabase.co/rest/v1/        → https://abc.supabase.co
+ *   supabase.com/dashboard/project/abc/...  → https://abc.supabase.co
+ *   abc (just the project id)               → https://abc.supabase.co
+ */
+export function normalizeSupabaseUrl(raw: string): string {
+  const u = raw.trim().replace(/^["']|["']$/g, '')
+  const dashboard = u.match(/supabase\.com\/dashboard\/project\/([a-z0-9]+)/i)
+  if (dashboard) return `https://${dashboard[1]}.supabase.co`
+  if (/^[a-z0-9]{15,30}$/i.test(u)) return `https://${u}.supabase.co`
+  try {
+    return new URL(/^https?:\/\//i.test(u) ? u : `https://${u}`).origin
+  } catch {
+    return u
+  }
+}
+
 export function db(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
   if (!url || !key) return null
-  return createClient(url, key, { auth: { persistSession: false } })
+  return createClient(normalizeSupabaseUrl(url), key, { auth: { persistSession: false } })
 }
 
 export interface SnapshotRow {
